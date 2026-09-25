@@ -1,11 +1,38 @@
 // The coach: placement test, lesson planning, mastery and progress tracking (persisted in
 // localStorage so the student picks up exactly where they left off).
 import { LEVELS, MAX_LEVEL, levelInfo } from './music/curriculum.js';
-import { noteName } from './music/theory.js';
+import { noteName, spokenPc } from './music/theory.js';
+import { musicalOffset } from './game/engine.js';
 import * as P from './placement.js';
 
 const STORE = 'maestro.progress.v1';
 export const PASS_SCORE = 75;
+
+// Automatic microphone-delay correction. A steady offset in every note (tight spread, both
+// hands agreeing, the same across pieces) is input latency, not the player. The measured
+// offset plus the current setting ("raw") does not depend on the setting, so moving part of
+// the way toward the median of recent raw offsets converges without oscillating.
+export const AUTO_LATENCY = {
+  minNotes: 10, // timed notes in the piece
+  minAcc: 0.75, // only pieces played reasonably accurately
+  maxIqr: 80, // ms: only tight timing is evidence of a device delay
+  handsAgree: 40, // ms: both hands must show the same offset
+  window: 3, // recent pieces considered
+  minPieces: 2, // consistent pieces needed before moving
+  maxSpread: 60, // ms: recent raw offsets must agree
+  deadband: 15, // ms: close enough, leave it
+  fraction: 0.5, // move this part of the way
+  maxStep: 40, // ms per piece
+  min: -50,
+  max: 250,
+};
+
+function medianOf(a) {
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+const HAND = { R: 'right', L: 'left' };
 
 export const DEFAULT_SETTINGS = {
   showStaff: true,
@@ -16,6 +43,8 @@ export const DEFAULT_SETTINGS = {
   metronome: 'countin', // 'countin' | 'always' | 'off'
   sensitivity: 1,
   latencyMs: 0,
+  autoLatency: true, // learn the microphone delay from steady playing (see Coach.autoLatency)
+  prep: true, // "get ready" step before each exercise (js/ui/prep.js)
   autoAdvance: true,
   lookaheadSec: 3,
   dailyGoal: 50, // XP
@@ -27,6 +56,21 @@ export const DEFAULT_SETTINGS = {
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+// Warm-ups that fit the level: note reading and five-finger patterns while the hands stay in
+// one position (thumb-under scales only from level 16, which teaches them), chords from the
+// left-hand-chords level (14), arpeggios from level 25.
+export const WARMUP_LABEL = {
+  notes: 'Warm-up: note reading', fivefinger: 'Warm-up: five-finger pattern', scale: 'Warm-up: scale', chords: 'Warm-up: chords', arpeggio: 'Warm-up: arpeggio',
+};
+export function warmupKinds(level) {
+  if (level <= 2) return ['notes', 'fivefinger'];
+  if (level < 14) return ['fivefinger', 'notes'];
+  if (level < 16) return ['fivefinger', 'chords', 'notes'];
+  const k = ['scale', 'chords'];
+  if (level >= 25) k.push('arpeggio');
+  return k;
 }
 
 export class Coach {
@@ -203,14 +247,8 @@ export class Coach {
     const slot = plan[i % plan.length];
     const tf = this.tempoFactor(level);
     if (slot === 'warmup') {
-      let kind = 'notes';
-      if (level >= 9) {
-        const opts = ['scale'];
-        if (level >= 14) opts.push('chords');
-        if (level >= 25) opts.push('arpeggio');
-        kind = opts[Math.floor(i / plan.length) % opts.length];
-      }
-      return { kind, level, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: kind === 'notes' ? 'Warm-up: note reading' : `Warm-up: ${kind}` };
+      const kind = warmupKinds(level)[Math.floor(i / plan.length) % warmupKinds(level).length];
+      return { kind, level, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: WARMUP_LABEL[kind] };
     }
     if (slot === 'rhythm') return { kind: 'rhythm', level, mode: 'tempo', tempoFactor: tf, label: 'Rhythm drill (any key)' };
     // Very first piece at a beginner level: learn in wait mode.
@@ -224,10 +262,48 @@ export class Coach {
     this.save();
   }
 
+  // Automatic microphone-delay correction after a tempo-mode result (see AUTO_LATENCY).
+  // Returns {from, to, target, pieces} when the setting moved, else null.
+  autoLatency(result, activity = {}) {
+    const st = this.s.settings;
+    const A = AUTO_LATENCY;
+    if (st.autoLatency === false || !result || result.mode !== 'tempo' || activity.demo) return null;
+    const n = (result.errs || []).length;
+    if (n < A.minNotes || (result.noteAcc ?? 0) < A.minAcc || !(result.iqrMs <= A.maxIqr)) return null;
+    const ph = result.perHand || {};
+    if (ph.R && ph.L && ph.R.timed >= 4 && ph.L.timed >= 4 && Math.abs((ph.R.medianErrMs ?? ph.R.meanErrMs) - (ph.L.medianErrMs ?? ph.L.meanErrMs)) > A.handsAgree) return null;
+    const cur = st.latencyMs || 0;
+    const L = this.s.latency || (this.s.latency = { samples: [], moves: [] });
+    L.samples.push({ t: Date.now(), raw: Math.round(result.medianErrMs + cur), iqr: result.iqrMs, n, bpm: result.bpm });
+    if (L.samples.length > 12) L.samples.splice(0, L.samples.length - 12);
+    const recent = L.samples.slice(-A.window).map((x) => x.raw);
+    let move = null;
+    if (recent.length >= A.minPieces && Math.max(...recent) - Math.min(...recent) <= A.maxSpread) {
+      const target = medianOf(recent);
+      const gap = target - cur;
+      if (Math.abs(gap) >= A.deadband) {
+        let step = Math.max(-A.maxStep, Math.min(A.maxStep, gap * A.fraction));
+        // Damp a change of direction (never ping-pong around the target).
+        const last = L.moves[L.moves.length - 1];
+        if (last && Math.sign(last.to - last.from) !== Math.sign(step)) step *= 0.5;
+        const next = Math.max(A.min, Math.min(A.max, Math.round((cur + step) / 5) * 5));
+        if (next !== cur) {
+          st.latencyMs = next;
+          move = { from: cur, to: next, target: Math.round(target), pieces: recent.length };
+          L.moves.push({ t: Date.now(), from: cur, to: next, target: Math.round(target) });
+          if (L.moves.length > 20) L.moves.splice(0, L.moves.length - 20);
+        }
+      }
+    }
+    this.save();
+    return move;
+  }
+
   // Record a finished activity. Returns feedback for the results screen.
   record(activity, piece, result, seconds) {
     const s = this.s;
     const level = activity.level;
+    const latency = this.autoLatency(result, activity);
     s.stats.seconds += seconds;
     s.stats.pieces += 1;
     s.stats.notes += result.hits;
@@ -248,7 +324,7 @@ export class Coach {
     const before = s.daily.xp;
     s.daily.xp += xp;
     const goal = s.settings.dailyGoal || 50;
-    const out = { levelUp: false, levelDown: false, gain: 0, xp, goalReached: before < goal && s.daily.xp >= goal };
+    const out = { levelUp: false, levelDown: false, gain: 0, xp, goalReached: before < goal && s.daily.xp >= goal, latency };
     if (activity.placement || activity.free) {
       this.save();
       return out;
@@ -304,27 +380,82 @@ export class Coach {
     return out;
   }
 
-  // Human feedback from a result.
-  feedback(piece, result) {
-    const tips = [];
+  // What to say after a piece: a headline, one spoken line (Pip) and up to three short tips
+  // that say what to fix: the bar with most slips, the notes missed most (spelled for the
+  // key), the weaker hand, rushing or dragging, key-signature slips, wait-mode wrong tries.
+  // `out` is what record() returned (for the latency note).
+  review(piece, result, activity = {}, out = {}) {
     const r = result;
-    if (r.score >= 95) tips.push('Outstanding! Clean notes and steady rhythm.');
-    else if (r.score >= 85) tips.push('Great playing!');
-    else if (r.score >= 70) tips.push('Good work. A few more run-throughs and you\'ll own it.');
-    else if (r.score >= 50) tips.push('Keep going. Accuracy first, speed later.');
-    else tips.push('That one was tough. Let\'s slow it down and learn it step by step.');
-    if (r.mode === 'tempo' && r.hits >= 4) {
-      const ms = Math.round(r.meanErr * 1000);
-      if (ms > 45) tips.push(`You tend to play a little late (about ${ms} ms). Look ahead to the next note.`);
-      else if (ms < -45) tips.push(`You tend to rush (about ${-ms} ms early). Feel the beat and wait for it.`);
-      else if (r.timing >= 0.9) tips.push('Your timing is right on the beat.');
+    const key = piece && piece.key;
+    const tempo = r.mode === 'tempo';
+    const cands = [];
+    const add = (prio, text, sayText) => cands.push({ prio, text, say: sayText || null });
+    const headline =
+      r.score >= 95 ? 'Outstanding! Clean notes and steady rhythm.'
+      : r.score >= 85 ? 'Great playing!'
+      : r.score >= 70 ? 'Good work. A few more run-throughs and you\'ll own it.'
+      : r.score >= 50 ? 'Keep going. Accuracy first, speed later.'
+      : 'That one was tough. Let\'s slow it down and learn it step by step.';
+    const name = (m) => (key ? noteName(m, key) : String(m));
+    const sayNote = (m) => (key ? spokenPc(m, key) : String(m));
+
+    // Key-signature slips: the clearest single fix.
+    if (r.sigSlips && r.sigSlips.length) {
+      const k = r.sigSlips[0];
+      add(92, `Remember the key signature: every ${k.letter} is ${k.name}.`, `Remember, every ${k.letter} is ${k.name.replace('♯', ' sharp').replace('♭', ' flat')}.`);
     }
-    if (r.missedByMidi.length) {
-      const names = r.missedByMidi.slice(0, 3).map(([m]) => noteName(m, piece.key));
-      tips.push(`Most missed: ${names.join(', ')}.`);
+    // The bar(s) with most slips.
+    const wb = (r.worstBars || []).filter((b) => b.problems >= 1);
+    if (wb.length && r.score < 97) {
+      const b = wb.length > 1 && wb[1].problems >= wb[0].problems - 1 ? wb.slice(0, 2) : wb.slice(0, 1);
+      const where = b.length === 2 ? `Bars ${b[0].bar} and ${b[1].bar}` : `Bar ${b[0].bar}`;
+      const fix = tempo ? (r.score < 80 ? 'Try it in wait mode, then at tempo.' : 'Play it slowly once, then at tempo.') : 'Play it once more on its own.';
+      add(78 + Math.min(10, b[0].problems), `${where} had the most slips. ${fix}`, `${where} ${b.length === 2 ? 'need' : 'needs'} a little work.`);
     }
-    if (r.extras > Math.max(2, r.total * 0.15)) tips.push('I heard quite a few extra notes. Take a breath and aim carefully.');
-    return tips;
+    // Notes missed most.
+    const missed = (r.missedByMidi || []).filter(([, c]) => c >= 2);
+    const missCount = (r.missedByMidi || []).reduce((a, [, c]) => a + c, 0);
+    if (missed.length || (missCount >= 2 && r.missedByMidi.length)) {
+      const top = (missed.length ? missed : r.missedByMidi).slice(0, 2).map(([m]) => m);
+      add(70 + Math.min(12, missCount), `Watch out for ${top.map(name).join(' and ')}: ${top.length > 1 ? 'they were' : 'it was'} missed most.`, `Watch out for ${[...new Set(top.map(sayNote))].join(' and ')}.`);
+    }
+    // The weaker hand.
+    if (r.weakHand && r.perHand && r.perHand[r.weakHand]) {
+      const h = r.weakHand;
+      const ph = r.perHand[h];
+      add(76, `Your ${HAND[h]} hand missed ${ph.total - ph.hits} of ${ph.total} notes. Give it a solo run.`, `Give your ${HAND[h]} hand some extra practice.`);
+    }
+    // Wait mode: wrong tries and long pauses.
+    if (!tempo && r.waitStats) {
+      const w = r.waitStats;
+      if (w.wrongTries) add(66, `${w.wrongTries} wrong key${w.wrongTries > 1 ? 's' : ''} on the way. Find the note on the staff first, then play.`, 'Look first, then play.');
+      if (w.slowGroups >= 2) add(56, `A few long pauses. Read the next note while you play this one.`, 'Try reading one note ahead.');
+      if (!w.wrongTries && !w.slowGroups) add(20, 'Every note found first time!', 'Every note first time!');
+      if (r.score >= 90) add(35, 'Ready for it at tempo? Turn Wait off and play along with the beat.', null);
+    }
+    // Rushing or dragging (unless the microphone delay was just corrected for it).
+    if (tempo && r.tendency && !(out && out.latency)) {
+      const m = Math.abs(r.medianErrMs);
+      const mus = musicalOffset(m, r.bpm || 60);
+      if (r.tendency === 'rush') add(60 + Math.min(15, m / 10), `You rushed a little: about ${m} ms early (${mus}). Wait for the beat.`, 'Try not to rush.');
+      else if (r.tendency === 'drag') add(60 + Math.min(15, m / 10), `You were a little behind the beat: about ${m} ms late (${mus}). Look one note ahead.`, 'Stay right with the beat.');
+      else if (r.tendency === 'uneven') add(52, 'Your timing wobbled a bit. Count along out loud.', 'Count along out loud.');
+      else if (r.timing >= 0.9) add(15, 'Your timing was right on the beat.', 'Right on the beat!');
+    }
+    if (tempo && r.extras > Math.max(2, r.total * 0.15)) add(58, 'I heard quite a few extra notes. Keep your fingers close to their keys.', 'Aim carefully.');
+    if (out && out.latency) add(40, `I adjusted for your microphone's delay (now ${out.latency.to} ms), so your timing reads true.`, null);
+    cands.sort((a, b) => b.prio - a.prio);
+    const tips = cands.slice(0, 3).map((c) => c.text);
+    const focus = cands.find((c) => c.say);
+    const praise = r.score >= 95 ? 'Brilliant!' : r.score >= 85 ? 'Great job!' : r.score >= 70 ? 'Nice work.' : 'Good try.';
+    const speak = r.score >= 95 || !focus ? `${r.score} percent. ${praise}` : `${r.score} percent. ${focus.say}`;
+    return { headline, speak, tips };
+  }
+
+  // Human feedback from a result: [headline, ...tips] (kept for older callers).
+  feedback(piece, result) {
+    const rv = this.review(piece, result);
+    return [rv.headline, ...rv.tips];
   }
 
   summary() {

@@ -93,7 +93,7 @@ export function finishPiece(result) {
   for (let i = 0; i < result.stars; i++) later(() => sfx(`star${i + 1}`), 350 + i * 260);
   countUp($('#res-score'), result.score, 900, 600);
   $('#res-notes').textContent = `${result.hits}/${result.total}`;
-  $('#res-extra').textContent = String(result.extras);
+  $('#res-extra').textContent = `${result.extras} wrong note${result.extras === 1 ? '' : 's'}`;
   const tempo = result.mode === 'tempo';
   $('#res-timing').textContent = tempo ? `${Math.round(result.timing * 100)}%` : 'n/a';
   $('#res-timing-d').textContent = tempo ? `${result.onTime} of ${result.hits} on the beat` : 'wait mode';
@@ -104,14 +104,25 @@ export function finishPiece(result) {
   $('#res-histo').innerHTML = histogramHtml(result);
   $('#res-histo').closest('.histo-card').classList.toggle('hidden', !tempo || !result.errs.length);
   $('#res-timing-summary').textContent = result.timingSummary || '';
-  const tips = coach.feedback(piece, result);
-  $('#res-tips').innerHTML = tips.slice(1, 3).map((t) => `<li>${esc(t)}</li>`).join('');
+  // What to fix: the bar with most slips, notes missed most, the weaker hand, rushing or
+  // dragging (coach.review). Up to three tips; Pip speaks one short line.
+  const rv = coach.review(piece, result, act, out);
+  $('#res-tips').innerHTML = rv.tips.map((t) => `<li>${esc(t)}</li>`).join('');
   $('#res-xp').innerHTML = out.xp ? `${icon('bolt', 20)} +${out.xp} XP${out.goalReached ? ' · daily goal!' : ''}` : '';
 
-  // Timing offset suggestion (consistent offset = device latency, not the player).
+  // Microphone delay: corrected automatically (with an undo), or offered when auto is off.
   const lat = $('#res-latency');
   lat.innerHTML = '';
-  if (result.suggestedLatencyMs && !act.placement) {
+  if (out.latency && !act.placement) {
+    const { from, to } = out.latency;
+    lat.innerHTML = `<button class="btn btn-sm">${icon('clock', 18)} Mic delay adjusted to ${to} ms · Undo</button>`;
+    lat.firstChild.onclick = () => {
+      coach.setSetting('latencyMs', from);
+      coach.setSetting('autoLatency', false);
+      toast(`Timing offset back to ${from} ms. Automatic adjustment is off.`);
+      lat.innerHTML = '';
+    };
+  } else if (result.suggestedLatencyMs && !act.placement && coach.settings.autoLatency === false) {
     const next = coach.settings.latencyMs + result.suggestedLatencyMs;
     lat.innerHTML = `<button class="btn btn-sm">${icon('clock', 18)} Always ${result.suggestedLatencyMs > 0 ? 'late' : 'early'} by ~${Math.abs(result.suggestedLatencyMs)} ms? Calibrate timing</button>`;
     lat.firstChild.onclick = () => {
@@ -165,12 +176,12 @@ export function finishPiece(result) {
     };
     nextLabel = 'Back to songs';
     autoSecs = 0;
-    line = `${result.score} percent. ${result.timingSummary || ''}`;
+    line = rv.speak;
   } else if (act.free) {
     lvlEl.innerHTML = '';
     nextAct = { ...act, seed: undefined, demoFirst: false };
     nextLabel = 'Another one';
-    line = `${result.score} percent. ${tips[0] || ''}`;
+    line = rv.speak;
   } else {
     const lv = levelInfo(coach.level);
     if (out.levelUp) {
@@ -184,7 +195,7 @@ export function finishPiece(result) {
       line = `Let's strengthen the basics with level ${lv.n}.`;
     } else {
       lvlEl.innerHTML = `<div class="mastery">Level ${lv.n} mastery <b>${out.gain >= 0 ? '+' : ''}${out.gain}</b><span class="bar"><i style="width:${coach.mastery()}%"></i></span><span>${coach.mastery()}%</span></div>`;
-      line = `${result.score} percent. ${tips[0] || ''} ${result.timingSummary || ''}`;
+      line = rv.speak;
     }
     nextAct = coach.nextActivity();
   }

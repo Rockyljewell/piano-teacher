@@ -1004,12 +1004,20 @@ export class Stage {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const s = STAFF[staff];
+      // A chord's fingers stack like its notes (the top note's finger on top), kept on the card.
+      const fs = e.fingers.filter(Boolean);
+      const n = fs.length;
+      if (n > 1) ctx.font = `600 ${Math.round(sp * 0.95)}px ${COLORS.fontDisplay}`;
+      const lineH = n > 1 ? sp * 0.98 : 0;
+      const cardH = this.L.staff.h;
       if (e.hand === 'R') {
         const top = Math.max(notes[notes.length - 1].d + (e._up ? 8 : 3), s.top + 3);
-        ctx.fillText(e.fingers.filter(Boolean).join(''), x + hw / 2, this._y(staff, top));
+        const y0 = Math.max(this._y(staff, top), sp * 0.8 + (n - 1) * lineH); // lowest line
+        fs.forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 - i * lineH));
       } else {
         const bot = Math.min(notes[0].d - (e._up ? 3 : 8), s.bottom - 3);
-        ctx.fillText(e.fingers.filter(Boolean).join(''), x + hw / 2, this._y(staff, bot));
+        const y0 = Math.min(this._y(staff, bot), cardH - sp * 0.8 - (n - 1) * lineH); // top line
+        [...fs].reverse().forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 + i * lineH));
       }
     }
     if (e._base >= 4) return null;

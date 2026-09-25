@@ -117,6 +117,49 @@ export function pcName(midi, key) {
   return noteName(midi, key).replace(/-?\d+$/, '');
 }
 
+// Midi number of a diatonic staff position (see diatonic()) in a key, e.g. 28 -> C4 (60).
+export function diatonicToMidi(d, key) {
+  const step = ((d % 7) + 7) % 7;
+  const octave = Math.floor(d / 7);
+  return (octave + 1) * 12 + STEP_PC[step] + ((key && key.alter[step]) || 0);
+}
+
+const ORD = ['', '', 'second ', 'third ', 'fourth '];
+// Where a note sits relative to middle C, for beginners: "middle C", "the G above middle C",
+// "the second C below middle C". Null when it is more than four octaves away.
+export function middleCRelative(midi, key) {
+  if (midi === 60) return 'middle C';
+  const letter = pcName(midi, key);
+  // How many notes with this name lie between middle C and this note (inclusive)?
+  const n = midi > 60 ? Math.ceil((midi - 60) / 12) : Math.ceil((60 - midi) / 12);
+  if (n > 4) return null;
+  return `the ${ORD[n]}${letter} ${midi > 60 ? 'above' : 'below'} middle C`;
+}
+
+// Spoken letter name: "F sharp", "B flat" (text-to-speech reads ♯/♭ unreliably).
+export function spokenPc(midi, key) {
+  return pcName(midi, key).replace('♯', ' sharp').replace('♭', ' flat').replace('𝄪', ' double sharp').replace('𝄫', ' double flat');
+}
+
+// A name a student can find on screen: "C3 (the C below middle C)" for beginners, "F♯4" later.
+export function findableName(midi, key, level = 99) {
+  const n = noteName(midi, key);
+  if (midi === 60) return `middle C (${n})`;
+  if (level > 8) return n;
+  const rel = middleCRelative(midi, key);
+  return rel ? `${n} (${rel})` : n;
+}
+
+// A name for speech: "middle C", "the C below middle C", or later "F sharp".
+export function spokenName(midi, key, level = 99) {
+  if (midi === 60) return 'middle C';
+  if (level <= 8) {
+    const rel = middleCRelative(midi, key);
+    if (rel) return rel.replace(/♯/g, ' sharp').replace(/♭/g, ' flat');
+  }
+  return spokenPc(midi, key);
+}
+
 // Chord qualities as semitone stacks.
 export const CHORDS = {
   maj: [0, 4, 7],

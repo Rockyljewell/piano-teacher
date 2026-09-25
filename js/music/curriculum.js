@@ -3,6 +3,15 @@
 // introduces its new concept.
 //
 // Pitch ranges are MIDI numbers (60 = middle C). Rhythm weights refer to cells in generator.js.
+//
+// Extra recipe fields:
+//   say        one or two short sentences Pip speaks when the level starts (concept is shown).
+//   pos        five-finger positions: the lowest key under the hand ({R: 60} = right thumb on
+//              middle C, {L: 48} = left pinky on C3). Exercises stay inside these positions.
+//   focusKeys  keys introduced at this level: picked about 60% of the time.
+//   newRhythm  the rhythm cell this level introduces; every exercise uses it at least once.
+//   minRests   at least this many rests in every exercise (the level that teaches rests).
+//   minChords  at least this many right-hand intervals/chords (the level that teaches them).
 
 const C4 = 60;
 
@@ -21,35 +30,39 @@ export const LEVELS = [
     title: 'Middle C position: right hand',
     concept:
       'Find middle C: the white key just to the left of the two black keys closest to the middle of your piano. Put your right thumb (finger 1) on C, then let fingers 2, 3, 4 and 5 rest on D, E, F and G. Each note sits on a line or space of the treble staff. When a note reaches the glowing line, play it.',
+    say: 'Right thumb on middle C, and one finger on each key up to G. Play each note as it reaches the line.',
     tips: ['Keep your fingers curved, as if holding a small ball.', 'Look at the music, not your hands. Your fingers already know their keys.'],
     hands: 'R', keys: [K(0)], time: ['4/4'], bpm: [56, 66], measures: 4,
     rh: { lo: C4, hi: C4 + 7, motion: { step: 8, repeat: 2, skip: 0 }, rhythm: { w: 1, h: 4, q: 4 } },
-    fingers: true, rests: 0,
+    fingers: true, rests: 0, pos: { R: C4 },
   },
   {
     title: 'Steps, skips and rests',
     concept:
       'Notes that move from a line to the next space (or space to line) are STEPS: play the neighbouring key. Line to line or space to space is a SKIP: jump over one key. A rest is a moment of silence: lift your hand and count.',
+    say: 'Steps go to the next key. Skips jump over one. A rest means lift your hand and count.',
     tips: ['Say the finger numbers out loud as you play.', 'Rests count too. Keep your internal beat going.'],
     hands: 'R', keys: [K(0)], time: ['4/4'], bpm: [60, 72], measures: 4,
     rh: { lo: C4, hi: C4 + 7, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { h: 3, q: 5 } },
-    fingers: true, rests: 0.08,
+    fingers: true, rests: 0.1, minRests: 1, pos: { R: C4 },
   },
   {
     title: 'Left hand C position',
     concept:
       'Your left hand reads the BASS clef. Put your left pinky (finger 5) on the C one octave below middle C, and fingers 4, 3, 2, 1 on D, E, F, G. In the left hand, the thumb is finger 1 too, but it is at the top.',
+    say: 'Left hand time! Put your left pinky on the C below middle C.',
     tips: ['The bass clef\'s two dots wrap around the F line.', 'Your left hand is often weaker. Give it extra attention!'],
     hands: 'L', keys: [K(0)], time: ['4/4'], bpm: [56, 66], measures: 4,
     lh: { style: 'melody', lo: 48, hi: 55, motion: { step: 7, skip: 2, repeat: 1 }, rhythm: { w: 1, h: 4, q: 4 } },
-    fingers: true, rests: 0.05,
+    fingers: true, rests: 0.05, pos: { L: 48 },
   },
   {
     title: 'Hands take turns',
     concept:
       'Now the melody passes between your hands: the right hand plays on the treble staff and the left hand plays on the bass staff. Keep both hands resting in C position so each is ready for its turn.',
+    say: 'The tune passes from hand to hand. Keep both hands resting in C position.',
     tips: ['While one hand plays, get the other one ready over its keys.'],
-    hands: 'alt', keys: [K(0)], time: ['4/4'], bpm: [60, 72], measures: 4,
+    hands: 'alt', keys: [K(0)], time: ['4/4'], bpm: [60, 72], measures: 4, pos: { R: C4, L: 48 },
     rh: { lo: C4, hi: C4 + 7, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { h: 3, q: 5 } },
     lh: { style: 'melody', lo: 48, hi: 55, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { h: 3, q: 5 } },
     fingers: true, rests: 0.05,
@@ -58,8 +71,9 @@ export const LEVELS = [
     title: 'Three-four time',
     concept:
       'A 3/4 time signature means three beats in each measure: count "1 2 3, 1 2 3", like a waltz. A dotted half note lasts all three beats.',
+    say: 'Three beats in every bar. Count one, two, three, like a waltz.',
     tips: ['Lean slightly into beat 1 of every measure.'],
-    hands: 'alt', keys: [K(0)], time: ['3/4'], bpm: [66, 80], measures: 4,
+    hands: 'alt', keys: [K(0)], time: ['3/4'], bpm: [60, 72], measures: 4, pos: { R: C4, L: 48 },
     rh: { lo: C4, hi: C4 + 7, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { dh: 2, h: 3, q: 5 } },
     lh: { style: 'melody', lo: 48, hi: 55, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { dh: 2, h: 3, q: 5 } },
     fingers: true, rests: 0.05,
@@ -67,38 +81,42 @@ export const LEVELS = [
   {
     title: 'Hands together: long bass notes',
     concept:
-      'Your first hands-together playing! The left hand holds long notes (C and G) while the right hand plays the melody. Play notes that line up vertically at exactly the same time.',
+      'Your first hands-together playing! Both hands stay in C position. The left hand holds long notes: C with the pinky and G with the thumb, while the right hand plays the melody. Play notes that line up vertically at exactly the same time.',
+    say: 'Hands together! Your left hand holds long notes: C with the pinky, G with the thumb.',
     tips: ['Practise the left hand alone once, then add the right.', 'Both hands press down together, like one hand.'],
     hands: 'both', keys: [K(0)], time: ['4/4', '3/4'], bpm: [54, 66], measures: 4,
     rh: { lo: C4, hi: C4 + 7, motion: { step: 6, skip: 3, repeat: 1 }, rhythm: { h: 3, q: 5 } },
-    lh: { style: 'pedal', lo: 43, hi: 55 },
-    fingers: true, rests: 0.03,
+    lh: { style: 'pedal', lo: 48, hi: 55 },
+    fingers: true, rests: 0.03, pos: { R: C4, L: 48 },
   },
   {
     title: 'Eighth notes',
     concept:
       'An eighth note is half a beat: two eighths fit in one beat. Count "1 and 2 and 3 and 4 and". Beamed eighths are played evenly, like a gentle trot.',
+    say: 'Eighth notes are twice as quick: two in each beat. Count one and, two and.',
     tips: ['Tap the beat with your foot while counting the "ands".'],
-    hands: 'both', keys: [K(0)], time: ['4/4', '3/4'], bpm: [60, 72], measures: 4,
+    hands: 'both', keys: [K(0)], time: ['4/4', '3/4'], bpm: [56, 69], measures: 4,
     rh: { lo: C4, hi: C4 + 7, motion: { step: 7, skip: 3, repeat: 1 }, rhythm: { h: 2, q: 5, ee: 3 } },
-    lh: { style: 'pedal', lo: 43, hi: 55 },
-    fingers: true, rests: 0.04,
+    lh: { style: 'pedal', lo: 48, hi: 55 },
+    fingers: true, rests: 0.04, newRhythm: 'ee', pos: { R: C4, L: 48 },
   },
   {
     title: 'G position and F sharp',
     concept:
-      'Move both hands up to G position: right thumb on the G above middle C, left pinky on the G below it. The key signature has one sharp (♯) on the F line. That means every F is played as F♯, the black key just to the right of F.',
+      'Move to G position: right thumb on G4, the G above middle C. Left pinky on G2, the G on the bottom line of the bass staff. The key signature has one sharp (♯) on the F line. That means every F is played as F♯, the black key just to the right of F. Your left pinky reaches down to F♯ when the harmony changes.',
+    say: 'G position! Right thumb on the G above middle C. Every F is F sharp.',
     tips: ['Look for the key signature at the start of each line before you play.'],
-    hands: 'both', keys: [K(1)], time: ['4/4', '3/4'], bpm: [60, 72], measures: 4,
+    hands: 'both', keys: [K(1)], time: ['4/4', '3/4'], bpm: [58, 70], measures: 4,
     rh: { lo: 67, hi: 74, motion: { step: 7, skip: 3, repeat: 1 }, rhythm: { h: 3, q: 5, ee: 2 } },
-    lh: { style: 'pedal', lo: 43, hi: 55 },
-    fingers: true, rests: 0.04,
+    lh: { style: 'pedal', lo: 43, hi: 50, leading: true },
+    fingers: true, rests: 0.04, pos: { R: 67, L: 43 },
   },
   // ---- Elementary -----------------------------------------------------------------------------
   {
     title: 'Melodies across both hands',
     concept:
       'Melodies can travel from the treble staff into the bass staff and back. Middle C is shared: it sits on a small ledger line between the staves.',
+    say: 'The melody travels between your hands. Middle C is shared by both staves.',
     tips: ['Stay relaxed at the handover. Don\'t rush the other hand in.'],
     hands: 'alt', keys: [K(0), K(1)], time: ['4/4', '3/4'], bpm: [66, 80], measures: 6,
     rh: { lo: 60, hi: 72, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 5, ee: 3 } },
@@ -109,18 +127,20 @@ export const LEVELS = [
     title: 'Harmonic intervals',
     concept:
       'Two notes stacked on top of each other are played together as an INTERVAL. Thirds look like a snowman (line-line or space-space); fifths skip one more. Press both keys at exactly the same time.',
+    say: 'Two notes stacked up are played together. Press both keys at exactly the same time.',
     tips: ['Balance the two notes: neither should be louder.'],
     hands: 'both', keys: [K(0), K(1)], time: ['4/4', '3/4'], bpm: [60, 72], measures: 4,
-    rh: { lo: 60, hi: 72, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 3, q: 5, ee: 2 }, chords: 0.3, chordSize: 2 },
+    rh: { lo: 60, hi: 72, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 3, q: 5, ee: 2 }, chords: 0.35, chordSize: 2 },
     lh: { style: 'roots', lo: 41, hi: 55 },
-    fingers: false, rests: 0.04,
+    fingers: false, rests: 0.04, minChords: 2,
   },
   {
     title: 'F major and B flat',
     concept:
-      'The key of F major has one flat (♭) on the B line. Every B becomes B♭, the black key just left of B. In F position, the right thumb sits on F above middle C.',
+      'The key of F major has one flat (♭) on the B line. Every B becomes B♭, the black key just left of B. F major tunes usually start and end on F.',
+    say: 'F major has one flat. Every B becomes B flat, the black key just left of B.',
     tips: ['Watch for B♭. It is the most commonly missed note in F major.'],
-    hands: 'both', keys: [K(-1), K(0), K(1)], time: ['4/4', '3/4'], bpm: [66, 80], measures: 6,
+    hands: 'both', keys: [K(-1), K(0), K(1)], focusKeys: [K(-1)], time: ['4/4', '3/4'], bpm: [66, 80], measures: 6,
     rh: { lo: 60, hi: 74, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 5, ee: 3 }, chords: 0.1, chordSize: 2 },
     lh: { style: 'roots', lo: 41, hi: 55 },
     fingers: false, rests: 0.05,
@@ -129,28 +149,31 @@ export const LEVELS = [
     title: 'Dotted rhythms',
     concept:
       'A dot adds half the note\'s value. A dotted quarter lasts 1½ beats and is usually followed by an eighth: "long... short". Count "1 (and) 2 and".',
+    say: 'A dot makes a note longer. Dotted rhythms go long, short. Keep counting.',
     tips: ['Hold the dotted note through the "and". Don\'t clip it short.'],
-    hands: 'both', keys: [K(0), K(1), K(-1)], time: ['4/4', '3/4'], bpm: [66, 80], measures: 6,
+    hands: 'both', keys: [K(0), K(1), K(-1)], time: ['4/4', '3/4'], bpm: [63, 76], measures: 6,
     rh: { lo: 60, hi: 74, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 4, ee: 3, dqe: 3 } },
     lh: { style: 'fifths', lo: 41, hi: 55 },
-    fingers: false, rests: 0.05,
+    fingers: false, rests: 0.05, newRhythm: 'dqe',
   },
   {
     title: 'Moving around the keyboard',
     concept:
       'Real music doesn\'t stay in one five-finger position. Now melodies span more than an octave and leap up to a sixth. Look ahead so your hand can shift early.',
+    say: 'Now the melody moves around the keyboard. Read ahead and move your hand early.',
     tips: ['Read one or two notes ahead of the line.', 'Move your whole arm, not just your fingers.'],
-    hands: 'both', keys: [K(0), K(1), K(-1), K(2)], time: ['4/4', '3/4'], bpm: [66, 84], measures: 6,
-    rh: { lo: 57, hi: 79, motion: { step: 5, skip: 3, leap: 2 }, rhythm: { h: 2, q: 4, ee: 4, dqe: 2 } },
-    lh: { style: 'roots', lo: 38, hi: 55 },
+    hands: 'both', keys: [K(0), K(1), K(-1)], time: ['4/4', '3/4'], bpm: [63, 80], measures: 6,
+    rh: { lo: 60, hi: 79, motion: { step: 5, skip: 3, leap: 2 }, rhythm: { h: 2, q: 4, ee: 4, dqe: 2 } },
+    lh: { style: 'roots', lo: 41, hi: 55 },
     fingers: false, rests: 0.05,
   },
   {
     title: 'Left-hand chords',
     concept:
       'A TRIAD is three notes stacked in thirds. Here the left hand plays the I, IV and V chords, the backbone of countless songs. Chords may appear inverted (re-stacked) so your hand barely moves.',
+    say: 'Your left hand plays chords now: three notes pressed together.',
     tips: ['Shape the chord in the air before it arrives.', 'Keep the right-hand melody singing above the chords.'],
-    hands: 'both', keys: [K(0), K(1), K(-1), K(2)], time: ['4/4', '3/4'], bpm: [60, 76], measures: 6,
+    hands: 'both', keys: [K(0), K(1), K(-1)], time: ['4/4', '3/4'], bpm: [60, 76], measures: 6,
     rh: { lo: 60, hi: 77, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 5, ee: 3, dqe: 1 } },
     lh: { style: 'block', lo: 45, hi: 59 },
     fingers: false, rests: 0.04,
@@ -159,18 +182,20 @@ export const LEVELS = [
     title: 'Minor keys',
     concept:
       'Minor keys sound darker. A minor shares C major\'s key signature (no sharps or flats) but centres on A. D minor has one flat, E minor one sharp. Listen for the change of mood.',
+    say: 'Minor keys sound darker. Listen for the change of mood.',
     tips: ['In minor, the 7th note is often raised by an accidental (e.g. G♯ in A minor).'],
-    hands: 'both', keys: [K(0, 'minor'), K(-1, 'minor'), K(1, 'minor'), K(0)], time: ['4/4', '3/4'], bpm: [66, 84], measures: 6,
-    rh: { lo: 57, hi: 76, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 4, ee: 4, dqe: 2 } },
-    lh: { style: 'broken', lo: 40, hi: 57 },
+    hands: 'both', keys: [K(0, 'minor'), K(-1, 'minor'), K(1, 'minor'), K(0)], focusKeys: [K(0, 'minor'), K(-1, 'minor'), K(1, 'minor')], time: ['4/4', '3/4'], bpm: [63, 80], measures: 6,
+    rh: { lo: 60, hi: 76, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 4, ee: 4, dqe: 2 } },
+    lh: { style: 'broken', lo: 41, hi: 57 },
     fingers: false, rests: 0.05,
   },
   {
     title: 'Scales and new keys',
     concept:
       'A scale walks through all seven notes of a key. Scales need the thumb to tuck UNDER the hand (right hand going up, left hand going down) so you never run out of fingers. D major has two sharps (F♯, C♯); B♭ major has two flats (B♭, E♭).',
+    say: 'Scales walk through every note of a key. Tuck your thumb under to keep going.',
     tips: ['Tuck the thumb early and smoothly: no bumps!', 'Scales are the daily vitamins of piano practice.'],
-    hands: 'both', keys: [K(2), K(-2), K(1), K(-1), K(0, 'minor')], time: ['4/4'], bpm: [72, 88], measures: 6,
+    hands: 'both', keys: [K(2), K(-2), K(1), K(-1), K(0, 'minor')], focusKeys: [K(2), K(-2)], time: ['4/4'], bpm: [72, 88], measures: 6,
     rh: { lo: 60, hi: 79, motion: { step: 9, skip: 2, leap: 1 }, rhythm: { q: 3, ee: 6, h: 1 } },
     lh: { style: 'block', lo: 43, hi: 59 },
     fingers: false, rests: 0.03, technique: 'scale',
@@ -180,6 +205,7 @@ export const LEVELS = [
     title: 'Broken chords and Alberti bass',
     concept:
       'Instead of striking a chord all at once, you can spread it out: bottom, top, middle, top. That pattern is the ALBERTI BASS, a favourite of Mozart and Haydn. Keep it light and even under the melody.',
+    say: 'The Alberti bass spreads a chord out: bottom, top, middle, top. Keep it light.',
     tips: ['Let the wrist rotate gently: don\'t lift each finger high.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2)], time: ['4/4'], bpm: [60, 80], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 2, q: 5, ee: 2, dqe: 2 } },
@@ -190,6 +216,7 @@ export const LEVELS = [
     title: 'Ledger lines',
     concept:
       'Notes above and below the staff use short LEDGER LINES. Count lines and spaces up from the staff, or learn landmark notes: high C (two ledger lines above treble) and low C (two below bass).',
+    say: 'Notes above and below the staff use short ledger lines. Learn the landmark Cs.',
     tips: ['Landmarks beat counting: memorise C2, C4, C6.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2)], time: ['4/4', '3/4'], bpm: [66, 84], measures: 6,
     rh: { lo: 60, hi: 88, motion: { step: 5, skip: 3, leap: 2 }, rhythm: { h: 2, q: 4, ee: 4, dqe: 2 } },
@@ -200,7 +227,9 @@ export const LEVELS = [
     title: 'Sixteenth notes',
     concept:
       'Sixteenth notes are a quarter of a beat: four per beat, counted "1 e and a". They have two beams. Keep them even and close to the keys.',
+    say: 'Sixteenth notes: four in each beat. Count one e and a.',
     tips: ['Practise slowly first; speed comes from evenness, not effort.'],
+    newRhythm: 'ssss',
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2)], time: ['4/4', '2/4'], bpm: [56, 72], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 8, skip: 2, leap: 1 }, rhythm: { q: 3, ee: 3, ssss: 2, ess: 1, sse: 1 } },
     lh: { style: 'roots', lo: 40, hi: 57 },
@@ -210,7 +239,9 @@ export const LEVELS = [
     title: 'Syncopation and ties',
     concept:
       'SYNCOPATION puts the accent between the beats: "1 and... (2) and 3". A TIE joins two notes of the same pitch: play the first and hold through the second without re-striking.',
+    say: 'Syncopation puts the accent between the beats. Hold tied notes, don\'t play them again.',
     tips: ['Keep counting the beat you are not playing on.'],
+    newRhythm: 'syn',
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(0, 'minor')], time: ['4/4'], bpm: [66, 84], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { q: 3, ee: 3, syn: 3, dqe: 2, h: 1 } },
     lh: { style: 'fifths', lo: 40, hi: 57 },
@@ -220,7 +251,9 @@ export const LEVELS = [
     title: 'Keys with three sharps or flats',
     concept:
       'A major (three sharps: F♯ C♯ G♯) and E♭ major (three flats: B♭ E♭ A♭) join the family, along with their relative minors F♯ minor and C minor.',
+    say: 'New keys with three sharps or three flats. Name them before you play.',
     tips: ['Before playing, name every sharp or flat in the key signature out loud.'],
+    focusKeys: [K(3), K(-3), K(3, 'minor'), K(-3, 'minor')],
     hands: 'both', keys: [K(3), K(-3), K(3, 'minor'), K(-3, 'minor'), K(2), K(-2)], time: ['4/4', '3/4'], bpm: [66, 88], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { q: 4, ee: 4, dqe: 2, h: 1, ssss: 1 } },
     lh: { style: 'block', lo: 43, hi: 60 },
@@ -230,6 +263,7 @@ export const LEVELS = [
     title: 'Right-hand chords',
     concept:
       'Now the right hand plays chords too, with the melody on top. Voice the top note a little louder so the tune still sings.',
+    say: 'Your right hand plays chords now. Let the top note sing.',
     tips: ['Drop into chords from the arm, keeping fingers firm.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3)], time: ['4/4', '3/4'], bpm: [60, 80], measures: 6,
     rh: { lo: 64, hi: 84, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { h: 3, q: 5, dqe: 1 }, chords: 0.45, chordSize: 3 },
@@ -240,7 +274,9 @@ export const LEVELS = [
     title: 'Triplets',
     concept:
       'A TRIPLET squeezes three equal notes into the space of two: count "1-and-a 2-and-a" or "tri-po-let". It gives music a rolling, lilting feel.',
+    say: 'Triplets fit three even notes into one beat. Trip-a-let.',
     tips: ['Say "trip-a-let" evenly while you play.'],
+    newRhythm: 'trip',
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3)], time: ['4/4'], bpm: [60, 80], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 7, skip: 2, leap: 1 }, rhythm: { q: 4, ee: 2, trip: 3, h: 1 } },
     lh: { style: 'broken', lo: 40, hi: 59 },
@@ -250,6 +286,7 @@ export const LEVELS = [
     title: 'Independent hands',
     concept:
       'Two real melodies at once: counterpoint. Each hand has its own rhythm. Practise hands separately, then combine very slowly.',
+    say: 'Two melodies at once. Each hand has its own rhythm.',
     tips: ['Listen to both voices: neither is just accompaniment.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(0, 'minor'), K(1, 'minor')], time: ['4/4', '3/4'], bpm: [60, 80], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { q: 4, ee: 4, dqe: 1, ssss: 1 } },
@@ -260,6 +297,7 @@ export const LEVELS = [
     title: 'Arpeggios and two-octave scales',
     concept:
       'An ARPEGGIO plays a chord one note at a time across the keyboard. Combined with two-octave scales, arpeggios build the reach and thumb technique every advanced piece needs.',
+    say: 'Arpeggios play a chord one note at a time across the keyboard.',
     tips: ['Keep the wrist level and let the thumb pass smoothly.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(0, 'minor')], time: ['4/4'], bpm: [66, 88], measures: 6,
     rh: { lo: 60, hi: 88, motion: { step: 6, skip: 5, leap: 1 }, rhythm: { ee: 5, ssss: 2, q: 2 }, arpeggio: 0.5 },
@@ -270,6 +308,7 @@ export const LEVELS = [
     title: 'Six-eight time',
     concept:
       'In 6/8 the eighth notes are grouped in threes: two big beats per measure, each worth a dotted quarter. Count "1-2-3 4-5-6" with a lilt, like a barcarolle.',
+    say: 'Six-eight has two big beats, each split into three. Feel the lilt.',
     tips: ['Feel two big pulses, not six small ones.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(0, 'minor'), K(-1, 'minor')], time: ['6/8'], bpm: [50, 66], measures: 6,
     rh: { lo: 62, hi: 81, motion: { step: 6, skip: 3, leap: 1 }, rhythm: { eee: 4, qe: 3, dq: 3 } },
@@ -281,6 +320,7 @@ export const LEVELS = [
     title: 'Seventh chords',
     concept:
       'Add another third on top of a triad and you get a SEVENTH chord: major 7, dominant 7 and minor 7. They are the colour of jazz, pop and romantic harmony.',
+    say: 'Seventh chords add one more third on top. They are the colour of jazz and pop.',
     tips: ['Learn to hear the difference: maj7 dreamy, dom7 restless, min7 mellow.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3)], time: ['4/4'], bpm: [66, 88], measures: 8,
     rh: { lo: 62, hi: 84, motion: { step: 5, skip: 3, leap: 2 }, rhythm: { q: 4, ee: 4, syn: 2, dqe: 2 } },
@@ -291,7 +331,9 @@ export const LEVELS = [
     title: 'Keys with four and five accidentals',
     concept:
       'E major, B major, A♭ major, D♭ major and their minors: more black keys means new hand shapes. The long fingers (2, 3, 4) love black keys; the thumb prefers white keys.',
+    say: 'More black keys! Think in hand shapes over the black-key groups.',
     tips: ['Think in hand shapes over black-key groups, not individual notes.'],
+    focusKeys: [K(4), K(5), K(-4), K(-5), K(4, 'minor'), K(-4, 'minor')],
     hands: 'both', keys: [K(4), K(5), K(-4), K(-5), K(4, 'minor'), K(-4, 'minor'), K(3), K(-3)], time: ['4/4', '3/4'], bpm: [72, 92], measures: 8,
     rh: { lo: 60, hi: 86, motion: { step: 6, skip: 3, leap: 2 }, rhythm: { q: 4, ee: 4, dqe: 2, ssss: 1, syn: 1 } },
     lh: { style: 'alberti', lo: 38, hi: 60 },
@@ -301,6 +343,7 @@ export const LEVELS = [
     title: 'Chromatic notes',
     concept:
       'Accidentals outside the key (sharps, flats and naturals written next to notes) add spice: chromatic passing tones, neighbour notes and borrowed chords. An accidental lasts until the end of its measure.',
+    say: 'Watch for accidentals. They last until the end of the bar.',
     tips: ['Circle-scan each measure for accidentals before you play it.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(0, 'minor'), K(-1, 'minor')], time: ['4/4', '3/4'], bpm: [72, 96], measures: 8,
     rh: { lo: 60, hi: 86, motion: { step: 7, skip: 2, leap: 1 }, rhythm: { q: 3, ee: 5, ssss: 2 } },
@@ -311,6 +354,7 @@ export const LEVELS = [
     title: 'Velocity',
     concept:
       'Fast, even sixteenth-note runs. The secret is a quiet hand, fingers close to the keys and a relaxed arm. Speed is built on accuracy at slower tempos.',
+    say: 'Fast, even runs. Quiet hands, fingers close to the keys.',
     tips: ['If it\'s messy, it\'s too fast. Drop the tempo 10% and rebuild.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4)], time: ['4/4', '2/4'], bpm: [72, 100], measures: 8,
     rh: { lo: 60, hi: 88, motion: { step: 9, skip: 2, leap: 1 }, rhythm: { ssss: 5, ess: 2, sse: 2, ee: 2, q: 1 } },
@@ -321,6 +365,7 @@ export const LEVELS = [
     title: 'Octaves and wide leaps',
     concept:
       'Left-hand octaves give a powerful bass; wide right-hand leaps demand you look ahead and move early. Keep the hand shape "set" for the octave and move from the arm.',
+    say: 'Octaves and big leaps. Look ahead and move early.',
     tips: ['Octaves: firm pinky and thumb, loose wrist.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(0, 'minor'), K(2, 'minor')], time: ['4/4', '3/4'], bpm: [66, 92], measures: 8,
     rh: { lo: 60, hi: 91, motion: { step: 4, skip: 3, leap: 4 }, rhythm: { q: 4, ee: 4, dqe: 2, h: 1 } },
@@ -331,6 +376,7 @@ export const LEVELS = [
     title: 'Walking bass and swing',
     concept:
       'A walking bass steps through chord tones on every beat while the right hand plays syncopated, jazzy lines over the top.',
+    say: 'The left hand walks on every beat. The right hand swings on top.',
     tips: ['Keep the bass steady as a clock; let the right hand dance around it.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(-3)], time: ['4/4'], bpm: [80, 108], measures: 8,
     rh: { lo: 62, hi: 86, motion: { step: 5, skip: 4, leap: 2 }, rhythm: { syn: 4, ee: 4, q: 2, dqe: 2 }, chromatic: 0.1 },
@@ -341,7 +387,9 @@ export const LEVELS = [
     title: 'Every key',
     concept:
       'All the keys, up to six and seven sharps or flats. At this point reading key signatures should be automatic. Think of the key\'s scale shape and let it guide your hand.',
+    say: 'Every key, up to seven sharps or flats. Trust the key signature.',
     tips: ['F♯ major and G♭ major sound the same: different names for the same keys.'],
+    focusKeys: [K(6), K(-6), K(7), K(-7)],
     hands: 'both', keys: [K(6), K(-6), K(5), K(-5), K(7), K(-7), K(4, 'minor'), K(-5, 'minor'), K(5, 'minor')], time: ['4/4', '3/4'], bpm: [72, 100], measures: 8,
     rh: { lo: 60, hi: 88, motion: { step: 6, skip: 3, leap: 2 }, rhythm: { q: 3, ee: 4, dqe: 2, ssss: 2, trip: 1 } },
     lh: { style: 'block', lo: 38, hi: 60 },
@@ -351,6 +399,7 @@ export const LEVELS = [
     title: 'Three against two',
     concept:
       'POLYRHYTHM: one hand plays triplets while the other plays even eighths: 3 against 2. The combined rhythm sounds like "nice cup of tea". Master it slowly!',
+    say: 'Three against two: one hand plays triplets, the other plays pairs. Nice cup of tea.',
     tips: ['Say "nice cup-of tea": both hands on "nice", RH on "cup", LH on "of", RH on "tea".'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3)], time: ['4/4'], bpm: [50, 72], measures: 6,
     rh: { lo: 62, hi: 84, motion: { step: 7, skip: 2, leap: 1 }, rhythm: { trip: 6, q: 1 } },
@@ -362,6 +411,7 @@ export const LEVELS = [
     title: 'Etude: running hands',
     concept:
       'Sixteenth notes in both hands. This is the world of Czerny and Bach inventions. Evenness and clarity at speed.',
+    say: 'Sixteenth notes in both hands. Keep them even and clear.',
     tips: ['Practise in rhythms (long-short, short-long) to even out runs.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4), K(0, 'minor'), K(-1, 'minor')], time: ['4/4', '2/4'], bpm: [66, 96], measures: 8,
     rh: { lo: 60, hi: 91, motion: { step: 8, skip: 3, leap: 1 }, rhythm: { ssss: 6, ess: 1, sse: 1, ee: 1 } },
@@ -372,6 +422,7 @@ export const LEVELS = [
     title: 'The whole keyboard',
     concept:
       'Music that uses the full range of the instrument, from the deepest bass to the sparkling top octave, with multiple ledger lines on both staves.',
+    say: 'Music across the whole keyboard, from the lowest bass to the top.',
     tips: ['Sit centred on middle C and lean from the hips to reach the extremes.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4), K(5), K(-5)], time: ['4/4', '3/4'], bpm: [72, 100], measures: 8,
     rh: { lo: 60, hi: 100, motion: { step: 5, skip: 3, leap: 3 }, rhythm: { q: 3, ee: 4, ssss: 2, dqe: 1 } },
@@ -382,6 +433,7 @@ export const LEVELS = [
     title: 'Dense harmony',
     concept:
       'Full four-note chords in the right hand with seventh-chord voicings in the left, the texture of romantic and jazz piano.',
+    say: 'Full chords in both hands. Voice the melody on top.',
     tips: ['Voice the melody (top note) forward; keep inner notes soft.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4)], time: ['4/4', '3/4'], bpm: [60, 84], measures: 8,
     rh: { lo: 62, hi: 91, motion: { step: 5, skip: 4, leap: 2 }, rhythm: { h: 2, q: 5, ee: 2, dqe: 1 }, chords: 0.6, chordSize: 4 },
@@ -392,6 +444,7 @@ export const LEVELS = [
     title: 'Rhythmic mastery',
     concept:
       'Everything at once: sixteenths, triplets, dotted rhythms and syncopation mixed freely. Your inner pulse must be rock solid.',
+    say: 'Every rhythm mixed together. Keep your inner pulse rock solid.',
     tips: ['Subdivide in your head: always know where the next beat lands.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4), K(0, 'minor'), K(2, 'minor'), K(-2, 'minor')], time: ['4/4', '3/4', '6/8'], bpm: [72, 100], measures: 8,
     rh: { lo: 60, hi: 91, motion: { step: 6, skip: 3, leap: 2 }, rhythm: { q: 2, ee: 3, ssss: 2, trip: 2, dqe: 2, syn: 2, des: 2, ess: 1, sse: 1, eee: 3, qe: 2, dq: 1 } },
@@ -402,6 +455,7 @@ export const LEVELS = [
     title: 'Presto',
     concept:
       'Fast tempos across all keys. Everything you have learned, at performance speed.',
+    say: 'Presto means fast. Stay relaxed: tension is the enemy of speed.',
     tips: ['Relaxation is speed. Tension is the enemy of fast playing.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4), K(5), K(-5), K(0, 'minor'), K(1, 'minor'), K(-1, 'minor')], time: ['4/4', '3/4'], bpm: [100, 132], measures: 8,
     rh: { lo: 60, hi: 93, motion: { step: 7, skip: 3, leap: 2 }, rhythm: { ee: 4, ssss: 3, q: 2, trip: 1 } },
@@ -412,6 +466,7 @@ export const LEVELS = [
     title: 'Master',
     concept:
       'The summit: any key, any texture, any rhythm, at virtuoso tempos. Every exercise here is a new sight-reading challenge. Keep your streak alive!',
+    say: 'The summit: any key, any rhythm, any texture. Enjoy it!',
     tips: ['A master is a beginner who never stopped practising.'],
     hands: 'both', keys: [K(0), K(1), K(-1), K(2), K(-2), K(3), K(-3), K(4), K(-4), K(5), K(-5), K(6), K(-6), K(0, 'minor'), K(1, 'minor'), K(-1, 'minor'), K(3, 'minor'), K(-3, 'minor')], time: ['4/4', '3/4', '6/8'], bpm: [100, 144], measures: 8,
     rh: { lo: 57, hi: 96, motion: { step: 6, skip: 3, leap: 3 }, rhythm: { ee: 3, ssss: 4, trip: 2, syn: 1, dqe: 1, des: 1, eee: 2, qe: 1 }, chords: 0.15, chordSize: 3 },
