@@ -1,0 +1,92 @@
+/* Maestro · playful direction · design tokens
+   Fonts (OFL-1.1, self-hostable): @fontsource-variable/fredoka, @fontsource-variable/nunito, @fontsource/noto-music
+   Sizes are CSS px at the iPad landscape viewport (1180 x 820). */
+:root {
+  /* ---------- colour: surfaces & ink ---------- */
+  --bg: #FFF7EA;            /* warm cream app background */
+  --bg-sunk: #FBEEDA;       /* rails, wells, keyboard bed */
+  --surface: #FFFFFF;       /* cards */
+  --paper: #FFFCF4;         /* sheet-music card */
+  --paper-line: #3B3552;    /* staff lines on paper */
+  --line: #F0E3CD;          /* hairlines, card borders */
+  --edge: #E6D6BC;          /* 3D bottom edge of white cards/buttons */
+  --ink: #2A2346;           /* text, 13.8:1 on --bg */
+  --ink-2: #5E5775;         /* secondary text, 6.4:1 */
+  --ink-3: #736A8A;         /* tertiary text / placeholders, 4.6:1 */
+  --disabled: #E9E0D0;
+  --disabled-edge: #D7CAB3;
+
+  /* ---------- colour: brand ---------- */
+  --brand: #6F4BF2;         /* Maestro violet; white text 5.3:1 */
+  --brand-edge: #4F30C9;    /* 3D edge under brand fills */
+  --brand-hi: #9B82FF;      /* highlight / focus ring */
+  --brand-soft: #EEE8FF;    /* selected backgrounds */
+  --brand-ink: #4A2FC2;     /* brand text on soft, 7.1:1 */
+
+  /* ---------- colour: rewards & feedback ---------- */
+  --sun: #FFC23D;   --sun-edge: #E09A0B;   --sun-soft: #FFF1C9;   --sun-ink: #8A5A00;    /* XP, stars, Perfect */
+  --flame: #FF7A2F; --flame-edge: #D95A12; --flame-soft: #FFE6D6; --flame-ink: #A8430B; /* streak */
+  --mint: #20C07A;  --mint-edge: #12985C;  --mint-soft: #DDF7EA;  --mint-ink: #0E7A48;  /* hit, Great, on time */
+  --coral: #FF5A6A; --coral-edge: #D93A4C; --coral-soft: #FFE3E6; --coral-ink: #B4232F; /* miss, wrong note */
+  --early: #2F9BFF; --early-edge: #1673D1; --early-soft: #DDEEFF; --early-ink: #1463B8; /* early (cool, left) */
+  --late: #FF9A2E;  --late-edge: #D9760C;  --late-soft: #FFE9CF;  --late-ink: #A65400;  /* late (warm, right) */
+
+  /* ---------- colour: hands ---------- */
+  --rh: #6F4BF2;  --rh-edge: #4F30C9;   /* right hand = brand violet */
+  --lh: #14B8A6;  --lh-edge: #0B8C7E;   /* left hand = teal */
+
+  /* ---------- colour: per-pitch (note colour mode "by pitch") ---------- */
+  --pc-c: #F2545B; --pc-c-edge: #C73840;
+  --pc-d: #FF9A2E; --pc-d-edge: #D9760C;
+  --pc-e: #FFC93D; --pc-e-edge: #DDA10E;   /* use --ink for the letter on E */
+  --pc-f: #3CC46F; --pc-f-edge: #229A51;
+  --pc-g: #22B8CF; --pc-g-edge: #148FA3;
+  --pc-a: #3E7BFA; --pc-a-edge: #2358CC;
+  --pc-b: #A45CF0; --pc-b-edge: #7D38C9;
+
+  /* ---------- stage colours (learning path sections) ---------- */
+  --stage-1: #20C07A;  --stage-1-edge: #12985C;  /* Beginner 1-8 */
+  --stage-2: #6F4BF2;  --stage-2-edge: #4F30C9;  /* Elementary 9-16 */
+  --stage-3: #2F9BFF;  --stage-3-edge: #1673D1;  /* Intermediate 17-26 */
+  --stage-4: #FF7A2F;  --stage-4-edge: #D95A12;  /* Advanced 27-34 */
+  --stage-5: #E0436F;  --stage-5-edge: #B32651;  /* Master 35-40 */
+
+  /* ---------- type ---------- */
+  --font-display: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --font-ui: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --font-music: "Noto Music", serif;
+  /* Live numbers (score, combo, BPM, XP, timers): Nunito 900. Its digits are tabular by default (600 units);
+     Fredoka digits are proportional and neither font has a tnum feature. */
+  --font-num: "Nunito", ui-rounded, system-ui, sans-serif;
+
+  --fs-hero: 88px;   --lh-hero: 0.95;   /* results %, level reveal number */
+  --fs-d1: 52px;     --lh-d1: 1.05;     /* big headline */
+  --fs-h1: 36px;     --lh-h1: 1.12;
+  --fs-h2: 28px;     --lh-h2: 1.15;
+  --fs-h3: 22px;     --lh-h3: 1.2;
+  --fs-bubble: 21px; --lh-bubble: 1.35; /* coach speech bubble */
+  --fs-body: 18px;   --lh-body: 1.45;
+  --fs-small: 15px;  --lh-small: 1.4;
+  --fs-eyebrow: 13px;                   /* uppercase, +0.1em tracking, weight 800 */
+  --fs-hud: 30px;                       /* HUD numbers, tabular */
+
+  /* ---------- shape ---------- */
+  --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 22px; --r-xl: 28px; --r-pill: 999px;
+  --depth-s: 4px;   /* chips, small buttons */
+  --depth-m: 5px;   /* buttons, cards */
+  --depth-l: 7px;   /* hero buttons, path nodes */
+
+  /* ---------- elevation ---------- */
+  --shadow-card: 0 1px 0 rgba(42,35,70,.04), 0 10px 24px -14px rgba(42,35,70,.28);
+  --shadow-pop: 0 18px 40px -16px rgba(42,35,70,.38);
+  --shadow-glow: 0 0 0 6px rgba(111,75,242,.18);
+
+  /* ---------- spacing (4-pt) ---------- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px;
+
+  /* ---------- motion ---------- */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);        /* entrances */
+  --ease-in: cubic-bezier(.55, 0, 1, .45);         /* exits */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);  /* pops, overshoot ~8% */
+  --t-press: 90ms; --t-fast: 160ms; --t-base: 240ms; --t-slow: 420ms; --t-hero: 700ms;
+}
