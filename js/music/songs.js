@@ -1125,7 +1125,7 @@ const LIBRARY = [
     about: 'An Elizabethan ballad in A minor. The left hand plays a waltz: bass, chord, chord.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 13, key: 'Am', time: '3/4', bpm: 120, pickup: 1,
+        id: 'rh', name: 'Right hand', level: 15, key: 'Am', time: '3/4', bpm: 120, pickup: 1,
         rh: `A4:q | C5:h D5:q | E5:q. F5:8 E5:q | D5:h B4:q | G4:q. A4:8 B4:q |
              C5:h A4:q | A4:q. G#4:8 A4:q | B4:h G#4:q | E4:h A4:q |
              C5:h D5:q | E5:q. F5:8 E5:q | D5:h B4:q | G4:q. A4:8 B4:q |
@@ -1146,7 +1146,7 @@ const LIBRARY = [
              G5:h. | G5:q. F#5:8 E5:q | D5:h B4:q | G4:q. A4:8 B4:q |
              C5:q. B4:8 A4:q | G#4:q. F#4:8 G#4:q | A4:h.~ | A4:h.`,
         lh: `r:q | A2:q [E3 A3 C4] [E3 A3 C4] | E2 [E3 A3 C4] [E3 A3 C4] | G2 [G3 B3 D4] [G3 B3 D4] | D3 [G3 B3 D4] [G3 B3 D4] |
-             F2 [F3 A3 C4] [F3 A3 C4] | C3 [F3 A3 C4] [F3 A3 C4] | E2 [E3 G#3 B3] [E3 G#3 B3] | B2 [E3 G#3 B3] [E3 G#3 B3] |
+             F2 [F3 A3 C4] [F3 A3 C4] | C3 [F3 A3 C4] [F3 A3 C4] | E2 [E3 G#3 B3] [E3 G#3 B3] | B2 [E3 G#3 B3] r |
              A2 [E3 A3 C4] [E3 A3 C4] | E2 [E3 A3 C4] [E3 A3 C4] | G2 [G3 B3 D4] [G3 B3 D4] | D3 [G3 B3 D4] [G3 B3 D4] |
              F2 [F3 A3 C4] [F3 A3 C4] | E2 [E3 G#3 D4] [E3 G#3 D4] | A2 [E3 A3 C4] [E3 A3 C4] | [A2 E3 A3]:h. |
              C3:q [E3 G3 C4] [E3 G3 C4] | G2 [E3 G3 C4] [E3 G3 C4] | D3 [G3 B3 D4] [G3 B3 D4] | G2 [G3 B3 D4] [G3 B3 D4] |
@@ -1247,7 +1247,7 @@ const LIBRARY = [
              F4:q D4:q D4:8 E4 | F4:q r:q D4:8 F4 | B4:8 A4 G4:q B4 | C5:q r:q C4:8 C4 |
              C5:h A4:8 F4 | G4:h E4:8 C4 | F4:q G4 A4 | G4:h C4:8 C4 |
              C5:h A4:8 F4 | G4:h E4:8 C4 | F4:q E4 D4 | C4:h r:q`,
-        lh: `r:q | [C3 E3 G3]:h. | % | % | [B2 F3 G3] | % | % | % | [C3 E3 G3] |
+        lh: `r:q | [C3 E3 G3]:h. | % | [C3 E3 G3]:q [B2 F3 G3]:h | [B2 F3 G3]:h. | % | % | % | [C3 E3 G3] |
              [C3 F3 A3] | [C3 E3 G3] | [B2 F3 G3] | [C3 E3 G3] | [C3 F3 A3] | [C3 E3 G3] | [B2 F3 G3] | [C3 E3 G3]`,
       },
     ],
@@ -1271,7 +1271,7 @@ const LIBRARY = [
              C5:q D5:8 C5 B4 A4 | B4:q C5:8 B4 A4 G4 | A4:q B4:8 A4 G4 F#4 | G4:h.`,
       },
       {
-        id: 'both', name: 'Both hands', level: 17, key: 'G', time: '3/4', bpm: 104,
+        id: 'both', name: 'Both hands', level: 18, key: 'G', time: '3/4', bpm: 104,
         rh: `D5:q G4:8 A4 B4 C5 | D5:q G4 G4 | E5:q C5:8 D5 E5 F#5 | G5:q G4 G4 |
              C5:q D5:8 C5 B4 A4 | B4:q C5:8 B4 A4 G4 | F#4:q G4:8 A4 B4 G4 | A4:h. |
              D5:q G4:8 A4 B4 C5 | D5:q G4 G4 | E5:q C5:8 D5 E5 F#5 | G5:q G4 G4 |
@@ -1279,7 +1279,7 @@ const LIBRARY = [
              B5:q G5:8 A5 B5 G5 | A5:q D5:8 E5 F#5 D5 | G5:q E5:8 F#5 G5 D5 | C#5:q B4:8 C#5 A4:q |
              A4:8 B4 C#5 D5 E5 F#5 | G5:q F#5 E5 | F#5 A4 C#5 | D5:h. |
              D5:q G4:8 F#4 G4:q | E5 G4:8 F#4 G4:q | D5 C5 B4 | A4:8 G4 F#4 G4 A4:q |
-             D4:8 E4 F#4 G4 A4 B4 | C5:q B4 A4 | B4:8 D5 G4:q F#4 | [B3 D4 G4]:h.`,
+             D4:8 E4 F#4 G4 A4 B4 | C5:q B4 A4 | B4:8 D5 G4:q F#4 | G4:h.`,
         lh: `[G3 B3 D4]:h A3:q | B3:h. | C4 | B3 | A3 | G3 | D4:q B3 G3 | D4:q D3:8 C4 B3 A3 |
              B3:h A3:q | G3 B3 G3 | C4:h. | B3:q C4:8 B3 A3 G3 | A3:h F#3:q | G3:h B3:q | C4 D4 D3 | G3:h G2:q |
              G3:h. | F#3 | E3:q G3 E3 | A3:h A2:q | A3:h. | B3:q D4 C#4 | D4 F#3 A3 | D4 D3 C4 |
@@ -1299,7 +1299,7 @@ const LIBRARY = [
     about: 'Written when Mozart was six years old. Watch for the little triplet in bar 7.',
     arrangements: [
       {
-        id: 'both', name: 'Both hands', level: 14, key: 'F', time: '3/4', bpm: 100,
+        id: 'both', name: 'Both hands', level: 23, key: 'F', time: '3/4', bpm: 100,
         rh: `F5:8 A5 C5:q C5 | D5:8 F5 Bb4:q Bb4 | A4:8 C5 F4:q E4 | E4:h F4:q |
              C4:8 E4 G4:q G4 | C4:8 F4 A4:q A4 | C4:8t E4 G4 Bb4:q A4 | A4:h G4:q |
              C5:8 Eb5 A4:q A4 | Bb4:8 D5 G4:q G4 | A4:8 C5 F#4:q F#4 | F#4:h G4:q |
@@ -1330,7 +1330,7 @@ const LIBRARY = [
         id: 'both', name: 'Both hands', level: 16, key: 'D', time: '4/4', bpm: 66,
         rh: `R | R | F#5:q E5 D5 C#5 | B4 A4 B4 C#5 | D5 C#5 B4 A4 | G4 F#4 G4 E4 |
              D4:8 F#4 A4 G4 F#4 D4 F#4 E4 | D4 B3 D4 A4 G4 B4 A4 G4 |
-             F#4 D4 E4 C#5 D5 F#5 A5 A4 | B4 G4 A4 F#4 D4 D5 D5:8. C#5:16 | [D4 F#4 A4 D5]:w`,
+             F#4 D4 E4 C#5 D5 F#5 A5 A4 | B4:8 G4 A4 F#4 D4 D5 D5 C#5 | [A4 D5]:w`,
         lh: `D3:q A2 B2 F#2 | G2 D2 G2 A2 | D3 A2 B2 F#2 | G2 D2 G2 A2 | D3 A2 B2 F#2 | G2 D2 G2 A2 |
              D3 A2 B2 F#2 | G2 D2 G2 A2 | D3 A2 B2 F#2 | G2 D2 G2 A2 | D3:w`,
       },
@@ -1348,7 +1348,7 @@ const LIBRARY = [
     about: 'The opening of Mozart\'s serenade K. 525. Both hands start in unison, like the whole orchestra.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 17, key: 'G', time: '4/4', bpm: 112,
+        id: 'rh', name: 'Right hand', level: 19, key: 'G', time: '4/4', bpm: 112,
         rh: `G4:q r:8 D4:8 G4:q r:8 D4:8 | G4:8 D4 G4 B4 D5:q r:q | C5:q r:8 A4:8 C5:q r:8 A4:8 | C5:8 A4 F#4 A4 D4:q r:q |
              G4:8 r:8 G4:q. B4:8 A4:8 G4:8 | A4:16 G4 F#4:8 F#4:q. A4:8 C5:8 F#4:8 | A4:8 G4 G4:q. B4:8 A4:8 G4:8 | A4:16 G4 F#4:8 F#4:q. A4:8 C5:8 F#4:8 |
              G4:8 G4 F#4 E4:16 F#4 G4:8 G4 A4 G4:16 A4 | B4:8 B4 C5 B4:16 C5 D5:q r:q | G4:h r:h`,
@@ -1357,7 +1357,7 @@ const LIBRARY = [
         id: 'both', name: 'Both hands', level: 19, key: 'G', time: '4/4', bpm: 112,
         rh: `G4:q r:8 D4:8 G4:q r:8 D4:8 | G4:8 D4 G4 B4 D5:q r:q | C5:q r:8 A4:8 C5:q r:8 A4:8 | C5:8 A4 F#4 A4 D4:q r:q |
              G4:8 r:8 G4:q. B4:8 A4:8 G4:8 | A4:16 G4 F#4:8 F#4:q. A4:8 C5:8 F#4:8 | A4:8 G4 G4:q. B4:8 A4:8 G4:8 | A4:16 G4 F#4:8 F#4:q. A4:8 C5:8 F#4:8 |
-             G4:8 G4 F#4 E4:16 F#4 G4:8 G4 A4 G4:16 A4 | B4:8 B4 C5 B4:16 C5 D5:q r:q | [B3 D4 G4]:h r:h`,
+             G4:8 G4 F#4 E4:16 F#4 G4:8 G4 A4 G4:16 A4 | B4:8 B4 C5 B4:16 C5 D5:q r:q | G4:h r:h`,
         lh: `G3:q r:8 D3:8 G3:q r:8 D3:8 | G3:8 D3 G3 B3 D4:q r:q | C4:q r:8 A3:8 C4:q r:8 A3:8 | C4:8 A3 F#3 A3 D3:q r:q |
              G3:8 G3 G3 G3 G3 G3 G3 G3 | % | % | % |
              G3:8 G3 A3 A3 B3 B3 F#3 F#3 | G3:8 G3 A3 A3 B3:q r:q | G2:h r:h`,
@@ -1376,7 +1376,7 @@ const LIBRARY = [
     about: 'From Peer Gynt. Sneaky staccato steps that get louder and faster each time. Try speeding up!',
     arrangements: [
       {
-        id: 'both', name: 'Both hands', level: 16, key: 'Bm', time: '4/4', bpm: 112,
+        id: 'both', name: 'Both hands', level: 18, key: 'Bm', time: '4/4', bpm: 112,
         rh: `B3:8 C#4 D4 E4 F#4 D4 F#4:q | E#4:8 C#4 E#4:q E4:8 C4 E4:q | B3:8 C#4 D4 E4 F#4 D4 F#4 B4 | A4 F#4 D4 F#4 A4:h |
              B4:8 C#5 D5 E5 F#5 D5 F#5:q | E#5:8 C#5 E#5:q E5:8 C5 E5:q | B4:8 C#5 D5 E5 F#5 D5 F#5 B5 | A5 F#5 D5 F#5 A5:h |
              F#4:8 G#4 A#4 B4 C#5 A#4 C#5:q | D5:8 A#4 D5:q C#5:8 A#4 C#5:q | F#4:8 G#4 A#4 B4 C#5 A#4 C#5:q | D5:8 A#4 D5:q C#5:h |
@@ -1400,14 +1400,14 @@ const LIBRARY = [
     about: 'A wistful little song in G minor from Tchaikovsky\'s Album for the Young.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 16, key: 'Gm', time: '2/4', bpm: 66, pickup: 0.5,
+        id: 'rh', name: 'Right hand', level: 19, key: 'Gm', time: '2/4', bpm: 66, pickup: 0.5,
         rh: `D4:8 | G4:8 A4 Bb4 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:8 Eb5:16 D5 C5:8 Bb4 | A4:q.~ A4:16 G4 | G4:q. D4:8 |
              G4:8 A4 Bb4 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:8 Eb5:16 D5 C5:8 Bb4 | A4:q.~ A4:16 G4 | G4:h |
              G4:q G4:8 A4 | Bb4:q. Bb4:8 | C5:q C5 | A4:q. A4:8 | D5:q. D5:8 | Eb5:8 F5:16 Eb5 D5:8 C5 | Bb4:q A4:8 G4 | [F#4 A4]:q. D4:8 |
              G4:8 A4 Bb4 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:8 Eb5:16 D5 C5:8 Bb4 | A4:q.~ A4:16 G4 | G4:h`,
       },
       {
-        id: 'both', name: 'Both hands', level: 18, key: 'Gm', time: '2/4', bpm: 66, pickup: 0.5,
+        id: 'both', name: 'Both hands', level: 19, key: 'Gm', time: '2/4', bpm: 66, pickup: 0.5,
         rh: `D4:8 | G4:8 A4 Bb4 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:8 Eb5:16 D5 C5:8 Bb4 | A4:q.~ A4:16 G4 | G4:q. D4:8 |
              G4:8 A4 Bb4 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:q. D5:8 | C5:8 D5 Eb5 C5 | D5:8 Eb5:16 D5 C5:8 Bb4 | A4:q.~ A4:16 G4 | G4:h |
              G4:q G4:8 A4 | Bb4:q. Bb4:8 | C5:q C5 | A4:q. A4:8 | D5:q. D5:8 | Eb5:8 F5:16 Eb5 D5:8 C5 | Bb4:q A4:8 G4 | [F#4 A4]:q. D4:8 |
@@ -1431,7 +1431,7 @@ const LIBRARY = [
     about: 'The first page of the most famous piano sonatina: C major arpeggios, scales and a trip to G major.',
     arrangements: [
       {
-        id: 'both', name: 'Both hands (exposition)', level: 17, key: 'C', time: '4/4', bpm: 112,
+        id: 'both', name: 'Both hands (exposition)', level: 18, key: 'C', time: '4/4', bpm: 112,
         rh: `C5:q E5:8 C5 G4:q G4 | C5:q E5:8 C5 G4:q G5 | F5:8 E5 D5 C5 B4 C5 B4 C5 | D5 C5 B4 A4 G4:q r:q |
              C5:q E5:8 C5 G4:q G4 | E5:q G5:8 E5 C5:q E5:8 C5 | D5 B4 C5 A4 B4 G4 A4 F#4 | G4 A4 B4 C5 D5 E5 F#5 G5 |
              A4:q A5 A5 A5 | B4:8 C5 D5 E5 F#5 G5 A5 B5 | C5:q C6 C6 C6 | D5:8 G5 B5 D6 C6 B5 A5 G5 |
@@ -1450,7 +1450,7 @@ const LIBRARY = [
     year: 1725,
     origin: 'classical',
     category: 'Classical',
-    license: PD_ED('Johann Sebastian Bach', 1750),
+    license: 'Public domain: anonymous music from the 1725 Notebook for Anna Magdalena Bach. Notes follow a public-domain Mutopia Project edition.',
     source: MUTOPIA('BachJS/BWVAnh126/anna-magdalena-22/anna-magdalena-22.ly') + ' (BWV Anh. 126, played da capo).',
     about: 'A musette imitates a bagpipe: the left hand bounces between octaves like a drone.',
     arrangements: [
@@ -1590,7 +1590,7 @@ const LIBRARY = [
              E5:16 D#5 E5 B4 D5 C5 A4:8 r:16 C4 E4 A4 | B4:8 r:16 E4 G#4 B4 C5:8 r:16 E4 E5 D#5 |
              E5:16 D#5 E5 B4 D5 C5 A4:8 r:16 C4 E4 A4 | B4:8 r:16 E4 C5 B4 A4:8 r:16 B4 C5 D5 |
              E5:8. G4:16 F5 E5 D5:8. F4:16 E5 D5 | C5:8. E4:16 D5 C5 B4:8 r:16 E4 E5 r |
-             r:16 E5 E6 r r D#5 E5:8 r:16 D#5 E5 D#5 |
+             r:16 E5 E6 r r D#5 E5 r r D#5 E5 D#5 |
              E5:16 D#5 E5 B4 D5 C5 A4:8 r:16 C4 E4 A4 | B4:8 r:16 E4 G#4 B4 C5:8 r:16 E4 E5 D#5 |
              E5:16 D#5 E5 B4 D5 C5 A4:8 r:16 C4 E4 A4 | B4:8 r:16 E4 C5 B4 A4:q.`,
         lh: `r:8 |
@@ -1622,7 +1622,7 @@ const LIBRARY = [
              F#4:h.~ | F#4:h.~ | F#4:h.~ | F#4:h. | r:q F#5 A5 | G5 F#5 C#5 | B4 C#5 D5 | A4:h. |
              C#5:h. | F#5 | E4:h.~ | E4:h.~ | E4:h. | A4:q B4 C5 | E5 D5 B4 | D5 C5 B4 |
              D5:h.~ | D5:h D5:q | E5 F5 G5 | A5 C5 D5 | E5 D5 B4 | D5:h.~ | D5:h D5:q |
-             G5:h. | F#5 | B4:q A4 B4 | C#5 D5 E5 | C#5 D5 E5 | F#4:h. | [C4 E4 A4 C5] | [D4 F#4 A4 D5]`,
+             G5:h. | F#5 | B4:q A4 B4 | C#5 D5 E5 | C#5 D5 E5 | F#4:h. | [A4 C5]:h. | [A4 D5]:h.`,
         lh: `G2:h. | D2 | G2 | D2 | G2 | D2 | G2 | D2 | G2 | D2 | G2 | D2 | G2 | D2 | G2 | D2 |
              F#2 | B1 | E2 | E2 | D2 | A1 | D2 | D2 | D2 | D2 | D2 | D2 | D2 | D2 | D2 |
              E2 | F#2 | B1 | E2 | E2 | E2 | [A2 G3] | [D2 A2 D3]`,
@@ -1636,14 +1636,14 @@ const LIBRARY = [
              G5:h. | F#5 | B4:q A4 B4 | C#5 D5 E5 | C#5 D5 E5 | F#4:h. | [C4 E4 A4 C5] | [D4 F#4 A4 D5]`,
         lh: `G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h | G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h |
              G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h | G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h |
+             G2:q [B3 D4]:h | D2:q [A3 C#4]:h | G2:q [B3 D4]:h | D2:q [A3 C#4]:h |
              G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h | G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h |
-             G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h | G2:q [B3 D4 F#4]:h | D2:q [A3 C#4 F#4]:h |
-             F#2:q [A3 C#4 F#4]:h | B1:q [B3 D4 F#4]:h | E2:q [G3 B3]:h | E2:q [B3 D4 G4]:h |
+             F#2:q [A3 C#4 F#4]:h | B1:q [B3 D4 F#4]:h | E2:q [G3 B3]:h | E2:q [G3 B3 D4]:h |
              D2:q [F3 A3 D4]:h | A1:q [A3 C4 E4]:h | D2:q [G3 B3 E4]:h | D2:q [D3 G3 B3 E4]:h |
              D2:q [C3 E3 A3 D4]:h | D2:q [C3 F#3 A3 D4]:h | D2:q [A3 C4 F4]:h | D2:q [A3 C4 E4]:h |
              D2:q [D3 G3 B3 E4]:h | D2:q [C3 E3 A3 D4]:h | D2:q [C3 F#3 A3 D4]:h |
              E2:q [B3 E4 G4]:h | F#2:q [A3 C#4 F#4]:h | B1:q [B3 D4 F#4]:h | E2:q [C#4 E4 A4]:h |
-             E2:q [A3 C#4 F#4 A4]:h | E2:q [A3 D4] [B3 D4 G4] | [A2 G3]:h. | [D2 A2 D3]:h.`,
+             E2:q [A3 C#4 F#4 A4]:h | E2:q [A3 D4] [G3 B3 D4] | [A2 G3]:h. | [D2 A2 D3]:h.`,
       },
     ],
   },
@@ -1739,7 +1739,7 @@ const LIBRARY = [
              B4:h. C5:q | B4:h. C5:q | B4:h. C5:q | B4:h. Bb4:q |
              A4:h. B4:q | A4:h. B4:q | A4:h. B4:8. A4:16 | A4:h. G#4:q~ |
              G#4:q A4:8 B4 D5 C5 E4 A4 | F#4:h. A4:q | F#4:h. A4:q | G4:8 F#4 C4 B3 D#4 F#4 D5:8t C5 B4 |
-             B4:h. C5:q | B4:h. C5:q | B4:h. C5:q | B4:8. A#4:16 A#4:q G##5 F#5:8. E5:16 |
+             B4:h. C5:q | B4:h. C5:q | B4:h. C5:q | B4:8. A#4:16 A#4:q G5 F#5:8. E5:16 |
              E5:8 D#5 C6 D#5 D#5 E5 G5 B4 | D5:8 C5 E5:8t E4 A4 F#4:q. A4:8 | F#4:h. A4:q | F#4:h.~ F#4:8. E4:16 |
              E4:h. F#4:q | E4:h. F#4:q | E4:h r:h | [E3 F#3 B3 E4]:h [D#3 F#3 B3 D#4] | [E3 G3 B3 E4]:w`,
         lh: `r:q |
@@ -1820,10 +1820,10 @@ const LIBRARY = [
              E4:16 C5:8 E4:16 C5:8 E4:16 C5~ | C5:q~ C5:16 C5 D5 D#5 | E5:16 C5 D5 E5~ E5 B4 D5:8 | C5:q. C5:16 D5 |
              E5:16 C5 D5 E5~ E5 C5 D5 C5 | E5:16 C5 D5 E5~ E5 C5 D5 C5 | E5:16 C5 D5 E5~ E5 B4 D5:8 | C5:h`,
         lh: `r:8 |
-             C3:q [E3 G3 C4] | F2 [F3 A3 C4] | G2 [F3 G3 B3] | C3 [E3 G3 C4] |
+             C3:q [E3 G3 C4] | F2 [F3 A3 C4] | G2 [G3 B3] | C3 [E3 G3 C4] |
              C3 [E3 G3 C4] | F2 [F3 A3 C4] | D3 [F#3 A3 C4] | G2 [G3 B3] |
-             C3 [E3 G3 C4] | F2 [F3 A3 C4] | G2 [F3 G3 B3] | C3 [E3 G3 C4] |
-             C3 [G3 C4 E4] | A2 [A3 C4 F4] | G2 [F3 G3 B3] | C3:h`,
+             C3 [E3 G3 C4] | F2 [F3 A3 C4] | G2 [G3 B3] | C3 [E3 G3 C4] |
+             C3 [G3 C4 E4] | A2 [A3 C4 F4] | G2 [G3 B3] | C3:h`,
       },
       {
         id: 'both', name: 'Both hands', level: 35, key: 'C', time: '2/4', bpm: 72,
