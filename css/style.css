@@ -479,6 +479,8 @@ small { color: var(--ink-3); }
 .mic-ind.lost { color: var(--coral-ink); background: var(--coral-soft); border-color: var(--coral); }
 .status-strip .mic-ind { cursor: pointer; pointer-events: auto; }
 
+#btn-setup-diag { padding-left: 4px; padding-right: 4px; } /* aligns with the column when it wraps */
+
 /* "Get ready" card: over the falling-notes lane, above the hand brackets on the keyboard. */
 .prep { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; width: min(880px, calc(100% - 40px));
   display: flex; align-items: center; gap: 18px; padding: 14px 20px 14px 14px; overflow: hidden;

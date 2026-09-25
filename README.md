@@ -13,7 +13,7 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 ## What it does
 
 - **Hears your piano, not the room.** The listener tracks all 88 keys, chords and both hands, and ignores speech, TV, claps, taps on the iPad, footsteps, typing and barking (see [How the listening works](#how-the-listening-works)).
-- **Tells you if you're early or late, and by how much.** Every note gets a grade and a timing chip (for example "Great · 70 ms late"). A live early/late meter shows your running average. After each piece you get a timing histogram, your median offset and spread, and tips such as "you tend to rush". Consistent lateness on every note is recognised as microphone delay and offered as a latency correction.
+- **Tells you if you're early or late, and by how much.** Every note gets a grade and a timing chip (for example "Great · 70 ms late"). A live early/late meter shows your running average. After each piece you get a timing histogram, your median offset and spread, and tips such as "you tend to rush". A consistent offset with a tight spread is recognised as microphone delay and corrected automatically over a few pieces (you can undo it on the results screen or switch it off in Settings).
 - **Beginner-friendly timing.** Timing windows depend on your level:
 
   | Stage | Perfect | Great | Good | OK |
@@ -25,6 +25,8 @@ A web app for iPad that listens to you play a real piano, grades every note in r
   | Master (35–40) | ±45 ms | ±90 ms | ±140 ms | ±200 ms |
 
   Beginners also start at a slower tempo, and extra notes cost less at low levels.
+- **Gets you ready first.** Before each exercise (levels 1–16), song or placement test, the keyboard lights up where your hands go, with finger numbers, and Pip says it: "Left pinky on C3, the C below middle C." Rhythm drills say "any key works" and suggest a key in your current hand position. The count-in starts when you play the first note, or tap "I'm ready".
+- **Grading that fits your level.** Beginners are graded mostly on playing the right notes; timing counts more as you advance. Chords earn partial credit, each hand counts, and wait mode is graded too (wrong tries and long hesitations). Results say what to fix: the weakest bar, the weaker hand, the notes missed most, and whether you rush or drag.
 - **Adaptive placement.** A Bayesian estimate of your level (0–40) is updated after every test. It starts from how much you said you've played. Scores of 92%+ jump two levels up, 80%+ one level up, under 70% never goes harder, and under 55% steps down. The test stops once the estimate is narrow enough (5 to 9 tests). Every test uses both hands.
 - **Moving-line display, like a typing game.** A scrolling grand staff moves past a fixed playhead. Pitch-coloured notes fall onto a keyboard overlay that lights up the keys to play. Note names and finger numbers show at beginner levels.
 - **Procedurally generated music.** Every exercise is new: a chord progression first, then a melody that lands on chord tones, then a left-hand part in the level's style (long bass notes, block chords, broken chords, Alberti bass, walking bass, octaves, sevenths, counter-melody).
@@ -77,6 +79,15 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 | Triads, with lesson hints | 88 / 84% | 97 / 99% |
 
 Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Notes are reported about 85 ms after the attack (median), timestamped at the attack.
+
+**Reliability.** The listener runs in a Web Worker: the capture AudioWorklet sends mic samples straight to it, so transcription never competes with the animation for the main thread. A health supervisor watches the audio engine and the microphone. It covers iOS stopping or "interrupting" the AudioContext, a clock that stops advancing, and a mic track that ends, mutes or goes silent. It recovers automatically where it can. When iOS needs a tap, the lesson pauses and asks for one, instead of freezing.
+
+**Troubleshooting.** The *Listening check* opens from the mic chip on the play screen, from Settings, or from the "I can't hear your piano" screen. It shows:
+- a live input meter, with the room's noise and your piano's level
+- the engine and microphone state
+- the last notes heard, with confidence
+
+It can restart the microphone, run a note test, and save a 15-second recording plus a log to share when something goes wrong.
 
 Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Fast pedalled passages and triads are weaker when played outside a lesson (free play).
 
