@@ -1004,12 +1004,20 @@ export class Stage {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const s = STAFF[staff];
+      // A chord's fingers stack like its notes (the top note's finger on top), kept on the card.
+      const fs = e.fingers.filter(Boolean);
+      const n = fs.length;
+      if (n > 1) ctx.font = `600 ${Math.round(sp * 0.95)}px ${COLORS.fontDisplay}`;
+      const lineH = n > 1 ? sp * 0.98 : 0;
+      const cardH = this.L.staff.h;
       if (e.hand === 'R') {
         const top = Math.max(notes[notes.length - 1].d + (e._up ? 8 : 3), s.top + 3);
-        ctx.fillText(e.fingers.filter(Boolean).join(''), x + hw / 2, this._y(staff, top));
+        const y0 = Math.max(this._y(staff, top), sp * 0.8 + (n - 1) * lineH); // lowest line
+        fs.forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 - i * lineH));
       } else {
         const bot = Math.min(notes[0].d - (e._up ? 3 : 8), s.bottom - 3);
-        ctx.fillText(e.fingers.filter(Boolean).join(''), x + hw / 2, this._y(staff, bot));
+        const y0 = Math.min(this._y(staff, bot), cardH - sp * 0.8 - (n - 1) * lineH); // top line
+        [...fs].reverse().forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 + i * lineH));
       }
     }
     if (e._base >= 4) return null;
@@ -1301,9 +1309,11 @@ export class Stage {
     ctx.fillStyle = COLORS.playhead;
     roundRect(ctx, kx, y - 2, w, felt + 2, 3);
     ctx.fill();
+    const prep = state.prep || null;
     const drawWhite = (m, k) => {
       const info = heard.get(m);
       const hint = this.opts.showHints ? hints.get(m) : null;
+      const pk = prep ? prep.keys.get(m) : null;
       const pressed = !!info;
       const dy = pressed ? 3 : 0;
       let fill = '#fff',
@@ -1312,7 +1322,8 @@ export class Stage {
         if (info.kind === 'bad') [fill, edge] = ['#FFE3E6', COLORS.coralEdge];
         else if (info.kind === 'good') [fill, edge] = this.opts.noteColors ? [noteColor(m, key), noteEdge(m, key)] : hint === 'L' ? [COLORS.lh, COLORS.lhEdge] : [COLORS.rh, COLORS.rhEdge];
         else [fill, edge] = [COLORS.brandSoft, '#C9BCF5'];
-      } else if (hint && !this.opts.noteColors) fill = hint === 'L' ? '#D5F5F1' : COLORS.brandSoft;
+      } else if (pk) fill = pk.hand === 'L' ? '#D5F5F1' : COLORS.brandSoft;
+      else if (hint && !this.opts.noteColors) fill = hint === 'L' ? '#D5F5F1' : COLORS.brandSoft;
       ctx.fillStyle = edge;
       roundRect(ctx, k.x + 1.5, y + felt + dy, k.w - 3, h - felt - dy, [0, 0, 9, 9]);
       ctx.fill();
@@ -1325,6 +1336,10 @@ export class Stage {
         g.addColorStop(1, 'rgba(42,35,70,0)');
         ctx.fillStyle = g;
         ctx.fillRect(k.x + 1.5, y + felt, k.w - 3, 14);
+      }
+      if (pk && !pressed && k.w > 16) {
+        this._fingerDisc(m, k, pk, y + h - Math.min(14, k.w * 0.3) - 12, key);
+        return;
       }
       const showDisc = (hint && this.opts.showHints) || (pressed && info.kind === 'good');
       if (showDisc && k.w > 16) {
@@ -1361,7 +1376,8 @@ export class Stage {
       if (info) {
         const c = info.kind === 'bad' ? COLORS.coral : info.kind === 'good' ? (this.opts.noteColors ? noteColor(m, key) : COLORS.rh) : '#8F7BF5';
         top = bottomCol = c;
-      } else if (hint) top = bottomCol = this.opts.noteColors ? noteEdge(m, key) : hint === 'L' ? COLORS.lhEdge : COLORS.rhEdge;
+      } else if (prep && prep.keys.get(m)) top = bottomCol = prep.keys.get(m).hand === 'L' ? COLORS.lhEdge : COLORS.rhEdge;
+      else if (hint) top = bottomCol = this.opts.noteColors ? noteEdge(m, key) : hint === 'L' ? COLORS.lhEdge : COLORS.rhEdge;
       ctx.fillStyle = '#1B1938';
       roundRect(ctx, k.x, y + felt - 2, k.w, bh + 4, [0, 0, 6, 6]);
       ctx.fill();
@@ -1374,9 +1390,145 @@ export class Stage {
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
       roundRect(ctx, k.x + 4, y + felt + bh - 20, Math.max(1, k.w - 8), 5, 2.5);
       ctx.fill();
+      const pk = prep && !info ? prep.keys.get(m) : null;
+      if (pk && pk.finger && k.w > 10) {
+        ctx.fillStyle = '#fff';
+        ctx.font = `700 ${Math.round(Math.min(18, k.w * 0.62))}px ${COLORS.fontDisplay}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(pk.finger), k.x + k.w / 2, y + felt + bh - 34);
+      }
     };
     for (const [m, k] of this.keys) if (!k.black) drawWhite(m, k);
+    if (prep) this._prepGlow(prep, false);
     for (const [m, k] of this.keys) if (k.black) drawBlack(m, k);
+    if (prep) {
+      this._prepGlow(prep, true);
+      this._drawPrep(prep);
+    }
+  }
+
+  // Pulsing outline on the first notes to play (white keys under the black ones).
+  _prepGlow(prep, black) {
+    const ctx = this.ctx;
+    const { y } = this.L.kb;
+    const pulse = 0.5 + 0.5 * Math.sin((performance.now() / 1000) * 5);
+    for (const [m, pk] of prep.keys) {
+      const k = this.keys.get(m);
+      if (!pk.first || !k || k.black !== black) continue;
+      const col = prep.anyKey != null ? COLORS.sun : pk.hand === 'L' ? COLORS.lh : COLORS.rh;
+      const bh = this.L.kb.h * (k.black ? 0.6 : 1);
+      ctx.strokeStyle = hexA(col, 0.45 + 0.45 * pulse);
+      ctx.lineWidth = 3 + 3 * pulse;
+      roundRect(ctx, k.x - 1, y + 2, k.w + 2, bh - 4, [4, 4, 10, 10]);
+      ctx.stroke();
+    }
+  }
+
+  // A white key in the "get ready" hand position: finger number in a disc of the hand's colour,
+  // with the note's letter above it.
+  _fingerDisc(m, k, pk, cy, key) {
+    const ctx = this.ctx;
+    const col = pk.hand === 'L' ? COLORS.lh : COLORS.rh;
+    const rr = Math.min(15, k.w * 0.32);
+    const cx = k.x + k.w / 2;
+    ctx.fillStyle = pk.finger ? col : '#fff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.fill();
+    if (!pk.finger) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = pk.finger ? '#fff' : COLORS.ink;
+    ctx.font = `700 ${Math.round(rr * 1.25)}px ${COLORS.fontDisplay}`;
+    ctx.fillText(pk.finger ? String(pk.finger) : key ? noteName(m, key).replace(/-?\d+$/, '') : STEP_LETTERS[m % 12], cx, cy + 1);
+    if (pk.finger) {
+      ctx.fillStyle = COLORS.ink;
+      ctx.font = `800 ${Math.round(Math.min(16, k.w * 0.3))}px ${COLORS.font}`;
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(key ? noteName(m, key).replace(/-?\d+$/, '') : STEP_LETTERS[m % 12], cx, cy - rr - 5);
+    }
+  }
+
+  // "Get ready" extras: a bracket naming each hand over its position, an "ANY KEY" tag for
+  // rhythm drills and a "middle C" flag for beginners.
+  _drawPrep(prep) {
+    const ctx = this.ctx;
+    const { y } = this.L.kb;
+    // Bracket per hand above its keys.
+    const byHand = new Map();
+    for (const [m, pk] of prep.keys) {
+      const k = this.keys.get(m);
+      if (!k) continue;
+      const b = byHand.get(pk.hand) || { x0: Infinity, x1: -Infinity };
+      b.x0 = Math.min(b.x0, k.x);
+      b.x1 = Math.max(b.x1, k.x + k.w);
+      byHand.set(pk.hand, b);
+    }
+    const by = y - 34;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [hand, b] of byHand) {
+      if (prep.anyKey != null) break;
+      const col = hand === 'L' ? COLORS.lh : COLORS.rh;
+      const label = hand === 'L' ? 'LEFT HAND' : 'RIGHT HAND';
+      ctx.font = `800 13px ${COLORS.font}`;
+      const lw = ctx.measureText(label).width + 22;
+      const x0 = b.x0 + 3;
+      const x1 = Math.max(b.x1 - 3, x0 + lw);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x0, by + 18);
+      ctx.lineTo(x0, by + 11);
+      ctx.lineTo(x1, by + 11);
+      ctx.lineTo(x1, by + 18);
+      ctx.stroke();
+      const cx = (x0 + x1) / 2;
+      ctx.fillStyle = col;
+      roundRect(ctx, cx - lw / 2, by, lw, 22, 11);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, cx, by + 11.5);
+    }
+    if (prep.anyKey != null) {
+      const k = this.keys.get(prep.anyKey);
+      if (k) this._flag(k.x + k.w / 2, by, 'ANY KEY', COLORS.sun, COLORS.ink);
+    }
+    if (prep.middleC && this.keys.get(60) && !(prep.keys.has(60) && prep.anyKey == null)) {
+      const k = this.keys.get(60);
+      this._flag(k.x + k.w / 2, by, 'MIDDLE C', '#fff', COLORS.ink, COLORS.inkSoft);
+    }
+  }
+
+  _flag(cx, y, text, bg, ink, stroke) {
+    const ctx = this.ctx;
+    ctx.font = `800 13px ${COLORS.font}`;
+    const w = ctx.measureText(text).width + 22;
+    ctx.fillStyle = bg;
+    roundRect(ctx, cx - w / 2, y, w, 22, 11);
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, y + 21);
+    ctx.lineTo(cx + 6, y + 21);
+    ctx.lineTo(cx, y + 29);
+    ctx.closePath();
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, y + 11.5);
   }
 }
 

@@ -23,7 +23,9 @@ const cases = [
 ];
 for (const [level, kind] of cases) {
   await page.evaluate(([level, kind]) => window.__maestro.run({ kind, level, mode: 'tempo', tempoFactor: 0.5, free: true, seed: 7, label: `L${level} ${kind}` }), [level, kind]);
-  // jump the clock forward a little into the piece
+  // skip the "get ready" step (levels 1-16), then jump the clock forward a little into the piece
+  if (await page.isVisible('#btn-prep-go')) await page.click('#btn-prep-go');
+  await page.waitForFunction(() => !!window.__maestro.session(), null, { timeout: 8000 });
   await page.evaluate(() => {
     const s = window.__maestro.session();
     s.startT -= (s.countIn + 1.5) * s.spb;

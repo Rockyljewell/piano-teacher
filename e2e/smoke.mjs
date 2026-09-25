@@ -62,7 +62,7 @@ await page.click('.exp-option[data-exp="some"]');
 await page.click('#btn-exp-go');
 await page.waitForSelector('#screen-play.active', { timeout: 8000 });
 await page.waitForTimeout(1500);
-await shot('04-placement-countin');
+await shot('04-placement-prep');
 
 // A simulated student: solid up to SKILL, shaky above it. Plays through the same input path
 // as the on-screen keyboard, with a little human timing jitter.
@@ -93,8 +93,29 @@ await page.evaluate((skill) => {
   };
 }, SKILL);
 
+// "Get ready": the first test is started by playing its first note (the hands-free path),
+// the rest with the "I'm ready" button.
+async function getReady(byNote) {
+  // (the fake mic's middle C can start a test by itself when it begins on middle C: that's the
+  // hands-free path working, so either state is fine)
+  await page.waitForFunction(() => !document.querySelector('#prep').classList.contains('hidden') || !!window.__maestro.session(), null, { timeout: 8000 });
+  if (await page.evaluate(() => !!window.__maestro.session())) return;
+  if (byNote) {
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      const { audio } = window.__maestro;
+      const first = window.__maestro.app.prepStarts();
+      audio.noteOn(first[0], audio.now(), 0.7, 'touch');
+      setTimeout(() => audio.noteOff(first[0], audio.now(), 'touch'), 150);
+    });
+  } else await page.click('#btn-prep-go', { timeout: 3000 }).catch(() => {}); // (may have just started by itself)
+  await page.waitForFunction(() => !!window.__maestro.session(), null, { timeout: 8000 });
+}
+
 let tests = 0;
 for (; tests < 12; tests++) {
+  await getReady(tests === 0);
+  if (tests === 0) console.log('first test started by playing its first note');
   await page.evaluate(() => window.__autoplay());
   if (tests === 0) {
     await page.waitForTimeout(4000);

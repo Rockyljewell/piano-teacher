@@ -6,7 +6,7 @@
 // Also exports the small notation helpers songs.js shares (notateSpan, extendTies,
 // estimateLevel).
 import { Key } from './theory.js';
-import { TIME_SIGS, finish } from './generator.js';
+import { TIME_SIGS, finish, buildPrep } from './generator.js';
 
 const EPS = 1e-6;
 
@@ -802,5 +802,11 @@ export function midiToPiece(arrayBuffer, opts = {}) {
   });
   extendTies(piece);
   piece.level = estimateLevel(piece);
+  // "Get ready" hints worded for the estimated level (finish() ran before it was known).
+  try {
+    piece.prep = buildPrep(piece, { level: piece.level });
+  } catch {
+    /* keep whatever finish() made */
+  }
   return piece;
 }
