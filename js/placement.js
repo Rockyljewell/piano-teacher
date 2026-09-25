@@ -66,6 +66,8 @@ export function nextLevel(post, tests) {
     if (last.score >= 92) L = Math.max(L, Math.min(MAX_LEVEL, last.level + 2)); // aced it: jump
     else if (last.score >= 80) L = Math.max(L, Math.min(MAX_LEVEL, last.level + 1)); // did well: harder
     else if (last.score < 55) L = Math.min(L, Math.max(1, last.level - 1)); // struggled: easier
+    else if (last.score < 70) L = Math.min(L, last.level); // shaky: never harder
+    else L = Math.max(last.level - 1, Math.min(L, last.level + 1)); // fair: small steps only
     // Don't give the same level three times in a row; probe the side the estimate leans to.
     const prev = tests[tests.length - 2];
     if (prev && prev.level === last.level && L === last.level) {
