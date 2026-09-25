@@ -225,7 +225,7 @@
           <div class="res-sub"><span id="res-subtitle"></span><span id="res-xp" class="xp-chip"></span></div>
           <div id="res-level" class="res-level"></div>
           <div class="tiles">
-            <div class="tile t-hit"><div class="hd">Notes hit</div><div class="bd"><div class="v"><b id="res-notes"></b></div><div class="d"><span id="res-extra"></span> wrong notes</div></div></div>
+            <div class="tile t-hit"><div class="hd">Notes hit</div><div class="bd"><div class="v"><b id="res-notes"></b></div><div class="d"><span id="res-extra"></span></div></div></div>
             <div class="tile t-time"><div class="hd">On time</div><div class="bd"><div class="v"><b id="res-timing"></b></div><div class="d" id="res-timing-d">timing score</div></div></div>
             <div class="tile t-off" id="tile-offset"><div class="hd">Avg. offset</div><div class="bd"><div class="v"><b id="res-offset"></b></div><div class="d" id="res-offset-d"></div></div></div>
           </div>
@@ -356,6 +356,7 @@
             <label class="switch-row"><span>Sound effects</span><input type="checkbox" data-set="sounds"></label>
             <label class="switch-row"><span>Hands-free: continue to the next exercise automatically</span><input type="checkbox" data-set="autoAdvance"></label>
             <label class="switch-row"><span>"Get ready" step: show where your hands go before each exercise</span><input type="checkbox" data-set="prep"></label>
+            <label class="switch-row"><span>Correct microphone delay automatically</span><input type="checkbox" data-set="autoLatency"></label>
             <label class="select-row"><span>Daily goal</span>
               <select data-set="dailyGoal"><option value="30">Casual (30 XP)</option><option value="50">Regular (50 XP)</option><option value="100">Serious (100 XP)</option><option value="200">Intense (200 XP)</option></select>
             </label>
@@ -389,6 +390,7 @@
             <p class="fine">If Maestro keeps saying you're late when you feel on time, raise the offset (the results screen can also suggest a value).</p>
             <div class="row">
               <button id="btn-recal" class="btn">Re-run microphone setup</button>
+              <button id="btn-diag" class="btn">Listening check</button>
               <button data-go="placement" class="btn">Retake level test</button>
               <button id="btn-reset" class="btn btn-danger">Reset all progress</button>
             </div>
@@ -398,6 +400,63 @@
         </div>
       </div>
     </section>
+
+    <!-- LISTENING CHECK: live microphone diagnostics (js/ui/diagnostics.js) --------------------- -->
+    <div id="diag" class="overlay diag hidden" role="dialog" aria-modal="true" aria-labelledby="diag-title">
+      <div class="dialog diag-card">
+        <button id="diag-close" class="icon-btn close" aria-label="Close"></button>
+        <header class="diag-head">
+          <div id="diag-pip" class="diag-pip" data-pip="listen" data-size="112"></div>
+          <div class="diag-title">
+            <p class="eyebrow">Listening check</p>
+            <h2 id="diag-title">Can Maestro hear your piano?</h2>
+            <p id="diag-verdict" class="diag-verdict warn" aria-live="polite"><i></i><span>Checking…</span></p>
+          </div>
+        </header>
+        <div class="diag-grid">
+          <div class="diag-main">
+            <section class="diag-panel diag-level">
+              <div class="diag-panel-head"><h3>Microphone level</h3><b id="diag-db" class="diag-big">–</b></div>
+              <div id="diag-meter" class="diag-meter" role="img" aria-label="Microphone level meter">
+                <div class="diag-meter-fill"></div>
+                <div class="diag-mark room"><span>Room</span></div>
+                <div class="diag-mark piano"><span>Piano</span></div>
+                <div class="diag-peak"></div>
+              </div>
+              <div class="diag-scale" aria-hidden="true"><span>−90</span><span>−72</span><span>−54</span><span>−36</span><span>−18</span><span>0 dB</span></div>
+              <div class="diag-legend">
+                <span class="dl room">Room noise <b id="diag-room">–</b></span>
+                <span class="dl piano">Your piano <b id="diag-piano">–</b></span>
+                <span class="dl peak">Peak <b id="diag-peak-db">–</b></span>
+              </div>
+            </section>
+            <section class="diag-panel diag-test">
+              <div id="diag-note" class="diag-note"><b id="diag-note-name">♪</b><small id="diag-note-sub">no note yet</small></div>
+              <div class="diag-test-body">
+                <h3>Note test</h3>
+                <p id="diag-test-msg" class="fine">Tap the button, then play any key. I'll show the note I hear and how sure I am.</p>
+                <button id="diag-test" class="btn">Play a note test</button>
+              </div>
+            </section>
+            <section class="diag-panel diag-notes-panel">
+              <div class="diag-panel-head"><h3>Last notes I heard</h3><span id="diag-rejected" class="fine"></span></div>
+              <div id="diag-notes" class="diag-chips"></div>
+            </section>
+          </div>
+          <aside class="diag-side">
+            <section class="diag-panel">
+              <h3>What I can see</h3>
+              <ul id="diag-rows" class="diag-rows"></ul>
+            </section>
+            <div class="diag-actions">
+              <button id="diag-restart" class="btn btn-primary btn-lg btn-block">Restart microphone</button>
+              <button id="diag-record" class="btn btn-block">Save a troubleshooting recording</button>
+              <div id="diag-rec" class="diag-rec hidden" aria-live="polite"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
 
     <div id="toast" class="toast" role="status"></div>
     <div id="rotate-hint" class="rotate-hint"><div class="pip-slot" data-pip="think" data-size="120"></div><p>Turn your iPad sideways (landscape) for the best view.</p></div>

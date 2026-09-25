@@ -96,7 +96,10 @@ await page.evaluate((skill) => {
 // "Get ready": the first test is started by playing its first note (the hands-free path),
 // the rest with the "I'm ready" button.
 async function getReady(byNote) {
-  await page.waitForSelector('#prep:not(.hidden)', { timeout: 8000 });
+  // (the fake mic's middle C can start a test by itself when it begins on middle C: that's the
+  // hands-free path working, so either state is fine)
+  await page.waitForFunction(() => !document.querySelector('#prep').classList.contains('hidden') || !!window.__maestro.session(), null, { timeout: 8000 });
+  if (await page.evaluate(() => !!window.__maestro.session())) return;
   if (byNote) {
     await page.waitForTimeout(800);
     await page.evaluate(() => {
@@ -105,7 +108,7 @@ async function getReady(byNote) {
       audio.noteOn(first[0], audio.now(), 0.7, 'touch');
       setTimeout(() => audio.noteOff(first[0], audio.now(), 'touch'), 150);
     });
-  } else await page.click('#btn-prep-go');
+  } else await page.click('#btn-prep-go', { timeout: 3000 }).catch(() => {}); // (may have just started by itself)
   await page.waitForFunction(() => !!window.__maestro.session(), null, { timeout: 8000 });
 }
 

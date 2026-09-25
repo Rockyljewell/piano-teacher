@@ -1,7 +1,7 @@
 // "Get ready": before an exercise starts, show where the hands go. The keyboard lights up the
 // hand position with finger numbers, the first notes pulse, and Pip says where to start. The
 // count-in begins when the student plays a first note (hands-free) or taps "I'm ready".
-import { $, S, app, audio, coach, say, stopVoice, sfx } from './core.js';
+import { $, S, app, audio, coach, say, stopVoice, sfx, getVoice } from './core.js';
 import { noteName } from '../music/theory.js';
 import { pip } from './brand.js';
 
@@ -181,18 +181,29 @@ async function startFromPrep(why) {
   if (!p) return;
   S.prep = null;
   leaveUI();
-  stopVoice();
   if (why === 'note') app.flash && app.flash('Great, here we go!', 'info', 1400);
-  // Make sure the audio clock runs and the mic delivers before the count-in starts.
+  // Stop Pip and wait until speech has really finished (iOS can stall audio if the count-in
+  // starts while speech is still winding down), then make sure the audio clock runs and the mic
+  // delivers before counting in: never count in on a frozen clock.
+  const v = getVoice();
+  try {
+    if (v && typeof v.settle === 'function') await v.settle();
+    else stopVoice();
+  } catch {
+    stopVoice();
+  }
+  let r = { ok: true };
   if (typeof audio.ready === 'function') {
     try {
-      await audio.ready({ timeoutMs: 2500 });
+      r = await audio.ready({ timeoutMs: 2500 });
     } catch {
-      /* start anyway */
+      r = { ok: true }; // start anyway
     }
+    if (typeof audio.logEvent === 'function') audio.logEvent('count-in', r);
   } else if (typeof audio.resume === 'function') await audio.resume();
   if (S.screen !== 'play' || S.piece == null) return;
   app.startSession(p.mode);
+  if (r && r.ok === false && !S.listenSkipped && app.listenLost) app.listenLost({ ...(audio.health || {}), ...r });
 }
 
 // A note while getting ready: a first note starts; another key gets a gentle pointer.

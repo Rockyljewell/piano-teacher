@@ -18,6 +18,13 @@
 //   button.onclick = () => voice.unlock();          // inside a user gesture, once
 //   await voice.speak('Nice! Now try it with both hands.');
 //   audio.attachVoice(voice);                        // mic ignores the coach while it talks
+//   await voice.settle();                            // before a count-in: stop talking, let the
+//                                                    // iOS audio session settle
+//
+// iOS and the microphone: with the mic open Safari runs the audio session in play-and-record,
+// and SpeechSynthesis is "system speech" outside the page's AudioContext. The mic hold for the
+// voice is bounded by maxRemainingMs() (every utterance has a hard timeout), and the audio engine
+// re-checks its context and the mic whenever speech ends or is cancelled (attachVoice).
 
 const STORE_KEY = 'maestro.voice';
 
@@ -31,6 +38,7 @@ const NOVELTY = new Set(
 const GOOD_NAMES = { ava: 6, zoe: 6, evan: 5, nathan: 5, alex: 6, samantha: 4, allison: 4, susan: 3, tom: 3, joelle: 4, noelle: 4, serena: 4, daniel: 4, kate: 3, oliver: 3, karen: 3, moira: 3, tessa: 2, aaron: 3, nicky: 3, siri: 6 };
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 function baseName(name) {
   return String(name || '')
@@ -143,6 +151,7 @@ export class Voice {
     this._current = null;
     this._needsGap = false;
     this._unlocked = false;
+    this._deadline = 0; // performance.now() by which everything queued has certainly finished
     this.ready = this.supported ? this._loadVoices() : Promise.resolve(false);
   }
 
@@ -239,6 +248,9 @@ export class Voice {
     const interrupt = opts.interrupt ?? true;
     this._begin(); // speaking = true now (before cancel settles): the mic hold stays continuous
     if (interrupt) this.cancel();
+    const t0 = now();
+    const bound = this._boundMs(t, opts);
+    this._deadline = (interrupt ? t0 : Math.max(t0, this._deadline)) + bound;
     const gen = this._gen;
     const run = async () => {
       if (gen !== this._gen) return { ok: false, reason: 'cancelled' };
@@ -260,6 +272,42 @@ export class Voice {
     });
   }
 
+  // Upper bound (ms) on how long the voice may still be speaking: every utterance has a hard
+  // timeout, so this is finite. 0 when idle. The audio engine uses it to bound the mic hold.
+  maxRemainingMs() {
+    if (!this.speaking) return 0;
+    return Math.max(0, this._deadline - now());
+  }
+
+  // Stop speaking and wait until the speech engine is really idle, plus a short gap for the iOS
+  // audio session to settle. Call right before listening must work (e.g. before a count-in).
+  // Resolves {ok, waitedMs} (ok: false when the engine still claimed to be speaking at timeout).
+  async settle({ timeoutMs = 800, gapMs = 150 } = {}) {
+    const t0 = now();
+    const busy = () => {
+      if (!this.supported) return false;
+      try {
+        return !!(this._synth.speaking || this._synth.pending);
+      } catch {
+        return false;
+      }
+    };
+    const was = busy() || this.speaking;
+    this.cancel();
+    if (!was) return { ok: true, waitedMs: 0 };
+    while ((busy() || this.speaking) && now() - t0 < timeoutMs * this._ts) await new Promise((r) => setTimeout(r, 25 * this._ts));
+    const ok = !busy();
+    if (!ok) {
+      try {
+        this._synth.cancel(); // one more try: iOS sometimes needs a second cancel
+      } catch {
+        /* ignore */
+      }
+    }
+    await new Promise((r) => setTimeout(r, gapMs * this._ts));
+    return { ok, waitedMs: Math.round(now() - t0) };
+  }
+
   // Stop speaking now and drop anything queued.
   cancel() {
     this._gen++;
@@ -276,6 +324,15 @@ export class Voice {
   }
 
   // ---- internals ---------------------------------------------------------------------------
+
+  // Worst case for speak(text): the voices-ready wait, then per sentence chunk the post-cancel
+  // gap, the 3 s start timeout and the length-based end timeout (see _say).
+  _boundMs(text, opts) {
+    const rate = clamp(opts.rate ?? this.rate, 0.5, 2);
+    let ms = 1200;
+    for (const chunk of splitText(text)) ms += 80 + 3000 + estimateMs(chunk, rate) * 1.6 + 1500;
+    return ms * this._ts;
+  }
 
   _begin() {
     if (this._active++ === 0) this._notify(true);

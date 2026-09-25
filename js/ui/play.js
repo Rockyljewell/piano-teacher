@@ -211,7 +211,8 @@ function onSessionEvent(ev) {
     S.judged++;
     S.credit += ev.grade === 'perfect' ? 1 : ev.grade === 'great' ? 0.9 : ev.grade === 'good' ? 0.75 : 0.5;
     S.lastKind.set(ev.note.midi, { kind: 'good', t: performance.now() });
-    const col = gradeColor(ev.grade, ev.errMs);
+    // Wait mode has no timing: colour by how cleanly the note was found, not early/late.
+    const col = ev.wait ? (ev.grade === 'perfect' ? GRADE_COLORS.perfect : ev.grade === 'great' ? GRADE_COLORS.great : '#6F4BF2') : gradeColor(ev.grade, ev.errMs);
     stage.burst(ev.note.midi, col, ev.grade === 'perfect' ? 10 : 7, { grade: ev.grade });
     stage.ring(ev.note.eventId, ev.note.midi, col);
     stage.chip(ev.note.midi, ev.label, col, { grade: ev.grade, errMs: ev.errMs, eventId: ev.note.eventId });
@@ -231,7 +232,8 @@ function onSessionEvent(ev) {
   } else if (ev.type === 'wrong') {
     S.combo = 0;
     S.lastKind.set(ev.midi, { kind: 'bad', t: performance.now() });
-    stage.chip(ev.midi, `Oops · ${noteName(ev.midi, S.piece.key)}`, GRADE_COLORS.wrong, { grade: 'wrong' });
+    const want = ev.wait && ev.expected && ev.expected.length ? ` · try ${noteName(ev.expected[0], S.piece.key)}` : '';
+    stage.chip(ev.midi, `Oops · ${noteName(ev.midi, S.piece.key)}${want}`, GRADE_COLORS.wrong, { grade: 'wrong' });
     sfx('wrong');
   } else if (ev.type === 'beat') {
     const dots = $$('#hud-beats i');
@@ -386,10 +388,12 @@ function healthUp() {
   pausedForHealth = false;
 }
 audio.on('health', (ev) => {
-  if (!ev) return;
+  if (!ev || ev.reason === 'page-hidden') return; // (leaving the app already pauses the lesson)
   if (ev.ok) healthUp();
-  else if (audio.micOn || /context|clock|stall|interrupt|suspend/.test(`${ev.reason || ''} ${ev.context || ''}`)) healthDown(ev);
+  // (micOn turns false the moment the mic dies, so ask whether we *want* the mic.)
+  else if ((audio.micWanted && !S.listenSkipped) || /context|clock|stall|interrupt|suspend/.test(`${ev.reason || ''} ${ev.context || ''}`)) healthDown(ev);
 });
+app.listenLost = (ev) => healthDown({ ...ev, needsGesture: true });
 $('#btn-lost-fix').addEventListener('click', async () => {
   const btn = $('#btn-lost-fix');
   // Call recover() inside the tap itself: iOS only resumes audio / opens the mic on a gesture.
