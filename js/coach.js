@@ -180,6 +180,14 @@ export class Coach {
     return { done: false, next: this.placementActivity(), passed: result.score >= PASS_SCORE, direction, estimate };
   }
 
+  // Place the student at a level directly (skipping or overriding the placement test).
+  setLevel(level) {
+    this.s.level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+    this.s.placed = true;
+    this.s.placement = null;
+    this.save();
+  }
+
   // ---- lessons ----------------------------------------------------------------------------
   // What should the student do next at their level?
   nextActivity() {

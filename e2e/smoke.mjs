@@ -55,66 +55,105 @@ if (!heardC) {
   await page.click('#btn-setup-skip');
 }
 
-// Placement test starts.
+// "Have you played before?" -> first placement test.
+await page.waitForSelector('#screen-placement.active', { timeout: 8000 });
+await shot('03-experience');
+await page.click('.exp-option[data-exp="some"]');
+await page.click('#btn-exp-go');
 await page.waitForSelector('#screen-play.active', { timeout: 8000 });
 await page.waitForTimeout(1500);
-await shot('03-placement-countin');
+await shot('04-placement-countin');
 
-// Play the piece perfectly with the computer keyboard (the "touch" input path).
-const KEY = { 60: 'a', 61: 'w', 62: 's', 63: 'e', 64: 'd', 65: 'f', 66: 't', 67: 'g', 68: 'y', 69: 'h', 70: 'u', 71: 'j', 72: 'k' };
-await page.evaluate(() => {
-  // Expose a tiny auto-player that uses the same input path as the on-screen keyboard.
-  window.__autoplay = (acc = 1) => {
+// A simulated student: solid up to SKILL, shaky above it. Plays through the same input path
+// as the on-screen keyboard, with a little human timing jitter.
+const SKILL = Number(process.env.SKILL || 12);
+await page.evaluate((skill) => {
+  window.__autoplay = () => {
     const { audio } = window.__maestro;
+    const s0 = window.__maestro.session();
+    const level = (window.__maestro.piece() || {}).level || 1;
+    const acc = level <= skill ? 0.97 : level <= skill + 3 ? 0.7 : 0.35;
     const tick = () => {
       const s = window.__maestro.session();
-      if (!s || s.finished) return;
+      if (!s || s.finished || s !== s0) return;
       for (const n of s.expectedNotes(0.05)) {
         if (n._played) continue;
         const dt = (n.beat - s.beat) * s.spb;
-        if (dt <= 0.01) {
+        if (s.mode === 'wait' || dt <= 0.01) {
           n._played = true;
-          if (Math.random() < acc) audio.noteOn(n.midi, audio.now(), 0.7, 'touch');
-          else audio.noteOn(n.midi + 1, audio.now(), 0.7, 'touch');
-          setTimeout(() => audio.noteOff(n.midi, audio.now(), 'touch'), 150);
+          const midi = Math.random() < acc ? n.midi : n.midi + (Math.random() < 0.5 ? 1 : -2);
+          const jitter = (Math.random() - 0.5) * 0.06;
+          audio.noteOn(midi, audio.now() + jitter, 0.7, 'touch');
+          setTimeout(() => audio.noteOff(midi, audio.now(), 'touch'), 150);
         }
       }
       requestAnimationFrame(tick);
     };
     tick();
   };
-});
-await page.evaluate(() => window.__autoplay(1));
-await page.waitForTimeout(4000);
-await shot('04-placement-playing');
-await page.waitForSelector('#results:not(.hidden)', { timeout: 60000 });
-await shot('05-placement-result');
-console.log('result score:', await page.textContent('#res-score'), '|', await page.textContent('#res-level'));
+}, SKILL);
 
-// Continue a few placement tests with the auto-player.
-for (let i = 0; i < 3; i++) {
+let tests = 0;
+for (; tests < 12; tests++) {
+  await page.evaluate(() => window.__autoplay());
+  if (tests === 0) {
+    await page.waitForTimeout(4000);
+    await shot('05-placement-playing');
+  }
+  await page.waitForSelector('#results:not(.hidden)', { timeout: 120000 });
+  await page.waitForTimeout(600);
+  const t = await page.evaluate(() => {
+    const c = window.__maestro.coach.s;
+    const list = c.placement ? c.placement.tests : c.placementHistory.at(-1).tests;
+    return list.at(-1);
+  });
+  console.log(`test ${tests + 1}: level ${t.level} → ${t.score}% (notes ${Math.round(t.noteAcc * 100)}%, timing ${Math.round(t.timing * 100)}%) |`, (await page.textContent('#res-level')).replace(/\s+/g, ' ').trim());
+  if (tests === 0) await shot('06-placement-result');
+  const label = (await page.textContent('#btn-next')).trim();
+  await page.click('#results', { position: { x: 20, y: 20 } }); // skip the animation
   await page.click('#btn-next');
-  await page.waitForTimeout(300);
-  await page.evaluate(() => window.__autoplay(1));
-  await page.waitForSelector('#results:not(.hidden)', { timeout: 90000 });
-  console.log(`test ${i + 2}:`, await page.textContent('#hud-title'), '→', await page.textContent('#res-score'), '|', await page.textContent('#res-level'));
+  await page.waitForTimeout(500);
+  if (/see my level/i.test(label)) break;
+  await page.waitForSelector('#screen-play.active');
 }
-await shot('06-later-test-result');
-await page.click('#btn-res-home');
-await page.waitForTimeout(300);
-await shot('07-home-after');
-
-// Free play screen with the fake mic.
-await page.click('[data-go="free"]');
+await page.waitForSelector('#screen-reveal.active', { timeout: 8000 });
 await page.waitForTimeout(2500);
-await shot('08-free-play');
+await shot('07-reveal');
+const placed = await page.evaluate(() => window.__maestro.coach.s.level);
+console.log(`placed at level ${placed} after ${tests + 1} tests (simulated skill ${SKILL})`);
+await page.click('#btn-reveal-go');
+await page.waitForTimeout(800);
+await shot('08-after-reveal');
+await page.evaluate(() => window.__maestro.app.stopPlay && window.__maestro.app.stopPlay());
+
+// Every main screen through the navigation rail.
+await page.evaluate(() => window.__maestro.app.show('home'));
+await page.waitForTimeout(500);
+await shot('09-home');
+for (const s of ['songs', 'practice', 'progress', 'settings']) {
+  await page.click(`.screen.active .rail [data-go="${s}"]`);
+  await page.waitForTimeout(500);
+  await shot(`10-${s}`);
+}
+// A song: open its sheet and start it.
+await page.click('.screen.active .rail [data-go="songs"]');
+await page.waitForTimeout(300);
+await page.click('#song-grid > *:first-child');
+await page.waitForTimeout(500);
+await shot('11-song-sheet');
+await page.click('#sheet-play');
+await page.waitForSelector('#screen-play.active', { timeout: 8000 });
+await page.waitForTimeout(3000);
+await shot('12-song-play');
+await page.click('#btn-exit');
+await page.waitForTimeout(300);
+// Free play with the fake mic.
+await page.click('.screen.active .rail [data-go="free"]');
+await page.waitForTimeout(2500);
+await shot('13-free-play');
 await page.click('#btn-exit');
 
-for (const s of ['map', 'practice', 'progress', 'settings']) {
-  await page.click(`[data-go="${s}"]`);
-  await page.waitForTimeout(400);
-  await shot(`09-${s}`);
-  await page.click(`#screen-${s} [data-go="home"]`);
-}
-console.log(logs.filter((l) => /error|pageerror/i.test(l)).join('\n') || 'no console errors');
+const errors = logs.filter((l) => /error|pageerror/i.test(l));
+console.log(errors.join('\n') || 'no console errors');
 await browser.close();
+if (errors.length || !heardC) process.exit(1);

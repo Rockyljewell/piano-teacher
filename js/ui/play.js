@@ -1,13 +1,21 @@
 // The play screen: builds the exercise, runs the graded session, draws the stage, handles the
-// HUD (pause, tempo, wait mode, listen), touch/keyboard input and free play.
-import { $, $$, S, app, audio, coach, stage, show, screen, sfx, holdMic, stopVoice } from './core.js';
+// HUD (pause, tempo, wait mode, listen), the status strip (mic + bar progress), touch/keyboard
+// input and free play.
+import { $, $$, S, app, audio, coach, stage, show, screen, sfx, stopVoice } from './core.js';
 import { Session } from '../game/engine.js';
 import { generate, generateRhythm } from '../music/generator.js';
 import { songPiece } from '../music/songs.js';
 import { levelInfo } from '../music/curriculum.js';
 import { noteName, chordName, Key } from '../music/theory.js';
+import { icon, pip } from './brand.js';
 
-export const GRADE_COLORS = { perfect: '#1fbf6a', great: '#27b36b', good: '#e0a800', ok: '#f08a24', wrong: '#ef476f' };
+// Grade colours (docs/brand/playful/spec.md): Perfect = sun, Great = mint, early = blue, late = orange.
+export const GRADE_COLORS = { perfect: '#FFC23D', great: '#20C07A', early: '#2F9BFF', late: '#FF9A2E', wrong: '#FF5A6A' };
+export function gradeColor(grade, errMs = 0) {
+  if (grade === 'perfect') return GRADE_COLORS.perfect;
+  if (grade === 'great') return GRADE_COLORS.great;
+  return errMs < 0 ? GRADE_COLORS.early : GRADE_COLORS.late;
+}
 
 export function buildPiece(act) {
   if (act.piece) return act.piece;
@@ -41,7 +49,7 @@ export function stageOptions(level) {
     showNames: coach.showNames(level),
     showFingers: st.showFingers,
     showHints: st.showHints,
-    noteColors: st.noteColors === 'auto' ? level <= 8 : !!st.noteColors,
+    noteColors: st.noteColors === 'auto' ? level <= 16 : !!st.noteColors,
   };
 }
 
@@ -50,6 +58,20 @@ function modeLabel(act) {
   if (act.kind === 'song') return 'Song';
   if (act.kind === 'import') return 'Imported';
   return act.free ? 'Practice' : 'Lesson';
+}
+
+function cueHtml(dir) {
+  if (!dir) return '';
+  const [cls, ic, text] = dir === 'harder' ? ['harder', 'up', 'A bit harder'] : dir === 'easier' ? ['easier', 'down', 'A bit easier'] : ['same', 'retry', 'One more like that'];
+  return `<span class="cue ${cls}"><span class="arrow">${icon(ic, 15)}</span>${text}</span>`;
+}
+
+function placementProgress(act) {
+  const n = act.testIndex || 1;
+  const total = Math.max(n, act.estTotal || n);
+  let segs = '';
+  for (let i = 1; i <= total; i++) segs += `<i class="${i < n ? 'done' : i === n ? 'cur' : i > total - 2 && i > n ? 'maybe' : ''}"></i>`;
+  return `<div class="hp-row"><b>Test ${n} <span>of ~${total}</span></b>${cueHtml(S.placementCue)}</div><div class="segs">${segs}</div>`;
 }
 
 export function play(piece, act) {
@@ -63,28 +85,45 @@ export function play(piece, act) {
   const level = act.level ?? piece.level ?? 1;
   stage.setOptions(stageOptions(level));
   stage.setPiece(piece);
-  requestAnimationFrame(() => stage.resize());
+  requestAnimationFrame(() => resizeStage());
   const lv = levelInfo(level);
   let title = act.label || piece.title;
   if (act.kind === 'song') title = piece.title;
-  $('#hud-title').textContent = title;
-  const bits = [modeLabel(act)];
-  if (act.kind === 'song') bits.push(piece.subtitle || '', piece.composer || '');
-  else bits.push(`Level ${lv.n}: ${lv.title}`);
-  bits.push(piece.key.name, piece.tsName);
+  $('#hud-title').textContent = act.placement ? 'Find my level' : title;
+  const bits = act.placement ? ['Both hands', piece.key.name, piece.tsName] : [modeLabel(act)];
+  if (!act.placement) {
+    if (act.kind === 'song') bits.push(piece.subtitle || '', piece.composer || '');
+    else bits.push(`Level ${lv.n} · ${lv.title}`);
+    bits.push(piece.key.name, piece.tsName);
+  }
   $('#hud-sub').textContent = bits.filter(Boolean).join(' · ');
-  // Placement progress
+  // Placement progress: "Test 3 of ~7" + harder/easier cue.
   const prog = $('#hud-progress');
   if (act.placement) {
     prog.classList.remove('hidden');
-    prog.innerHTML = `<span>Test ${act.testIndex} of ~${act.estTotal}</span><div class="bar"><i style="width:${Math.round((100 * (act.testIndex - 1)) / act.estTotal)}%"></i></div>`;
+    prog.innerHTML = placementProgress(act);
   } else prog.classList.add('hidden');
-  const lock = !!act.placement;
-  for (const id of ['#btn-mode', '#btn-tempo-down', '#btn-tempo-up', '#btn-listen']) $(id).classList.toggle('hidden', lock);
   startSession(act.mode || 'tempo');
+  if (act.placement) {
+    const line = S.placementCue === 'harder' ? "Nice! Here's a trickier one." : S.placementCue === 'easier' ? "Let's try an easier one." : 'Play what you can. Both hands!';
+    flash(line, 'info', 3200);
+  }
+  if (act.demoFirst) startDemo();
   acquireWakeLock();
 }
 app.play = play;
+
+function resizeStage() {
+  stage.resize();
+  placeStrip();
+}
+
+function placeStrip() {
+  const L = stage.L;
+  const strip = $('#status-strip');
+  if (!L || !L.strip) return;
+  strip.style.top = `${Math.round(L.strip.y + (L.strip.h - 36) / 2)}px`;
+}
 
 export function startSession(mode) {
   const piece = S.piece;
@@ -97,13 +136,20 @@ export function startSession(mode) {
   S.scheduledTicks.clear();
   S.timingRecent = [];
   S.timingLast = '';
+  S.lastTap = -1;
+  // Tell the listener the piece's range: stray sounds far outside it need more evidence.
+  if (piece.rhythmOnly || !piece.notes.length) audio.setRange(null);
+  else audio.setRange(Math.min(...piece.notes.map((n) => n.midi)), Math.max(...piece.notes.map((n) => n.midi)));
+  stage.clearFx && stage.clearFx();
   $('#results').classList.add('hidden');
   $('#pause-menu').classList.add('hidden');
   $('#hud-score').textContent = '–';
   $('#hud-combo').textContent = '0';
-  $('#hud-bpm').textContent = `♩ ${piece.bpm}`;
-  $('#btn-mode').textContent = mode === 'wait' ? 'Wait' : 'Tempo';
-  $('#btn-mode').classList.toggle('on', mode === 'wait');
+  $('#hud-bpm').textContent = String(piece.bpm);
+  const m = $('#btn-mode');
+  m.classList.toggle('on', mode === 'wait');
+  m.setAttribute('aria-checked', String(mode === 'wait'));
+  m.classList.toggle('hidden', !!piece.waitOnly);
   $('#hud-beats').innerHTML = Array.from({ length: piece.ts.num > 4 ? 2 : piece.beatsPer }, () => '<i></i>').join('');
   const level = S.activity ? S.activity.level ?? piece.level : piece.level;
   const session = new Session(piece, {
@@ -154,13 +200,13 @@ function onSessionEvent(ev) {
     S.judged++;
     S.credit += ev.grade === 'perfect' ? 1 : ev.grade === 'great' ? 0.9 : ev.grade === 'good' ? 0.75 : 0.5;
     S.lastKind.set(ev.note.midi, { kind: 'good', t: performance.now() });
-    const col = GRADE_COLORS[ev.grade] || GRADE_COLORS.perfect;
-    stage.burst(ev.note.midi, col, ev.grade === 'perfect' ? 18 : 10);
+    const col = gradeColor(ev.grade, ev.errMs);
+    stage.burst(ev.note.midi, col, ev.grade === 'perfect' ? 10 : 7, { grade: ev.grade });
     stage.ring(ev.note.eventId, ev.note.midi, col);
-    stage.chip(ev.note.midi, ev.label, col);
-    sfx(ev.grade === 'perfect' ? 'hitPerfect' : 'hit');
+    stage.chip(ev.note.midi, ev.label, col, { grade: ev.grade, errMs: ev.errMs, eventId: ev.note.eventId });
+    sfx(ev.grade === 'perfect' ? 'perfect' : 'hit');
     if (S.combo > 0 && S.combo % 10 === 0) {
-      sfx('combo');
+      sfx('combo', { level: Math.min(8, S.combo / 10) });
       comboFlash(S.combo);
     }
     if (S.session.mode === 'tempo') {
@@ -174,7 +220,8 @@ function onSessionEvent(ev) {
   } else if (ev.type === 'wrong') {
     S.combo = 0;
     S.lastKind.set(ev.midi, { kind: 'bad', t: performance.now() });
-    stage.chip(ev.midi, `✗ ${noteName(ev.midi, S.piece.key)}`, GRADE_COLORS.wrong);
+    stage.chip(ev.midi, `Oops · ${noteName(ev.midi, S.piece.key)}`, GRADE_COLORS.wrong, { grade: 'wrong' });
+    sfx('wrong');
   } else if (ev.type === 'beat') {
     const dots = $$('#hud-beats i');
     const unit = S.piece.ts.compound ? 1.5 : 1;
@@ -199,12 +246,22 @@ function onSessionEvent(ev) {
   if (S.judged) $('#hud-score').textContent = `${Math.round((100 * S.credit) / S.judged)}%`;
 }
 
-function comboFlash(n) {
+// A short message in the middle of the status strip.
+function flash(text, kind = '', ms = 2200) {
   const el = $('#feedback-pop');
-  el.textContent = `${n} in a row!`;
-  el.classList.remove('show');
+  el.className = `feedback-pop ${kind}`;
+  el.innerHTML = text;
   void el.offsetWidth;
   el.classList.add('show');
+  el.style.animationDuration = `${ms}ms`;
+}
+
+function comboFlash(n) {
+  flash(`${icon('flame', 20)} ${n} in a row!`);
+  const c = $('#hud-combo').parentElement;
+  c.classList.remove('bump');
+  void c.offsetWidth;
+  c.classList.add('bump');
 }
 
 // Audio events -> session
@@ -214,7 +271,15 @@ audio.on('noteon', (ev) => {
     if (S.history.length > 400) S.history.shift();
     return;
   }
-  if (!S.session || S.demo || !S.piece || S.piece.rhythmOnly) return;
+  if (!S.session || S.demo || !S.piece) return;
+  if (S.piece.rhythmOnly) {
+    // Rhythm drills: any key counts as a tap. Use notes, not raw onsets (speech and claps
+    // make onsets), and treat the notes of one chord as a single tap.
+    if (ev.time - S.lastTap < 0.08) return;
+    S.lastTap = ev.time;
+    S.session.noteOn(0, ev.time, { anyPitch: true, confidence: ev.confidence ?? 1 });
+    return;
+  }
   S.session.noteOn(ev.midi, ev.time, { confidence: ev.confidence ?? 1 });
 });
 audio.on('noteoff', (ev) => {
@@ -225,24 +290,54 @@ audio.on('noteoff', (ev) => {
       break;
     }
 });
-audio.on('onset', (ev) => {
-  if (!S.session || S.demo || !S.piece || !S.piece.rhythmOnly) return;
-  S.session.noteOn(0, ev.time, { anyPitch: true });
-});
 
+// Mic indicator: live level bars; "Not listening" while Maestro itself makes sound.
+let micHeld = false;
+let heldWhy = '';
+audio.on('hold', (ev) => {
+  micHeld = !!(ev && ev.held);
+  const r = ev && ev.reasons ? [...(ev.reasons instanceof Map ? ev.reasons.keys() : ev.reasons)].map(String) : [];
+  heldWhy = r.some((x) => x.includes('voice')) ? 'talk' : r.some((x) => x.includes('demo')) ? 'play' : '';
+});
+const LV_SHAPE = [0.55, 1, 0.8, 0.4];
 function micDot() {
   const md = $('#mic-dot');
   const lvl = Math.min(1, audio.level * 8);
-  md.classList.toggle('on', audio.micOn);
+  const on = audio.micOn;
+  md.classList.toggle('on', on && !micHeld);
+  md.classList.toggle('held', on && micHeld);
+  const label = !on ? 'On-screen keys' : micHeld ? (heldWhy === 'talk' ? 'Not listening while I talk' : heldWhy === 'play' ? 'Not listening while I play' : 'Listening paused') : 'Listening';
+  const lab = md.querySelector('.mic-label');
+  if (lab.textContent !== label) lab.textContent = label;
+  const bars = md.querySelectorAll('.lv i');
+  bars.forEach((b, i) => (b.style.height = `${Math.round(4 + (on && !micHeld ? lvl : 0) * 12 * LV_SHAPE[i])}px`));
   md.style.setProperty('--lvl', lvl.toFixed(2));
   audio.level *= 0.9;
 }
 
+function barProgress() {
+  const s = S.session;
+  const p = S.piece;
+  if (!s || !p) return;
+  const total = p.measures || Math.ceil(p.totalBeats / p.beatsPer);
+  const beat = Math.max(0, s.beat);
+  const bar = Math.min(total, Math.floor(beat / p.beatsPer) + 1);
+  const label = s.beat < 0 ? `${total} bar${total === 1 ? '' : 's'}` : `Bar ${bar} of ${total}`;
+  const el = $('#bar-label');
+  if (el.textContent !== label) el.textContent = label;
+  $('#bar-fill').style.width = `${Math.max(0, Math.min(100, (100 * beat) / Math.max(1, p.totalBeats)))}%`;
+}
+
 export function loop() {
   cancelAnimationFrame(S.raf);
+  let lastStrip = -1;
   const frame = () => {
     S.raf = requestAnimationFrame(frame);
     if (S.screen !== 'play') return;
+    if (stage.L && stage.L.strip && stage.L.strip.y !== lastStrip) {
+      lastStrip = stage.L.strip.y;
+      placeStrip();
+    }
     if (S.free) return drawFree();
     const s = S.session;
     if (!s) return;
@@ -275,6 +370,7 @@ export function loop() {
       timingMeter: s.mode === 'tempo' && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
     });
     micDot();
+    barProgress();
   };
   S.raf = requestAnimationFrame(frame);
 }
@@ -282,10 +378,13 @@ export function loop() {
 export function stopPlay(keepScreen) {
   cancelAnimationFrame(S.raf);
   clearTimeout(S.autoTimer);
+  clearTimeout(S.demoTimer);
   if (S.session) S.session.finished = true;
   S.session = null;
-  if (S.demoRelease) S.demoRelease();
-  S.demoRelease = null;
+  audio.setExpected([]);
+  audio.setRange(null);
+  if (S.demoHandle) S.demoHandle.stop();
+  S.demoHandle = null;
   S.demo = false;
   if (audio.synth) audio.synth.stopAll();
   $('#countdown').textContent = '';
@@ -302,6 +401,7 @@ $('#btn-exit').addEventListener('click', () => {
 function pause() {
   if (!S.session || S.free || S.session.finished) return;
   S.session.pause();
+  fillViewMenu();
   $('#pause-menu').classList.remove('hidden');
   sfx('tap');
 }
@@ -330,7 +430,7 @@ $('#btn-quit').addEventListener('click', () => {
 });
 $('#btn-mode').addEventListener('click', () => {
   if (!S.session || S.piece.waitOnly) return;
-  sfx('toggle');
+  sfx('toggle', { on: S.session.mode !== 'wait' });
   startSession(S.session.mode === 'wait' ? 'tempo' : 'wait');
 });
 function changeTempo(d) {
@@ -342,37 +442,38 @@ function changeTempo(d) {
 $('#btn-tempo-down').addEventListener('click', () => changeTempo(-5));
 $('#btn-tempo-up').addEventListener('click', () => changeTempo(5));
 
-// Demo: the piano plays the piece while the playhead moves (listening is paused meanwhile).
-$('#btn-listen').addEventListener('click', async () => {
+// Demo ("Listen" / "Hear it first"): the piano plays the piece while the playhead moves. The
+// engine schedules with lookahead and keeps the mic held until the sound has decayed.
+async function startDemo() {
   if (!S.piece) return;
   await audio.ensureContext();
-  const mode = S.session ? S.session.mode : 'tempo';
+  const mode = S.session ? S.session.mode : S.activity?.mode || 'tempo';
   startSession('tempo');
   S.demo = true;
   S.demoMode = mode;
-  S.demoRelease = holdMic('demo');
   const s = S.session;
-  const base = audio.ctx.currentTime - audio.now();
-  for (const n of S.piece.notes) audio.synth.note(n.midi, s.timeOfBeat(n.beat) + base, ((n.dur * 60) / S.piece.bpm) * 0.95, 0.7);
-  const el = $('#feedback-pop');
-  el.textContent = '🔊 Listen…';
-  el.classList.remove('show');
-  void el.offsetWidth;
-  el.classList.add('show');
+  if (S.demoHandle) S.demoHandle.stop();
+  S.demoHandle = typeof audio.playDemo === 'function' ? audio.playDemo(S.piece, { timeOfBeat: (b) => s.timeOfBeat(b) }) : null;
+  flash(`${icon('speaker', 18)} Listen first…`, 'info', 3000);
+}
+app.startDemo = startDemo;
+$('#btn-listen').addEventListener('click', () => {
+  sfx('tap');
+  startDemo();
 });
 function endDemo() {
   S.demo = false;
-  setTimeout(() => {
-    if (S.demoRelease) S.demoRelease();
-    S.demoRelease = null;
-    if (S.screen === 'play' && S.piece) startSession(S.demoMode || 'tempo');
-  }, 600);
+  const h = S.demoHandle;
+  const restart = () => {
+    S.demoHandle = null;
+    if (S.screen === 'play' && S.piece && !S.demo) startSession(S.demoMode || 'tempo');
+  };
+  if (h && h.done) Promise.race([h.done, new Promise((r) => setTimeout(r, 2500))]).then(() => setTimeout(restart, 200));
+  else S.demoTimer = setTimeout(restart, 600);
 }
 
-// View menu
-$('#btn-view').addEventListener('click', () => {
-  const m = $('#view-menu');
-  m.classList.toggle('hidden');
+// Display options live in the pause sheet.
+function fillViewMenu() {
   const level = S.activity ? S.activity.level ?? 1 : coach.level;
   const opts = stageOptions(level);
   for (const el of $$('#view-menu [data-opt]')) {
@@ -380,16 +481,14 @@ $('#btn-view').addEventListener('click', () => {
     if (el.type === 'checkbox') el.checked = k in opts ? !!opts[k] : !!coach.settings[k];
     else el.value = coach.settings[k];
   }
-});
+}
 $('#view-menu').addEventListener('change', (e) => {
   const k = e.target.dataset.opt;
+  if (!k) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
   coach.setSetting(k, v);
   stage.setOptions(stageOptions(S.activity ? S.activity.level ?? 1 : coach.level));
-  stage.resize();
-});
-document.addEventListener('pointerdown', (e) => {
-  if (!e.target.closest('#view-menu') && !e.target.closest('#btn-view')) $('#view-menu').classList.add('hidden');
+  resizeStage();
 });
 
 // ---- input: on-screen keys and computer keyboard --------------------------------------------
@@ -435,7 +534,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 window.addEventListener('resize', () => {
-  if (S.screen === 'play') stage.resize();
+  if (S.screen === 'play') resizeStage();
 });
 
 // ---- free play ----------------------------------------------------------------------------
@@ -449,17 +548,17 @@ export function startFreePlay() {
     S.activity = null;
     S.history = [];
     show('play');
-    stage.setOptions({ showStaff: false, showFalling: true, showHints: false, showNames: false });
+    stage.setOptions({ showStaff: false, showFalling: true, showHints: false, showNames: false, noteColors: true });
     stage.setPiece(null, [21, 108]);
-    requestAnimationFrame(() => stage.resize());
+    requestAnimationFrame(() => resizeStage());
     $('#hud-title').textContent = 'Free play';
-    $('#hud-sub').textContent = 'Play anything. Every note Maestro hears lights up below.';
-    for (const id of ['#btn-mode', '#btn-tempo-down', '#btn-tempo-up', '#btn-listen']) $(id).classList.add('hidden');
+    $('#hud-sub').textContent = 'Play anything. Every note I hear lights up.';
     $('#hud-progress').classList.add('hidden');
     $('#hud-bpm').textContent = '';
     $('#hud-beats').innerHTML = '';
     $('#results').classList.add('hidden');
     $('#free-display').classList.remove('hidden');
+    $('#free-display')._html = '';
     audio.setExpected([]);
     acquireWakeLock();
     loop();
@@ -467,6 +566,7 @@ export function startFreePlay() {
 }
 app.startFreePlay = startFreePlay;
 
+const IDLE = `<div class="fd-idle">${pip('listen', 110)}<div class="bubble tail-left">I'm listening… play anything!</div></div>`;
 function drawFree() {
   const heard = new Map();
   for (const [m] of audio.heard) heard.set(m, { kind: 'neutral' });
@@ -478,7 +578,7 @@ function drawFree() {
   const chord = chordName(notes);
   const html = notes.length
     ? `<div class="fd-notes">${notes.map((m) => noteName(m, new Key(0))).join(' · ')}</div>${chord ? `<div class="fd-chord">${chord}</div>` : ''}`
-    : '<div class="fd-idle">Listening…</div>';
+    : IDLE;
   if (el._html !== html) {
     el.innerHTML = html;
     el._html = html;
@@ -507,12 +607,13 @@ document.addEventListener('visibilitychange', () => {
     if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume().catch(() => {});
   } else if (S.session && !S.session.finished && !S.session.paused && !S.free) {
     S.session.pause();
+    fillViewMenu();
     $('#pause-menu').classList.remove('hidden');
   }
 });
 
 screen('play', {
   enter() {
-    requestAnimationFrame(() => stage.resize());
+    requestAnimationFrame(() => resizeStage());
   },
 });

@@ -313,6 +313,7 @@ export class AudioEngine {
     const ctx = this.ctx;
     const src = ctx.createMediaStreamSource(stream);
     this.tr = new Transcriber(ctx.sampleRate, this._transcriberOptions());
+    if (this._range) this.tr.setRange(...this._range);
     const sink = ctx.createGain();
     sink.gain.value = 0;
     sink.connect(ctx.destination);
@@ -399,6 +400,7 @@ export class AudioEngine {
   }
 
   setRange(lo, hi) {
+    this._range = lo == null ? null : [lo, hi];
     if (this.tr && typeof this.tr.setRange === 'function') this.tr.setRange(lo, hi);
   }
 

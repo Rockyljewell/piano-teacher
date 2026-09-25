@@ -1,5 +1,5 @@
 // Getting the microphone ready: permission, a room-noise check and a "play middle C" test.
-import { $, S, app, audio, coach, show, screen, toast, say, sfx, unlockVoice } from './core.js';
+import { $, S, app, audio, coach, show, screen, toast, say, showLine, sfx, unlockVoice } from './core.js';
 import { noteName } from '../music/theory.js';
 
 // Run `then` once listening is ready (first time: the full setup screen).
@@ -47,6 +47,7 @@ export function openSetup() {
   setStep('#step-mic', 'doing');
   $('#setup-msg').textContent = '';
   $('#setup-room').textContent = '';
+  showLine("I listen through the microphone. Let's make sure I can hear your piano!", { pop: false });
   const go = $('#btn-setup-go');
   go.textContent = 'Allow microphone';
   go.disabled = false;
@@ -79,6 +80,7 @@ async function runSetup() {
     msg.innerHTML = window.isSecureContext
       ? 'Microphone access was blocked. On iPad: Settings → Safari → Microphone → Allow, then reload. You can still use the on-screen keyboard.'
       : 'The microphone only works over a secure (https) connection. Open Maestro from its https address.';
+    showLine("Hmm, I can't use the microphone yet. You can still play with the on-screen keys.");
     go.textContent = 'Use on-screen keys instead';
     go.disabled = false;
     go.onclick = () => {
@@ -93,6 +95,7 @@ async function runSetup() {
   setStep('#step-mic', 'done');
   setStep('#step-quiet', 'doing');
   msg.textContent = 'Shh… measuring the room';
+  showLine('Shh… stay quiet for a moment while I listen to the room.');
   await audio.calibrate(1800);
   const room = roomNoise();
   $('#setup-room').innerHTML = room.html;

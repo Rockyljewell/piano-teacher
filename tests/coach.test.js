@@ -69,3 +69,14 @@ test('mastery leads to level up, repeated failure to a retry in wait mode', () =
   assert.equal(c.level, 6);
   assert.equal(c.nextActivity().kind, 'intro');
 });
+
+test('setLevel places the student directly and clears a running placement', () => {
+  const c = new Coach(mem());
+  c.startPlacement('some');
+  c.setLevel(1);
+  assert.equal(c.s.level, 1);
+  assert.equal(c.s.placed, true);
+  assert.equal(c.s.placement, null);
+  c.setLevel(99);
+  assert.equal(c.s.level, 40);
+});

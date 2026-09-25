@@ -1,6 +1,6 @@
 // Service worker: code is network-first (updates show up immediately), large immutable media
 // (piano samples, fonts, images) is cache-first so the app works offline once loaded.
-const CACHE = 'maestro-v3';
+const CACHE = 'maestro-v4';
 const MEDIA = /\/assets\/.+\.(mp3|m4a|ogg|wav|woff2?|png|svg|webp|jpg)$/;
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) =>

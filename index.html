@@ -5,218 +5,246 @@
   <title>Maestro Piano Coach</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="description" content="A piano teacher that listens to you play, finds your level and takes you from beginner to master.">
-  <meta name="theme-color" content="#0e1120">
+  <meta name="theme-color" content="#FFF7EA">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Maestro">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preload" href="assets/fonts/fredoka-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/nunito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="app">
-    <!-- HOME ------------------------------------------------------------------------------ -->
-    <section id="screen-home" class="screen active">
-      <header class="home-top">
-        <div class="brand">
-          <img class="brand-mark" src="icons/icon.svg" alt="">
-          <div>
-            <h1 id="home-greeting">Welcome to Maestro</h1>
-            <p id="home-sub" class="muted">Your piano coach listens as you play.</p>
-          </div>
+    <!-- HOME: learning path + today ---------------------------------------------------------- -->
+    <section id="screen-home" class="screen railed active">
+      <nav class="rail" data-rail="home" aria-label="Main"></nav>
+      <div class="content home">
+        <div class="path-col" id="path-col">
+          <div id="path-nodes" class="path"></div>
         </div>
-        <nav class="top-actions">
-          <button class="icon-btn" data-go="progress" aria-label="Progress">📈</button>
-          <button class="icon-btn" data-go="settings" aria-label="Settings">⚙️</button>
-        </nav>
-      </header>
-      <div class="home-grid">
-        <section class="path-card card">
-          <div class="path-head">
-            <div id="path-stage" class="path-stage"></div>
-            <div id="path-stages" class="path-stages" aria-hidden="true"></div>
+        <aside class="side">
+          <div class="pills">
+            <span id="pill-streak" class="pill flame" title="Day streak"></span>
+            <span id="pill-xp" class="pill sun" title="Total XP"></span>
+            <button id="pill-mic" class="pill mic-pill" title="Microphone"></button>
           </div>
-          <div id="path-nodes" class="path-nodes"></div>
-          <button class="link" data-go="map">See all 40 levels →</button>
-        </section>
-        <section class="today">
-          <div class="card today-main">
-            <div id="today-level" class="today-level"></div>
-            <button id="btn-start" class="btn primary huge">Start</button>
-            <p class="hint">Stand the iPad on your piano in landscape. Maestro listens through the mic.</p>
-          </div>
-          <div class="today-stats">
-            <div id="today-goal" class="card stat-pill"></div>
-            <div id="today-streak" class="card stat-pill"></div>
-          </div>
-          <div id="home-songs-wrap" class="card home-songs hidden">
-            <div class="row-head"><b>Songs you can play</b><button class="link" data-go="songs">All songs →</button></div>
-            <div id="home-songs" class="mini-songs"></div>
-          </div>
-          <div class="tiles">
-            <button class="tile" data-go="songs"><span class="ti">🎶</span><b>Songs</b><small>Free classics</small></button>
-            <button class="tile" data-go="practice"><span class="ti">🎯</span><b>Practice</b><small>Pick a drill</small></button>
-            <button class="tile" data-go="free"><span class="ti">👂</span><b>Free play</b><small>See what I hear</small></button>
-            <button class="tile" data-go="placement"><span class="ti">🧭</span><b>Level test</b><small>Re-check level</small></button>
-          </div>
-        </section>
+          <section class="hero" aria-live="polite">
+            <svg class="hero-deco" width="96" height="86" viewBox="0 0 170 150" aria-hidden="true" fill="currentColor"><circle cx="52" cy="112" r="20"/><rect x="66" y="22" width="9" height="92" rx="4.5"/><rect x="126" y="6" width="9" height="92" rx="4.5"/><circle cx="112" cy="96" r="20"/><path d="M70 22 L135 6 L135 30 L70 46 Z"/></svg>
+            <div id="today-level"></div>
+            <div class="hero-actions">
+              <button id="btn-start" class="btn btn-white btn-lg btn-block">Start</button>
+              <button id="btn-hear" class="btn btn-onbrand hidden">Hear it first</button>
+            </div>
+          </section>
+          <section id="today-goal" class="card goal"></section>
+          <section id="journey" class="card journey"></section>
+        </aside>
       </div>
     </section>
 
-    <!-- MIC SETUP -------------------------------------------------------------------------- -->
-    <section id="screen-setup" class="screen center">
-      <div class="card narrow">
+    <!-- MIC SETUP ------------------------------------------------------------------------------ -->
+    <section id="screen-setup" class="screen focus">
+      <header class="focus-top">
+        <button class="icon-btn" data-go="home" aria-label="Back"></button>
         <h2>Let's set up listening</h2>
-        <ol class="steps">
-          <li id="step-mic"><b>Microphone</b><span>Allow access so Maestro can hear your piano.</span></li>
-          <li id="step-quiet"><b>Silence check</b><span>Stay quiet for two seconds while I measure the room.</span></li>
-          <li id="step-c"><b>Play middle C</b><span>Play the C near the middle of your keyboard.</span></li>
-        </ol>
-        <div class="meter"><div id="setup-meter"></div></div>
-        <p id="setup-room" class="fine"></p>
-        <p id="setup-msg" class="msg"></p>
-        <div class="row">
-          <button id="btn-setup-go" class="btn primary">Allow microphone</button>
-          <button id="btn-setup-skip" class="btn ghost">Skip</button>
+      </header>
+      <div class="content setup">
+        <div class="coach-col">
+          <div class="bubble tail-bottom-left" data-coach>I listen through the microphone. Let's make sure I can hear your piano!</div>
+          <div class="pip-slot" data-pip="listen" data-size="230"></div>
         </div>
-        <p class="fine">Tip: the iPad microphone is at the top edge. On the music stand it hears the piano well. Turn off TV or music nearby for the best results.</p>
-      </div>
-    </section>
-
-    <!-- PLACEMENT: EXPERIENCE ----------------------------------------------------------------- -->
-    <section id="screen-placement" class="screen center">
-      <div class="placement-wrap">
-        <div class="coach-bubble">
-          <img class="coach-avatar" src="icons/icon.svg" alt="">
-          <div class="bubble">Have you played the piano before?</div>
-        </div>
-        <div id="exp-options" class="exp-options"></div>
-        <p id="placement-note" class="fine center-text">Then I'll give you a few short pieces for both hands to find your level.</p>
-        <button class="btn ghost" data-go="home">Not now</button>
-      </div>
-    </section>
-
-    <!-- PLACEMENT: REVEAL --------------------------------------------------------------------- -->
-    <section id="screen-reveal" class="screen center">
-      <div class="card reveal">
-        <small class="eyebrow">Your starting point</small>
-        <div class="reveal-badge"><span id="reveal-level">1</span><small id="reveal-stage">Beginner</small></div>
-        <h2 id="reveal-title"></h2>
-        <p id="reveal-concept" class="concept"></p>
-        <div id="reveal-tests" class="reveal-tests"></div>
-        <p id="reveal-range" class="fine"></p>
-        <div class="row center-row">
-          <button id="btn-reveal-go" class="btn primary">Start my first lesson</button>
-          <button class="btn ghost" data-go="home">Home</button>
+        <div class="card setup-card">
+          <ol class="steps">
+            <li id="step-mic"><span class="step-coin" data-n="1"></span><div><b>Microphone</b><span>Allow access so Maestro can hear your piano.</span></div></li>
+            <li id="step-quiet"><span class="step-coin" data-n="2"></span><div><b>Silence check</b><span>Stay quiet for two seconds while I measure the room.</span></div></li>
+            <li id="step-c"><span class="step-coin" data-n="3"></span><div><b>Play middle C</b><span>Play the C near the middle of your keyboard.</span></div></li>
+          </ol>
+          <div class="meter" aria-label="Microphone level"><div id="setup-meter"></div></div>
+          <p id="setup-room" class="fine"></p>
+          <p id="setup-msg" class="msg"></p>
+          <div class="row">
+            <button id="btn-setup-go" class="btn btn-primary btn-lg">Allow microphone</button>
+            <button id="btn-setup-skip" class="btn btn-ghost">Skip</button>
+          </div>
+          <p class="fine">Tip: the iPad microphone is at the top edge. On the music stand it hears the piano well. Turn off TV or music nearby for the best results.</p>
         </div>
       </div>
     </section>
 
-    <!-- LEVEL INTRO ------------------------------------------------------------------------ -->
-    <section id="screen-intro" class="screen center">
-      <div class="card intro">
-        <div class="stage-badge" id="intro-stage"></div>
-        <h2 id="intro-title"></h2>
-        <p id="intro-concept" class="concept"></p>
-        <ul id="intro-tips" class="tips"></ul>
-        <div class="row">
-          <button id="btn-intro-go" class="btn primary">Let's play</button>
-          <button class="btn ghost" data-go="home">Home</button>
+    <!-- PLACEMENT: EXPERIENCE ------------------------------------------------------------------ -->
+    <section id="screen-placement" class="screen focus">
+      <header class="focus-top">
+        <button class="icon-btn" data-go="home" aria-label="Not now"></button>
+        <div class="bar top-bar"><i style="width:10%"></i></div>
+        <span class="step-label">Find my level</span>
+      </header>
+      <div class="content placement">
+        <div class="coach-col">
+          <div class="bubble big tail-bottom-left" data-coach>Have you played the piano before?</div>
+          <div class="pip-slot" data-pip="think" data-size="230"></div>
+          <p id="placement-note" class="note">Pick one, then I'll listen to a few short pieces for both hands to find your level.</p>
+        </div>
+        <div id="exp-options" class="exp-options" role="radiogroup" aria-label="Piano experience"></div>
+      </div>
+      <footer class="focus-foot">
+        <button id="btn-exp-skip" class="btn btn-ghost">Skip, start at Level 1</button>
+        <button id="btn-exp-go" class="btn btn-primary btn-lg" disabled>Continue</button>
+      </footer>
+    </section>
+
+    <!-- PLACEMENT: REVEAL ----------------------------------------------------------------------- -->
+    <section id="screen-reveal" class="screen focus reveal-screen">
+      <div class="rays" aria-hidden="true"></div>
+      <canvas id="reveal-confetti" class="confetti" aria-hidden="true"></canvas>
+      <div class="reveal-pip">
+        <div class="pip-slot" data-pip="cheer" data-size="190"></div>
+        <div class="bubble tail-left" data-coach>Wow! You already know a lot.</div>
+      </div>
+      <div class="coin-wrap"><div class="coin"><span id="reveal-level">1</span></div><div class="ribbon" id="reveal-stage">Beginner</div></div>
+      <h1 id="reveal-headline">You're starting at Level 1</h1>
+      <p id="reveal-title" class="reveal-sub"></p>
+      <div id="reveal-tests" class="facts"></div>
+      <div id="reveal-strip" class="journey-strip" aria-hidden="true"></div>
+      <p id="reveal-concept" class="sr"></p>
+      <p id="reveal-range" class="reveal-fine"></p>
+      <div class="reveal-actions">
+        <button id="btn-reveal-go" class="btn btn-white btn-lg">Start my first lesson</button>
+        <button id="btn-reveal-level1" class="btn btn-ghost on-brand">Start from Level 1 instead</button>
+      </div>
+    </section>
+
+    <!-- LEVEL INTRO ----------------------------------------------------------------------------- -->
+    <section id="screen-intro" class="screen focus">
+      <header class="focus-top">
+        <button class="icon-btn" data-go="home" aria-label="Home"></button>
+        <span id="intro-stage" class="stage-chip"></span>
+      </header>
+      <div class="content intro">
+        <div class="coach-col">
+          <div class="bubble tail-bottom-left" data-coach id="intro-line"></div>
+          <div class="pip-slot" data-pip="conduct" data-size="210"></div>
+        </div>
+        <div class="card intro-card">
+          <div class="intro-head"><div id="intro-coin" class="coin-sm">1</div><div><small class="eyebrow">New level</small><h2 id="intro-title"></h2></div></div>
+          <p id="intro-concept" class="concept"></p>
+          <ul id="intro-tips" class="tips"></ul>
+          <div class="row">
+            <button id="btn-intro-go" class="btn btn-primary btn-lg">Let's play</button>
+            <button id="btn-intro-hear" class="btn">Hear it first</button>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- PLAY ------------------------------------------------------------------------------- -->
+    <!-- PLAY ------------------------------------------------------------------------------------ -->
     <section id="screen-play" class="screen play">
-      <div class="hud">
-        <button id="btn-exit" class="icon-btn" aria-label="Exit">✕</button>
+      <header class="hud">
+        <button id="btn-exit" class="icon-btn" aria-label="Exit"></button>
         <div class="hud-title">
           <b id="hud-title"></b>
           <small id="hud-sub"></small>
-          <div id="hud-progress" class="hud-progress hidden"></div>
         </div>
-        <div class="hud-stats">
-          <div><small>Score</small><b id="hud-score">0</b></div>
-          <div class="combo"><small>Streak</small><b id="hud-combo">0</b></div>
-          <div class="beat-dots" id="hud-beats"></div>
+        <div id="hud-progress" class="hud-progress hidden"></div>
+        <div class="stat score"><small>Score</small><b id="hud-score">–</b></div>
+        <div class="stat combo"><span class="flame-ic"></span><b id="hud-combo">0</b><small>in a<br>row</small></div>
+        <div class="grow"></div>
+        <div class="stepper" aria-label="Tempo">
+          <button id="btn-tempo-down" aria-label="Slower"></button>
+          <div class="bpm"><b id="hud-bpm">60</b><span id="hud-beats" class="beat-dots"></span></div>
+          <button id="btn-tempo-up" aria-label="Faster"></button>
         </div>
-        <div class="hud-actions">
-          <button id="btn-mode" class="chip" title="Wait mode stops until you play the right notes">Tempo</button>
-          <button id="btn-tempo-down" class="chip" aria-label="Slower">−</button>
-          <span id="hud-bpm" class="bpm">♩ 60</span>
-          <button id="btn-tempo-up" class="chip" aria-label="Faster">+</button>
-          <button id="btn-listen" class="chip" title="Hear how it should sound">🔊 Listen</button>
-          <button id="btn-view" class="chip" title="Display options" aria-label="Display options">👁</button>
-          <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
-        </div>
-      </div>
+        <button id="btn-mode" class="seg-mode" role="switch" aria-checked="false" title="Wait mode stops until you play the right notes"><span class="t">Tempo</span><span class="w">Wait</span></button>
+        <button id="btn-listen" class="btn hud-btn" title="Hear how it should sound"></button>
+        <button id="btn-pause" class="icon-btn" aria-label="Pause"></button>
+      </header>
       <div class="stage-wrap">
         <canvas id="stage"></canvas>
-        <div id="mic-dot" class="mic-dot" title="Microphone level"></div>
-        <div id="feedback-pop" class="feedback-pop"></div>
+        <div id="status-strip" class="status-strip">
+          <span id="mic-dot" class="mic-ind" title="Microphone level"><i class="mic-ic"></i><span class="lv"><i></i><i></i><i></i><i></i></span><span class="mic-label">Listening</span></span>
+          <span id="feedback-pop" class="feedback-pop"></span>
+          <span class="bar-prog"><b id="bar-label"></b><span class="bar"><i id="bar-fill"></i></span></span>
+        </div>
         <div id="countdown" class="countdown"></div>
         <div id="free-display" class="free-display hidden"></div>
-        <div id="view-menu" class="popover hidden">
-          <label><input type="checkbox" data-opt="showStaff"> Sheet music</label>
-          <label><input type="checkbox" data-opt="showFalling"> Falling notes</label>
-          <label><input type="checkbox" data-opt="showNames"> Note names</label>
-          <label><input type="checkbox" data-opt="noteColors"> Coloured notes</label>
-          <label><input type="checkbox" data-opt="showFingers"> Finger numbers</label>
-          <label><input type="checkbox" data-opt="showHints"> Keyboard hints</label>
-          <label>Metronome
-            <select data-opt="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
-          </label>
-        </div>
         <div id="pause-menu" class="overlay hidden">
-          <div class="card small">
+          <div class="dialog pause-dialog">
+            <div class="dialog-pip" data-pip="sleep" data-size="104"></div>
             <h2>Paused</h2>
             <div class="col">
-              <button id="btn-resume" class="btn primary">Resume</button>
+              <button id="btn-resume" class="btn btn-primary btn-lg">Resume</button>
               <button id="btn-restart" class="btn">Restart</button>
               <button id="btn-skip" class="btn">Skip this one</button>
-              <button id="btn-quit" class="btn ghost">Home</button>
+              <button id="btn-quit" class="btn btn-ghost">Home</button>
+            </div>
+            <div id="view-menu" class="view-menu">
+              <h3>Display</h3>
+              <label class="switch-row"><span>Sheet music</span><input type="checkbox" data-opt="showStaff"></label>
+              <label class="switch-row"><span>Falling notes</span><input type="checkbox" data-opt="showFalling"></label>
+              <label class="switch-row"><span>Note names</span><input type="checkbox" data-opt="showNames"></label>
+              <label class="switch-row"><span>Coloured notes</span><input type="checkbox" data-opt="noteColors"></label>
+              <label class="switch-row"><span>Finger numbers</span><input type="checkbox" data-opt="showFingers"></label>
+              <label class="switch-row"><span>Keyboard hints</span><input type="checkbox" data-opt="showHints"></label>
+              <label class="select-row"><span>Metronome</span>
+                <select data-opt="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
+              </label>
             </div>
           </div>
         </div>
-        <div id="results" class="overlay hidden">
-          <div class="card results">
-            <div class="stars" id="res-stars"></div>
-            <div class="big-score"><span id="res-score">0</span><small>%</small></div>
-            <div id="res-level" class="res-level"></div>
-            <div class="res-grid">
-              <div><b id="res-notes"></b><small>notes hit</small></div>
-              <div><b id="res-timing"></b><small>timing</small></div>
-              <div><b id="res-offset"></b><small>average offset</small></div>
-              <div><b id="res-extra"></b><small>wrong notes</small></div>
-            </div>
+      </div>
+      <!-- RESULTS (full-screen layer over the play screen) -->
+      <div id="results" class="results hidden">
+        <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
+        <div class="res-left">
+          <div class="stars" id="res-stars"></div>
+          <div class="big-score"><span id="res-score">0</span><small>%</small></div>
+          <div class="pct-label">Accuracy</div>
+          <div class="res-coach">
+            <div class="bubble tail-left" data-coach id="res-line"></div>
+            <div class="res-pip" id="res-pip"></div>
+          </div>
+        </div>
+        <div class="res-right">
+          <h1 id="res-title">Nice work!</h1>
+          <div class="res-sub"><span id="res-subtitle"></span><span id="res-xp" class="xp-chip"></span></div>
+          <div id="res-level" class="res-level"></div>
+          <div class="tiles">
+            <div class="tile t-hit"><div class="hd">Notes hit</div><div class="bd"><div class="v"><b id="res-notes"></b></div><div class="d"><span id="res-extra"></span> wrong notes</div></div></div>
+            <div class="tile t-time"><div class="hd">On time</div><div class="bd"><div class="v"><b id="res-timing"></b></div><div class="d" id="res-timing-d">timing score</div></div></div>
+            <div class="tile t-off" id="tile-offset"><div class="hd">Avg. offset</div><div class="bd"><div class="v"><b id="res-offset"></b></div><div class="d" id="res-offset-d"></div></div></div>
+          </div>
+          <div class="card histo-card">
+            <div class="histo-top"><h3>Your timing</h3><div class="legend"><span class="e"><i></i>Early</span><span class="o"><i></i>On the beat</span><span class="l"><i></i>Late</span></div></div>
             <div id="res-histo"></div>
             <p id="res-timing-summary" class="timing-summary"></p>
             <div id="res-latency"></div>
-            <ul id="res-tips" class="tips"></ul>
-            <div id="res-xp" class="xp"></div>
-            <div class="row">
-              <button id="btn-next" class="btn primary">Next</button>
-              <button id="btn-retry" class="btn">Retry</button>
-              <button id="btn-res-home" class="btn ghost">Home</button>
-            </div>
-            <div id="res-auto" class="auto"></div>
           </div>
+          <ul id="res-tips" class="tips res-tips"></ul>
+          <div class="actions">
+            <button id="btn-retry" class="btn btn-lg"></button>
+            <button id="btn-res-home" class="btn btn-ghost">Home</button>
+            <button id="btn-next" class="btn btn-primary btn-lg next">Next</button>
+          </div>
+          <div id="res-auto" class="auto"></div>
         </div>
       </div>
     </section>
 
-    <!-- SONGS ------------------------------------------------------------------------------ -->
-    <section id="screen-songs" class="screen scroll">
-      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">‹</button><h2>Songs</h2>
-        <input id="song-search" type="search" placeholder="Search songs or composers" autocomplete="off">
-        <button id="btn-import" class="btn small">Import MIDI</button>
-        <input id="midi-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
-      </div>
-      <div class="page">
-        <p class="muted">Free public-domain music, arranged for every level. Tap a song to pick an arrangement.</p>
+    <!-- SONGS ------------------------------------------------------------------------------------ -->
+    <section id="screen-songs" class="screen railed">
+      <nav class="rail" data-rail="songs" aria-label="Main"></nav>
+      <div class="content scroller">
+        <header class="page-head">
+          <div><h1>Songs</h1><p class="sub">Free public-domain music, arranged for every level</p></div>
+          <label class="search"><span class="search-ic"></span><input id="song-search" type="search" placeholder="Search songs" autocomplete="off"></label>
+          <button id="btn-import" class="btn"><span class="up-ic"></span>Import MIDI</button>
+          <input id="midi-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+        </header>
         <div id="song-cats" class="chips"></div>
+        <section id="song-pick" class="feat hidden"></section>
         <div id="song-grid" class="song-grid"></div>
         <div class="card sources">
           <h3>Find more free music</h3>
@@ -225,19 +253,18 @@
         </div>
       </div>
       <div id="song-sheet" class="overlay sheet hidden">
-        <div class="card sheet-card">
-          <button id="sheet-close" class="icon-btn close" aria-label="Close">✕</button>
-          <h2 id="sheet-title"></h2>
-          <p id="sheet-composer" class="muted"></p>
+        <div class="dialog sheet-card">
+          <button id="sheet-close" class="icon-btn close" aria-label="Close"></button>
+          <div class="sheet-head"><div id="sheet-cover" class="sheet-cover"></div><div><h2 id="sheet-title"></h2><p id="sheet-composer" class="muted"></p></div></div>
           <p id="sheet-about" class="fine"></p>
           <h3>Arrangement</h3>
           <div id="sheet-arrs" class="arrs"></div>
           <div id="sheet-hands" class="chips"></div>
-          <label class="tempo-row">Tempo <span id="sheet-tempo-val" class="muted"></span>
+          <label class="tempo-row"><span>Tempo <b id="sheet-tempo-val"></b></span>
             <input id="sheet-tempo" type="range" min="40" max="120" step="5" value="100">
           </label>
           <div class="row">
-            <button id="sheet-play" class="btn primary">Play</button>
+            <button id="sheet-play" class="btn btn-primary btn-lg">Play</button>
             <button id="sheet-learn" class="btn">Learn slowly (wait mode)</button>
           </div>
           <p id="sheet-license" class="fine"></p>
@@ -245,97 +272,121 @@
       </div>
     </section>
 
-    <!-- LEVEL MAP --------------------------------------------------------------------------- -->
-    <section id="screen-map" class="screen scroll">
-      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">‹</button><h2>All levels</h2></div>
-      <div id="map-list" class="map-list page"></div>
-    </section>
-
-    <!-- PRACTICE ---------------------------------------------------------------------------- -->
-    <section id="screen-practice" class="screen scroll">
-      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">‹</button><h2>Practice</h2></div>
-      <div class="card form">
-        <label>Exercise
-          <div class="seg" id="pr-kind">
-            <button data-v="sight" class="on">Sight-reading</button>
-            <button data-v="rhythm">Rhythm</button>
-            <button data-v="scale">Scales</button>
-            <button data-v="arpeggio">Arpeggios</button>
-            <button data-v="chords">Chords</button>
-            <button data-v="notes">Note reading</button>
-          </div>
-        </label>
-        <label>Level <span id="pr-level-name" class="muted"></span>
-          <input type="range" id="pr-level" min="1" max="40" value="1">
-        </label>
-        <label>Mode
-          <div class="seg" id="pr-mode">
-            <button data-v="tempo" class="on">Tempo (graded on time)</button>
-            <button data-v="wait">Wait (stops for you)</button>
-          </div>
-        </label>
-        <label>Tempo <span id="pr-tempo-val" class="muted"></span>
-          <input type="range" id="pr-tempo" min="-50" max="130" value="30">
-        </label>
-        <div class="row"><button id="btn-pr-go" class="btn primary">Start practice</button></div>
+    <!-- LEVEL MAP -------------------------------------------------------------------------------- -->
+    <section id="screen-map" class="screen railed">
+      <nav class="rail" data-rail="home" aria-label="Main"></nav>
+      <div class="content scroller">
+        <header class="page-head"><button class="icon-btn" data-go="home" aria-label="Back"></button><div><h1>All 40 levels</h1><p class="sub">Five stages from first notes to Master</p></div></header>
+        <div id="map-list" class="map-list"></div>
       </div>
     </section>
 
-    <!-- PROGRESS ---------------------------------------------------------------------------- -->
-    <section id="screen-progress" class="screen scroll">
-      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">‹</button><h2>Progress</h2></div>
-      <div class="stats-grid" id="stats-grid"></div>
-      <div class="card chart-card"><h3>Recent scores</h3><canvas id="history-chart" height="180"></canvas></div>
-    </section>
-
-    <!-- SETTINGS ---------------------------------------------------------------------------- -->
-    <section id="screen-settings" class="screen scroll">
-      <div class="topbar"><button class="icon-btn" data-go="home" aria-label="Back">‹</button><h2>Settings</h2></div>
-      <div class="card form">
-        <h3>Coach</h3>
-        <label class="check"><input type="checkbox" data-set="voice"> Spoken coach voice</label>
-        <label class="check"><input type="checkbox" data-set="sounds"> Sound effects</label>
-        <label class="check"><input type="checkbox" data-set="autoAdvance"> Hands-free: continue to the next exercise automatically</label>
-        <label>Daily goal
-          <select data-set="dailyGoal"><option value="30">Casual (30 XP)</option><option value="50">Regular (50 XP)</option><option value="100">Serious (100 XP)</option><option value="200">Intense (200 XP)</option></select>
-        </label>
-        <h3>Display</h3>
-        <label class="check"><input type="checkbox" data-set="showStaff"> Sheet music</label>
-        <label class="check"><input type="checkbox" data-set="showFalling"> Falling notes</label>
-        <label>Note names on notes
-          <select data-set="showNames"><option value="auto">Auto (beginner levels)</option><option value="true">Always</option><option value="false">Never</option></select>
-        </label>
-        <label>Coloured notes
-          <select data-set="noteColors"><option value="auto">Auto (beginner levels)</option><option value="true">Always</option><option value="false">Never</option></select>
-        </label>
-        <label class="check"><input type="checkbox" data-set="showFingers"> Finger numbers</label>
-        <label class="check"><input type="checkbox" data-set="showHints"> Highlight keys to play</label>
-        <label>Look-ahead (falling notes) <span class="muted" id="set-look-val"></span>
-          <input type="range" data-set="lookaheadSec" min="1.5" max="6" step="0.5">
-        </label>
-        <label>Metronome
-          <select data-set="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
-        </label>
-        <h3>Listening</h3>
-        <label class="check"><input type="checkbox" data-set="noisyRoom"> Noisy-room mode (ignore more background sounds)</label>
-        <label>Microphone sensitivity <span class="muted" id="set-sens-val"></span>
-          <input type="range" data-set="sensitivity" min="0.5" max="2" step="0.1">
-        </label>
-        <label>Timing offset <span class="muted" id="set-lat-val"></span>
-          <input type="range" data-set="latencyMs" min="-150" max="250" step="5">
-        </label>
-        <p class="fine">If Maestro keeps saying you're late when you feel on time, raise the offset (the results screen can also suggest a value).</p>
-        <div class="row">
-          <button id="btn-recal" class="btn">Re-run microphone setup</button>
-          <button id="btn-reset" class="btn danger">Reset all progress</button>
+    <!-- PRACTICE --------------------------------------------------------------------------------- -->
+    <section id="screen-practice" class="screen railed">
+      <nav class="rail" data-rail="practice" aria-label="Main"></nav>
+      <div class="content scroller">
+        <header class="page-head"><div><h1>Practice</h1><p class="sub">Pick a drill, a level and a tempo</p></div></header>
+        <div class="practice">
+          <div class="card form">
+            <div class="field"><span class="label">Exercise</span>
+              <div class="seg" id="pr-kind">
+                <button data-v="sight" class="on">Sight-reading</button>
+                <button data-v="rhythm">Rhythm</button>
+                <button data-v="scale">Scales</button>
+                <button data-v="arpeggio">Arpeggios</button>
+                <button data-v="chords">Chords</button>
+                <button data-v="notes">Note reading</button>
+              </div>
+            </div>
+            <label class="field"><span class="label">Level <span id="pr-level-name" class="muted"></span></span>
+              <input type="range" id="pr-level" min="1" max="40" value="1">
+            </label>
+            <div class="field"><span class="label">Mode</span>
+              <div class="seg" id="pr-mode">
+                <button data-v="tempo" class="on">Tempo (graded on time)</button>
+                <button data-v="wait">Wait (stops for you)</button>
+              </div>
+            </div>
+            <label class="field"><span class="label">Tempo <span id="pr-tempo-val" class="muted"></span></span>
+              <input type="range" id="pr-tempo" min="-50" max="130" value="30">
+            </label>
+            <div class="row"><button id="btn-pr-go" class="btn btn-primary btn-lg">Start practice</button></div>
+          </div>
+          <div class="practice-pip">
+            <div class="bubble tail-bottom" data-coach>Short and often beats long and rarely. Five minutes counts!</div>
+            <div class="pip-slot" data-pip="conduct" data-size="170"></div>
+          </div>
         </div>
-        <p class="fine" id="set-info"></p>
-        <p class="fine">Piano samples: Salamander Grand Piano by Alexander Holm (CC-BY 3.0). Notation glyphs: Bravura (SIL OFL 1.1). Songs are public domain; see docs/SONGS.md.</p>
       </div>
     </section>
 
-    <div id="toast" class="toast"></div>
-    <div id="rotate-hint" class="rotate-hint">Turn your iPad sideways (landscape) for the best view.</div>
+    <!-- PROGRESS --------------------------------------------------------------------------------- -->
+    <section id="screen-progress" class="screen railed">
+      <nav class="rail" data-rail="progress" aria-label="Main"></nav>
+      <div class="content scroller">
+        <header class="page-head"><div><h1>Progress</h1><p class="sub">Everything you've practised</p></div></header>
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="card chart-card"><h3>Recent scores</h3><canvas id="history-chart" height="200"></canvas><div id="history-empty" class="empty-state hidden"></div></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS --------------------------------------------------------------------------------- -->
+    <section id="screen-settings" class="screen railed">
+      <nav class="rail" data-rail="settings" aria-label="Main"></nav>
+      <div class="content scroller">
+        <header class="page-head"><div><h1>Settings</h1><p class="sub">Coach, display and listening</p></div></header>
+        <div class="settings">
+          <div class="card form">
+            <h3>Coach</h3>
+            <label class="switch-row"><span>Spoken coach voice</span><input type="checkbox" data-set="voice"></label>
+            <label class="select-row" id="voice-pick-row"><span>Pip's voice</span><select id="set-voice"><option value="">Automatic</option></select></label>
+            <label class="switch-row"><span>Sound effects</span><input type="checkbox" data-set="sounds"></label>
+            <label class="switch-row"><span>Hands-free: continue to the next exercise automatically</span><input type="checkbox" data-set="autoAdvance"></label>
+            <label class="select-row"><span>Daily goal</span>
+              <select data-set="dailyGoal"><option value="30">Casual (30 XP)</option><option value="50">Regular (50 XP)</option><option value="100">Serious (100 XP)</option><option value="200">Intense (200 XP)</option></select>
+            </label>
+            <h3>Display</h3>
+            <label class="switch-row"><span>Sheet music</span><input type="checkbox" data-set="showStaff"></label>
+            <label class="switch-row"><span>Falling notes</span><input type="checkbox" data-set="showFalling"></label>
+            <label class="select-row"><span>Note names on notes</span>
+              <select data-set="showNames"><option value="auto">Auto (beginner levels)</option><option value="true">Always</option><option value="false">Never</option></select>
+            </label>
+            <label class="select-row"><span>Coloured notes</span>
+              <select data-set="noteColors"><option value="auto">Auto (Levels 1–16)</option><option value="true">Always</option><option value="false">Never</option></select>
+            </label>
+            <label class="switch-row"><span>Finger numbers</span><input type="checkbox" data-set="showFingers"></label>
+            <label class="switch-row"><span>Highlight keys to play</span><input type="checkbox" data-set="showHints"></label>
+            <label class="range-row"><span>Look-ahead (falling notes) <b id="set-look-val"></b></span>
+              <input type="range" data-set="lookaheadSec" min="1.5" max="6" step="0.5">
+            </label>
+            <label class="select-row"><span>Metronome</span>
+              <select data-set="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
+            </label>
+          </div>
+          <div class="card form">
+            <h3>Listening</h3>
+            <label class="switch-row"><span>Noisy-room mode (ignore more background sounds)</span><input type="checkbox" data-set="noisyRoom"></label>
+            <label class="range-row"><span>Microphone sensitivity <b id="set-sens-val"></b></span>
+              <input type="range" data-set="sensitivity" min="0.5" max="2" step="0.1">
+            </label>
+            <label class="range-row"><span>Timing offset <b id="set-lat-val"></b></span>
+              <input type="range" data-set="latencyMs" min="-150" max="250" step="5">
+            </label>
+            <p class="fine">If Maestro keeps saying you're late when you feel on time, raise the offset (the results screen can also suggest a value).</p>
+            <div class="row">
+              <button id="btn-recal" class="btn">Re-run microphone setup</button>
+              <button data-go="placement" class="btn">Retake level test</button>
+              <button id="btn-reset" class="btn btn-danger">Reset all progress</button>
+            </div>
+            <p class="fine" id="set-info"></p>
+            <p class="fine">Piano samples: Salamander Grand Piano by Alexander Holm (CC-BY 3.0). Notation glyphs: Bravura (SIL OFL 1.1). Fonts: Fredoka and Nunito (SIL OFL 1.1). Songs are public domain; see docs/SONGS.md.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" role="status"></div>
+    <div id="rotate-hint" class="rotate-hint"><div class="pip-slot" data-pip="think" data-size="120"></div><p>Turn your iPad sideways (landscape) for the best view.</p></div>
   </div>
   <script type="module" src="js/app.js"></script>
 </body>

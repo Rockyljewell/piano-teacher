@@ -1,23 +1,71 @@
-// Song library: free public-domain songs with graded arrangements, plus MIDI import.
-import { $, S, app, coach, esc, screen, show, sfx, toast } from './core.js';
-import { SONGS, CATEGORIES, FREE_SOURCES } from '../music/songs.js';
+// Song library: free public-domain songs with graded arrangements, plus MIDI import. Covers draw
+// each song's opening melody as a little bar graph (time across, pitch up).
+import { $, $$, S, app, coach, esc, screen, sfx, toast } from './core.js';
+import { SONGS, CATEGORIES, FREE_SOURCES, songPiece, songsForLevel } from '../music/songs.js';
 import { midiToPiece } from '../music/midi.js';
 import { levelInfo } from '../music/curriculum.js';
+import { icon, pip } from './brand.js';
 
 const F = { category: 'All', playable: false, query: '' };
-const ART = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#38d9a9', '#4dabf7', '#9775fa', '#f783ac'];
+const CAT_COLORS = {
+  'Kids & folk': ['#20C07A', '#12985C'],
+  Holiday: ['#E8484F', '#B8303A'],
+  'Hymns & ballads': ['#14B8A6', '#0B8C7E'],
+  Classical: ['#6F4BF2', '#4F30C9'],
+  'Ragtime & blues': ['#FF9A2E', '#D9760C'],
+};
+const catColor = (c) => CAT_COLORS[c] || ['#6F4BF2', '#4F30C9'];
 
-function art(song, i) {
-  // A simple generated cover: two colours from the title + a note glyph.
-  let h = 0;
-  for (const c of song.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const a = ART[h % ART.length],
-    b = ART[(h >>> 3) % ART.length];
-  return `<div class="song-art" style="--a:${a};--b:${b === a ? ART[(h + 3) % ART.length] : b}"><span>${['♪', '♫', '♩', '𝄞'][h % 4]}</span></div>`;
+// ---- covers: the opening melody as rounded bars ---------------------------------------------
+const COVERS = new Map();
+function melody(song) {
+  try {
+    const arr = song.arrangements[0];
+    const piece = songPiece(song.id, arr.id, { hands: 'R' });
+    const notes = piece.notes.filter((n) => n.hand !== 'L').sort((a, b) => a.beat - b.beat || b.midi - a.midi);
+    const out = [];
+    let lastBeat = -1;
+    for (const n of notes) {
+      if (n.beat === lastBeat) continue; // top note of a chord
+      lastBeat = n.beat;
+      out.push(n);
+      if (out.length >= 14 || n.beat - notes[0].beat > 11) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+export function cover(song, w = 220, h = 100) {
+  const key = `${song.id}:${w}x${h}`;
+  if (COVERS.has(key)) return COVERS.get(key);
+  const [c1, c2] = catColor(song.category);
+  const notes = melody(song);
+  let bars = '';
+  if (notes.length) {
+    const b0 = notes[0].beat;
+    const b1 = Math.max(...notes.map((n) => n.beat + n.dur));
+    const lo = Math.min(...notes.map((n) => n.midi));
+    const hi = Math.max(lo + 7, ...notes.map((n) => n.midi));
+    const sx = (w - 28) / Math.max(1, b1 - b0);
+    const y = (m) => h - 20 - ((m - lo) / (hi - lo)) * (h - 44);
+    bars = notes
+      .map((n) => {
+        const x = 14 + (n.beat - b0) * sx;
+        const bw = Math.max(9, n.dur * sx - 4);
+        return `<rect x="${x.toFixed(1)}" y="${(y(n.midi) - 5).toFixed(1)}" width="${bw.toFixed(1)}" height="10" rx="5" fill="#fff" opacity=".95"/>`;
+      })
+      .join('');
+  }
+  const lines = [0, 1, 2, 3, 4].map((i) => `<rect x="0" y="${(24 + i * 13).toFixed(0)}" width="${w}" height="1.5" fill="#fff" opacity=".13"/>`).join('');
+  const svg = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="cg-${song.id}-${w}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs>
+    <rect width="${w}" height="${h}" fill="url(#cg-${song.id}-${w})"/><circle cx="${w * 0.84}" cy="${h * 0.1}" r="${h * 0.62}" fill="#fff" opacity=".08"/>${lines}${bars}</svg>`;
+  COVERS.set(key, svg);
+  return svg;
 }
 
-function stars(n) {
-  return `<span class="mini-stars">${'★'.repeat(n)}<span class="off">${'★'.repeat(3 - n)}</span></span>`;
+function starsHtml(n, size = 16) {
+  return `<span class="mini-stars">${[0, 1, 2].map((i) => icon(i < n ? 'star' : 'starOff', size)).join('')}</span>`;
 }
 
 function bestFor(song) {
@@ -29,38 +77,60 @@ function bestFor(song) {
   return best;
 }
 
+function card(s, i, lvl) {
+  const levels = [...new Set(s.arrangements.map((a) => a.level))].sort((a, b) => a - b);
+  const chips = levels.map((n) => `<span class="lv ${n <= lvl ? 'ok' : n <= lvl + 4 ? 'soon' : 'later'}">${n}</span>`).join('');
+  const easiest = levels[0];
+  const got = bestFor(s);
+  const foot = easiest <= lvl + 1 ? `<span class="play-ic">${icon('play', 16)}</span>` : `<span class="soon-txt">${easiest <= lvl + 4 ? 'Almost!' : 'Challenge'}</span>`;
+  return `<button class="song" data-song="${esc(s.id)}" style="--i:${Math.min(i, 12)}">
+    <div class="cover">${cover(s)}<span class="cat">${esc(s.category)}</span>${got ? `<span class="got">${starsHtml(got)}</span>` : ''}</div>
+    <div class="info"><h3>${esc(s.title)}</h3><p class="by">${esc(s.composer)}${s.year ? ` · ${s.year}` : ''}</p>
+      <div class="foot"><span class="lvs"><small>Lv</small>${chips}</span>${foot}</div></div>
+  </button>`;
+}
+
 function render() {
-  const lvl = coach.level;
-  $('#song-cats').innerHTML = ['All', ...CATEGORIES]
-    .map((c) => `<button class="chip ${F.category === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`)
-    .join('') + `<button class="chip ${F.playable ? 'on' : ''}" data-playable="1">Playable at my level</button>`;
+  const lvl = coach.s.placed ? coach.level : 1;
+  const count = (c) => (c === 'All' ? SONGS.length : SONGS.filter((s) => s.category === c).length);
+  $('#song-cats').innerHTML =
+    ['All', ...CATEGORIES].map((c) => `<button class="chip ${F.category === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)} <span class="count">${count(c)}</span></button>`).join('') +
+    `<button class="chip ${F.playable ? 'on' : ''}" data-playable="1">${icon('target', 18)} Near Level ${lvl}</button>`;
   const q = F.query.trim().toLowerCase();
   const list = SONGS.filter((s) => (F.category === 'All' || s.category === F.category) && (!F.playable || s.arrangements[0].level <= lvl + 1) && (!q || `${s.title} ${s.composer}`.toLowerCase().includes(q)));
   list.sort((a, b) => a.arrangements[0].level - b.arrangements[0].level || a.title.localeCompare(b.title));
   $('#song-grid').innerHTML = list.length
-    ? list
-        .map((s, i) => {
-          const easiest = s.arrangements[0].level;
-          const locked = easiest > lvl + 3;
-          return `<button class="song-card ${locked ? 'stretch' : ''}" data-song="${esc(s.id)}" style="--i:${Math.min(i, 12)}">
-            ${art(s, i)}
-            <div class="song-meta"><b>${esc(s.title)}</b><small>${esc(s.composer)}</small>
-            <div class="song-tags"><span class="lvl-badge">Lv ${easiest}${s.arrangements.length > 1 ? `–${s.arrangements[s.arrangements.length - 1].level}` : ''}</span>${stars(bestFor(s))}</div></div>
-          </button>`;
-        })
-        .join('')
-    : '<p class="empty">No songs match.</p>';
+    ? list.map((s, i) => card(s, i, lvl)).join('')
+    : `<div class="empty-state">${pip('think', 96)}<div class="bubble tail-left">No songs match that. Try another word, or import a MIDI file!</div></div>`;
+  // Pip's pick: the best match for the current level.
+  const pickEl = $('#song-pick');
+  const pick = coach.s.placed && F.category === 'All' && !q ? songsForLevel(coach.level)[0] : null;
+  pickEl.classList.toggle('hidden', !pick);
+  if (pick) {
+    const a = pick.recommended;
+    pickEl.innerHTML = `<div class="art">${cover(pick, 150, 96)}</div>
+      <div><div class="eyebrow">Pip's pick for Level ${coach.level}</div><h2>${esc(pick.title)}</h2><p>${esc(pick.composer.replace(/\s*\(.*\)\s*$/, ''))} · ${esc(a.name)} · Level ${a.level}</p></div>
+      <button class="btn btn-white btn-lg" data-pick-play="${esc(pick.id)}" data-arr="${esc(a.id)}">${icon('play', 22)} Play</button>
+      ${pip('conduct', 118)}`;
+    pickEl.dataset.song = pick.id;
+  }
   $('#free-sources').innerHTML = FREE_SOURCES.map(
     (f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a> <small>${esc(f.description)}${f.midi ? ' · MIDI you can import' : ''}</small></li>`,
   ).join('');
 }
 
-screen('songs', { enter: render });
+screen('songs', {
+  enter() {
+    const txt = coach.s.placed ? `Level ${coach.level}` : 'Not placed yet';
+    for (const el of $$('.rail-level')) el.textContent = txt;
+    render();
+  },
+});
 
 $('#song-cats').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
-  sfx('tap');
+  sfx('select');
   if (b.dataset.playable) F.playable = !F.playable;
   else F.category = b.dataset.cat;
   render();
@@ -68,6 +138,16 @@ $('#song-cats').addEventListener('click', (e) => {
 $('#song-search').addEventListener('input', (e) => {
   F.query = e.target.value;
   render();
+});
+$('#song-pick').addEventListener('click', (e) => {
+  const play = e.target.closest('[data-pick-play]');
+  sfx('tap');
+  if (play) {
+    const song = SONGS.find((s) => s.id === play.dataset.pickPlay);
+    const arr = song && song.arrangements.find((a) => a.id === play.dataset.arr);
+    if (song && arr) return launch(song, arr, 'both', coach.level <= 8 ? 0.8 : 1, 'tempo');
+  }
+  if ($('#song-pick').dataset.song) openSong($('#song-pick').dataset.song);
 });
 
 // ---- song detail sheet --------------------------------------------------------------------
@@ -84,11 +164,12 @@ function openSong(id) {
   D.tempo = coach.level <= 8 ? 0.8 : 1;
   renderSheet();
   $('#song-sheet').classList.remove('hidden');
-  sfx('open');
+  sfx('tap');
 }
 
 function renderSheet() {
   const s = D.song;
+  $('#sheet-cover').innerHTML = cover(s, 140, 90);
   $('#sheet-title').textContent = s.title;
   $('#sheet-composer').textContent = `${s.composer}${s.year ? ` · ${s.year}` : ''} · ${s.category}`;
   $('#sheet-about').textContent = s.about || '';
@@ -96,7 +177,7 @@ function renderSheet() {
     .map((a) => {
       const r = coach.songRecord(s.id, a.id);
       const lv = levelInfo(a.level);
-      return `<button class="arr ${a === D.arr ? 'on' : ''}" data-arr="${esc(a.id)}"><b>${esc(a.name)}</b><small>Level ${a.level} · ${esc(lv.stage)} · ${esc(a.key.name)} · ${a.time}</small>${r ? stars(r.stars) : ''}</button>`;
+      return `<button class="arr ${a === D.arr ? 'on' : ''}" data-arr="${esc(a.id)}"><b>${esc(a.name)}</b><small>Level ${a.level} · ${esc(lv.stage)} · ${esc(a.key.name)} · ${a.time}</small>${r ? starsHtml(r.stars, 20) : ''}</button>`;
     })
     .join('');
   const both = D.arr.hands === 'both';
@@ -106,6 +187,7 @@ function renderSheet() {
   $('#sheet-tempo').value = String(Math.round(D.tempo * 100));
   $('#sheet-tempo-val').textContent = `${Math.round(D.arr.bpm * D.tempo)} bpm (${Math.round(D.tempo * 100)}%)`;
   $('#sheet-license').textContent = s.license || '';
+  $('#sheet-play').innerHTML = `${icon('play', 22)} Play`;
 }
 
 $('#song-grid').addEventListener('click', (e) => {
@@ -117,34 +199,33 @@ $('#sheet-arrs').addEventListener('click', (e) => {
   if (!b) return;
   D.arr = D.song.arrangements.find((a) => a.id === b.dataset.arr);
   if (D.arr.hands !== 'both') D.hands = 'both';
-  sfx('tap');
+  sfx('select');
   renderSheet();
 });
 $('#sheet-hands').addEventListener('click', (e) => {
   const b = e.target.closest('[data-hands]');
   if (!b) return;
   D.hands = b.dataset.hands;
-  sfx('tap');
+  sfx('select');
   renderSheet();
 });
 $('#sheet-tempo').addEventListener('input', (e) => {
   D.tempo = +e.target.value / 100;
   $('#sheet-tempo-val').textContent = `${Math.round(D.arr.bpm * D.tempo)} bpm (${Math.round(D.tempo * 100)}%)`;
 });
-$('#sheet-close').addEventListener('click', () => $('#song-sheet').classList.add('hidden'));
+$('#sheet-close').addEventListener('click', () => {
+  sfx('tap');
+  $('#song-sheet').classList.add('hidden');
+});
 $('#song-sheet').addEventListener('click', (e) => {
   if (e.target.id === 'song-sheet') $('#song-sheet').classList.add('hidden');
 });
-function startSong(mode) {
-  const s = D.song,
-    a = D.arr;
+function launch(s, a, hands, tempo, mode) {
   $('#song-sheet').classList.add('hidden');
-  app.withListening(() =>
-    app.runActivity({ kind: 'song', songId: s.id, arrangementId: a.id, hands: D.hands, tempoScale: D.tempo, level: a.level, mode, free: true, label: s.title }),
-  );
+  app.withListening(() => app.runActivity({ kind: 'song', songId: s.id, arrangementId: a.id, hands, tempoScale: tempo, level: a.level, mode, free: true, label: s.title }));
 }
-$('#sheet-play').addEventListener('click', () => startSong('tempo'));
-$('#sheet-learn').addEventListener('click', () => startSong('wait'));
+$('#sheet-play').addEventListener('click', () => launch(D.song, D.arr, D.hands, D.tempo, 'tempo'));
+$('#sheet-learn').addEventListener('click', () => launch(D.song, D.arr, D.hands, D.tempo, 'wait'));
 
 // ---- MIDI import --------------------------------------------------------------------------
 $('#btn-import').addEventListener('click', () => $('#midi-file').click());

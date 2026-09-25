@@ -4,6 +4,9 @@
 
 // Timing windows (ms) by curriculum level. Beginners get generous windows; they tighten as
 // the student advances. A note is "on time" inside `perfect`; the match window is `ok`.
+// How long after a note's window closes before calling it missed (listener report delay).
+const REPORT_GRACE = 0.15;
+
 export const TIMING_PROFILES = [
   { upTo: 8, name: 'Beginner', perfect: 110, great: 190, good: 290, ok: 400 },
   { upTo: 16, name: 'Elementary', perfect: 90, great: 160, good: 240, ok: 330 },
@@ -170,10 +173,11 @@ export class Session {
     this.lastT = t;
     if (this.mode === 'tempo') {
       this.beat = (t - this.startT) / this.spb;
-      // Mark notes that have passed their window as missed.
+      // Mark notes that have passed their window as missed. The listener reports a note
+      // ~70-150 ms after its attack (timestamped at the attack), so wait that long first.
       for (const n of this.piece.notes) {
         if (this.status.has(n.id)) continue;
-        if ((this.beat - n.beat) * this.spb > (this.windowOf.get(n.id) ?? this.window) + 0.05) {
+        if ((this.beat - n.beat) * this.spb > (this.windowOf.get(n.id) ?? this.window) + REPORT_GRACE) {
           this.status.set(n.id, { s: 'miss' });
           this.onEvent({ type: 'miss', note: n });
         }

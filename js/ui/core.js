@@ -2,6 +2,7 @@
 import { AudioEngine } from '../audio/audio.js';
 import { Stage } from '../render/stage.js';
 import { Coach } from '../coach.js';
+import { pip, icon, reducedMotion } from './brand.js';
 
 export const $ = (s, root = document) => root.querySelector(s);
 export const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -32,10 +33,38 @@ export const S = {
   scheduledTicks: new Set(),
   timingRecent: [],
   timingLast: '',
+  placementCue: null,
+  lastTap: -1,
 };
 
 // Functions that modules provide to each other (avoids circular imports).
 export const app = {};
+
+// ---- static decoration: icons in icon buttons and Pip in every [data-pip] slot ------------
+const ICONS = [
+  ['.icon-btn[data-go="home"]', 'back', 22],
+  ['#btn-exit', 'close', 22],
+  ['#btn-pause', 'pause', 22],
+  ['#sheet-close', 'close', 20],
+  ['#btn-tempo-down', 'minus', 18],
+  ['#btn-tempo-up', 'plus', 18],
+  ['.flame-ic', 'flame', 30],
+  ['.mic-ic', 'mic', 16],
+  ['.search-ic', 'search', 20],
+  ['.up-ic', 'upload', 22],
+];
+export function decorate(root = document) {
+  for (const [sel, name, size] of ICONS) for (const el of $$(sel, root)) if (!el.querySelector('svg')) el.innerHTML = icon(name, size);
+  const listen = $('#btn-listen', root);
+  if (listen && !listen.querySelector('svg')) listen.innerHTML = `${icon('speaker', 22)}<span>Listen</span>`;
+  const retry = $('#btn-retry', root);
+  if (retry && !retry.querySelector('svg')) retry.innerHTML = `${icon('retry', 22)}<span>Retry</span>`;
+  for (const el of $$('[data-pip]', root)) {
+    if (el.querySelector('svg')) continue;
+    el.innerHTML = pip(el.dataset.pip, +el.dataset.size || 160);
+  }
+}
+decorate();
 
 // ---- router -------------------------------------------------------------------------------
 const screens = {};
@@ -85,25 +114,69 @@ export function activeSession() {
 
 // ---- voice coach --------------------------------------------------------------------------
 let voice = null;
-import('../voice.js')
-  .then((m) => (voice = m.voice || m.default || null))
-  .catch(() => {});
+const voiceReady = import('../voice.js')
+  .then((m) => {
+    voice = m.voice || m.default || null;
+    if (voice) {
+      if (typeof audio.attachVoice === 'function') audio.attachVoice(voice);
+      if (typeof voice.onChange === 'function') voice.onChange(setTalking);
+      // One source of truth: the Settings toggle writes both, voice.enabled is what say() reads.
+      if (coach.settings.voice === false && voice.enabled) voice.setEnabled(false);
+    }
+    return voice;
+  })
+  .catch(() => null);
+
+export function getVoice() {
+  return voice;
+}
+export { voiceReady };
 
 export function voiceAvailable() {
   return !!(voice && voice.supported);
 }
 
-// Speak a line (never while the student is being graded). Resolves when done.
+// Pip's beak moves while the voice speaks (CSS: body.pip-talking).
+function setTalking(on) {
+  document.body.classList.toggle('pip-talking', !!on);
+  for (const b of $$('.bubble.speaking')) if (!on) b.classList.remove('speaking');
+}
+
+// The coach bubble that is visible right now (results layer first, then the active screen).
+function visibleBubble() {
+  const res = $('#results');
+  if (res && !res.classList.contains('hidden') && S.screen === 'play') return $('#res-line');
+  const scr = $(`#screen-${S.screen}`);
+  return scr ? scr.querySelector('[data-coach]') : null;
+}
+
+// Show a coach line in Pip's bubble (without speaking it).
+export function showLine(text, { pop = true } = {}) {
+  const b = visibleBubble();
+  if (!b || !text) return;
+  b.textContent = text;
+  if (pop && !reducedMotion()) {
+    b.classList.remove('pop');
+    void b.offsetWidth;
+    b.classList.add('pop');
+  }
+}
+
+// Speak a line (never while the student is being graded) and mirror it in Pip's bubble.
+// Resolves when done.
 export async function say(text, opts = {}) {
-  if (!text || !voice || !voice.supported || coach.settings.voice === false) return;
-  if (activeSession() && !opts.force) return;
-  const release = holdMic('voice');
+  if (!text) return;
+  const graded = activeSession() && !opts.force;
+  if (!opts.silent) showLine(text);
+  if (graded || !voice || !voice.supported || !voice.enabled) return;
+  const b = visibleBubble();
+  if (b) b.classList.add('speaking');
   try {
     await voice.speak(text, { interrupt: true, ...opts });
   } catch {
     /* speech failed: carry on silently */
   } finally {
-    setTimeout(release, 300);
+    if (b) b.classList.remove('speaking');
   }
 }
 
@@ -122,34 +195,16 @@ export function unlockVoice() {
 }
 
 // ---- sound effects ------------------------------------------------------------------------
-let sfxEngine = null;
-let SfxClass = null;
-import('../audio/sfx.js')
-  .then((m) => (SfxClass = m.Sfx || m.default || null))
-  .catch(() => {});
-
-function sfxReady() {
-  if (sfxEngine) return sfxEngine;
-  if (!SfxClass || !audio.ctx) return null;
-  try {
-    sfxEngine = new SfxClass(audio.ctx, audio.ctx.destination, audio.synth);
-  } catch {
-    sfxEngine = null;
-  }
-  return sfxEngine;
-}
-
-// Play a UI sound. During graded play only microphone-safe (ultrasonic-ish) sounds are allowed.
+// Names from js/audio/sfx.js (aliases like select/countin/hitPerfect also work). Full-range
+// sounds hold the microphone for exactly their duration (audio.playSfx); during graded play
+// only mic-safe sounds (hit, perfect, combo, miss, wrong, count, count-go) are allowed.
 export function sfx(name, opts) {
-  if (coach.settings.sounds === false) return;
-  const e = sfxReady();
-  if (!e) return;
-  const safe = typeof e.isMicSafe === 'function' ? e.isMicSafe(name) : false;
-  if (activeSession() && !safe) return;
-  if (!safe && audio.micOn && typeof audio.holdFor === 'function') audio.holdFor(900, 'sfx');
+  if (coach.settings.sounds === false || !audio.ctx || typeof audio.playSfx !== 'function') return 0;
+  const safe = audio.sfx && typeof audio.sfx.isMicSafe === 'function' ? audio.sfx.isMicSafe(name) : false;
+  if (activeSession() && !safe) return 0;
   try {
-    e.play(name, opts);
+    return audio.playSfx(name, opts) || 0;
   } catch {
-    /* unknown sound name */
+    return 0; /* unknown sound name */
   }
 }
