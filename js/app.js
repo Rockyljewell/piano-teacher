@@ -215,7 +215,7 @@ function runLesson() {
 function runActivity(act) {
   clearTimeout(S.autoTimer);
   if (act.kind === 'intro') return showIntro(act.level);
-  const opts = { kind: act.kind, seed: act.seed, measures: act.measures, tempoFactor: act.tempoFactor, bpm: act.bpm };
+  const opts = { kind: act.kind, seed: act.seed, measures: act.measures, tempoFactor: act.tempoFactor, bpm: act.bpm, bothHands: act.bothHands };
   const piece = act.kind === 'rhythm' ? generateRhythm(act.level, opts) : generate(act.level, opts);
   S.activity = act;
   play(piece, act);
@@ -244,6 +244,7 @@ function stageOptions(level) {
     showNames: coach.showNames(level),
     showFingers: st.showFingers,
     showHints: st.showHints,
+    noteColors: st.noteColors === 'auto' ? level <= 8 : !!st.noteColors,
   };
 }
 
@@ -282,8 +283,11 @@ function startSession(mode) {
   $('#btn-mode').textContent = mode === 'wait' ? 'Wait mode' : 'Tempo';
   $('#btn-mode').classList.toggle('on', mode === 'wait');
   $('#hud-beats').innerHTML = Array.from({ length: piece.ts.num > 4 ? 2 : piece.beatsPer }, () => '<i></i>').join('');
+  S.timingRecent = [];
+  S.timingLast = '';
   const session = new Session(piece, {
     mode,
+    level: S.activity ? S.activity.level : piece.level,
     clock: () => audio.now(),
     latency: coach.settings.latencyMs / 1000,
     onEvent: onSessionEvent,
@@ -327,15 +331,22 @@ function onSessionEvent(ev) {
     S.judged++;
     S.credit += ev.grade === 'perfect' ? 1 : ev.grade === 'great' ? 0.9 : ev.grade === 'good' ? 0.7 : 0.45;
     S.lastKind.set(ev.note.midi, { kind: 'good', t: performance.now() });
-    const label = S.session.mode === 'wait' ? '✓' : ev.grade === 'perfect' ? 'Perfect!' : ev.grade === 'great' ? 'Great' : ev.err < 0 ? 'Early' : 'Late';
-    pop(label, ev.grade === 'perfect' || ev.grade === 'great' ? '#1fbf6a' : '#e0a800');
+    const col = ev.grade === 'perfect' ? '#1fbf6a' : ev.grade === 'great' ? '#27b36b' : ev.grade === 'good' ? '#e0a800' : '#f08a24';
+    stage.burst(ev.note.midi, col, ev.grade === 'perfect' ? 18 : 10);
+    stage.ring(ev.note.eventId, ev.note.midi, col);
+    stage.chip(ev.note.midi, ev.label, col);
+    if (S.session.mode === 'tempo') {
+      S.timingRecent.push({ errMs: ev.errMs, t: performance.now(), color: col });
+      if (S.timingRecent.length > 12) S.timingRecent.shift();
+      S.timingLast = ev.grade === 'perfect' ? `on time (${ev.errMs >= 0 ? '+' : ''}${ev.errMs} ms)` : `${Math.abs(ev.errMs)} ms ${ev.errMs < 0 ? 'early' : 'late'}`;
+    }
   } else if (ev.type === 'miss') {
     S.combo = 0;
     S.judged++;
   } else if (ev.type === 'wrong') {
     S.combo = 0;
     S.lastKind.set(ev.midi, { kind: 'bad', t: performance.now() });
-    pop(`✗ ${S.piece.rhythmOnly ? 'extra' : noteName(ev.midi, S.piece.key)}`, '#ef476f');
+    stage.chip(ev.midi, `✗ ${noteName(ev.midi, S.piece.key)}`, '#ef476f');
   } else if (ev.type === 'beat') {
     const dots = $$('#hud-beats i');
     const unit = S.piece.ts.compound ? 1.5 : 1;
@@ -371,7 +382,7 @@ audio.on('noteon', (ev) => {
     return;
   }
   if (!S.session || S.demo || S.piece.rhythmOnly) return;
-  S.session.noteOn(ev.midi, ev.time);
+  S.session.noteOn(ev.midi, ev.time, { confidence: ev.confidence ?? 1 });
 });
 audio.on('noteoff', (ev) => {
   if (S.free) {
@@ -420,6 +431,7 @@ function loop() {
       waitEvents,
       wrongMarks,
       lookaheadSec: coach.settings.lookaheadSec,
+      timingMeter: s.mode === 'tempo' && !S.piece.waitOnly ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
     });
     const md = $('#mic-dot');
     const lvl = Math.min(1, audio.level * 8);

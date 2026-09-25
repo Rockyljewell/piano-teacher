@@ -25,6 +25,12 @@ export const COLORS = {
   laneLine: 'rgba(255,255,255,0.05)',
 };
 
+// Per-pitch-class colours for beginners (boomwhacker-style, like colour-coded lesson books).
+export const NOTE_COLORS = ['#ff5a5f', '#ff7a45', '#ff9f1c', '#f7b733', '#ffd23f', '#3ddc84', '#20c997', '#2ec4b6', '#3fa7ff', '#3b8cff', '#8f6bff', '#b15cff'];
+export function noteColor(midi) {
+  return NOTE_COLORS[((midi % 12) + 12) % 12];
+}
+
 // Staff geometry in diatonic steps (C4 = 28).
 const STAFF = {
   treble: { top: 38, bottom: 30, middle: 34 },
@@ -50,8 +56,153 @@ export class Stage {
     this.ctx = canvas.getContext('2d');
     this.piece = null;
     this.layout = null;
-    this.opts = { showStaff: true, showFalling: true, showNames: false, showFingers: true, showHints: true };
+    this.opts = { showStaff: true, showFalling: true, showNames: false, showFingers: true, showHints: true, noteColors: false };
     this.keyFlash = new Map();
+    this.particles = [];
+    this.chips = [];
+    this.rings = [];
+  }
+
+  // Override any of COLORS (brand theme).
+  setTheme(colors) {
+    Object.assign(COLORS, colors);
+  }
+
+  // ---- effects ------------------------------------------------------------------------------
+  // A burst of sparks rising from a key (hit feedback).
+  burst(midi, color = COLORS.hit, count = 14) {
+    const k = this.keys && this.keys.get(midi);
+    if (!k || !this.L) return;
+    const x = k.x + k.w / 2,
+      y = this.L.kb.y;
+    const now = performance.now();
+    for (let i = 0; i < count; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
+      const v = 90 + Math.random() * 220;
+      this.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t0: now, life: 450 + Math.random() * 350, color, r: 1.5 + Math.random() * 2.5 });
+    }
+    if (this.particles.length > 600) this.particles.splice(0, this.particles.length - 600);
+  }
+
+  // A floating label above a key: "Perfect", "Late · 120 ms", "✗ E4".
+  chip(midi, text, color = COLORS.hit) {
+    const k = this.keys && this.keys.get(midi);
+    if (!k || !this.L) return;
+    // Avoid stacking on the same key: nudge up if a fresh chip is already there.
+    const now = performance.now();
+    const same = this.chips.filter((c) => c.midi === midi && now - c.t0 < 500).length;
+    this.chips.push({ midi, x: k.x + k.w / 2, y: this.L.kb.y - 18 - same * 26, text, color, t0: now, life: 1100 });
+    if (this.chips.length > 24) this.chips.shift();
+  }
+
+  // An expanding ring on the staff at a note that was just played correctly.
+  ring(eventId, midi, color = COLORS.hit) {
+    if (!this.piece || !this.opts.showStaff || !this.L.staff.h) return;
+    const e = this.piece.events.find((x) => x.id === eventId);
+    if (!e || !e._notes) return;
+    const n = e._notes.find((x) => x.midi === midi) || e._notes[0];
+    this.rings.push({ x: this.playheadX, y: this._y(e.staff, n.d), color, t0: performance.now(), life: 500 });
+  }
+
+  _drawFx() {
+    const ctx = this.ctx;
+    const now = performance.now();
+    this.particles = this.particles.filter((p) => now - p.t0 < p.life);
+    for (const p of this.particles) {
+      const t = (now - p.t0) / 1000;
+      const k = 1 - (now - p.t0) / p.life;
+      ctx.globalAlpha = Math.max(0, k);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x + p.vx * t, p.y + p.vy * t + 260 * t * t, p.r * (0.6 + 0.4 * k), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    this.rings = this.rings.filter((r) => now - r.t0 < r.life);
+    for (const r of this.rings) {
+      const k = (now - r.t0) / r.life;
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 3 * (1 - k) + 1;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, (this.sp || 10) * (0.8 + 1.8 * k), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    this.chips = this.chips.filter((c) => now - c.t0 < c.life);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const c of this.chips) {
+      const k = (now - c.t0) / c.life;
+      const pop = k < 0.12 ? 0.7 + (k / 0.12) * 0.35 : k < 0.2 ? 1.05 - ((k - 0.12) / 0.08) * 0.05 : 1;
+      const y = c.y - 34 * Math.min(1, k * 1.4);
+      ctx.globalAlpha = k > 0.7 ? Math.max(0, 1 - (k - 0.7) / 0.3) : 1;
+      const fs = 15 * pop;
+      ctx.font = `800 ${fs.toFixed(1)}px ${COLORS.font || 'system-ui, sans-serif'}`;
+      const tw = ctx.measureText(c.text).width + 18;
+      const x = Math.max(tw / 2 + 4, Math.min(this.w - tw / 2 - 4, c.x));
+      ctx.fillStyle = c.color;
+      roundRect(ctx, x - tw / 2, y - 13 * pop, tw, 26 * pop, 13 * pop);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(c.text, x, y + 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Early / late meter: where recent notes landed relative to the beat.
+  _drawTimingMeter(tm) {
+    if (!tm || !tm.profile || !this.L.fall.h) return;
+    const ctx = this.ctx;
+    const p = tm.profile;
+    const W = Math.min(360, this.w * 0.34);
+    const H = 30;
+    const x0 = (this.w - W) / 2;
+    const y0 = this.L.fall.y + 10;
+    const range = p.ok;
+    const X = (ms) => x0 + W / 2 + (Math.max(-range, Math.min(range, ms)) / range) * (W / 2);
+    ctx.fillStyle = 'rgba(8,10,20,0.55)';
+    roundRect(ctx, x0 - 46, y0 - 4, W + 92, H + 8, 12);
+    ctx.fill();
+    const zones = [
+      [p.ok, 'rgba(255,159,28,0.35)'],
+      [p.good, 'rgba(255,210,63,0.45)'],
+      [p.great, 'rgba(61,220,132,0.45)'],
+      [p.perfect, 'rgba(31,191,106,0.85)'],
+    ];
+    for (const [ms, col] of zones) {
+      ctx.fillStyle = col;
+      roundRect(ctx, X(-ms), y0 + 9, X(ms) - X(-ms), 12, 6);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(X(0) - 1, y0 + 4, 2, 22);
+    ctx.font = `700 11px ${COLORS.font || 'system-ui, sans-serif'}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText('EARLY', x0 - 6, y0 + 15);
+    ctx.textAlign = 'left';
+    ctx.fillText('LATE', x0 + W + 6, y0 + 15);
+    const now = performance.now();
+    for (const r of tm.recent || []) {
+      const age = (now - r.t) / 4000;
+      if (age > 1) continue;
+      ctx.globalAlpha = 1 - age * 0.8;
+      ctx.fillStyle = r.color || '#fff';
+      ctx.beginPath();
+      ctx.moveTo(X(r.errMs), y0 + 2);
+      ctx.lineTo(X(r.errMs) - 6, y0 - 6);
+      ctx.lineTo(X(r.errMs) + 6, y0 - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(X(r.errMs) - 1.5, y0 + 4, 3, 22);
+    }
+    ctx.globalAlpha = 1;
+    if (tm.last) {
+      ctx.textAlign = 'center';
+      ctx.font = `800 12px ${COLORS.font || 'system-ui, sans-serif'}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(tm.last, x0 + W / 2, y0 + H + 14);
+    }
   }
 
   resize() {
@@ -259,6 +410,8 @@ export class Stage {
     if (this.piece && this.opts.showStaff && this.L.staff.h > 0) this._drawStaff(state);
     if (this.opts.showFalling && this.L.fall.h > 0) this._drawFalling(state);
     this._drawKeyboard(state);
+    if (this.opts.showFalling && state.timingMeter) this._drawTimingMeter(state.timingMeter);
+    this._drawFx();
   }
 
   _noteColor(state, e, n) {
@@ -725,7 +878,7 @@ export class Stage {
       const y1 = bottom - (n.beat - now) * pxb;
       const y0 = bottom - (n.beat + n.dur - now) * pxb;
       const st = state.status && state.status.get(n.id);
-      let col = n.hand === 'L' ? COLORS.lh : COLORS.rh;
+      let col = this.opts.noteColors ? noteColor(n.midi) : n.hand === 'L' ? COLORS.lh : COLORS.rh;
       if (p.rhythmOnly) col = COLORS.rh;
       if (st && st.s === 'hit') col = COLORS.hit;
       if (st && st.s === 'miss') col = COLORS.miss;
@@ -739,7 +892,17 @@ export class Stage {
       ctx.globalAlpha = st && st.s === 'hit' ? 0.55 : 0.95;
       roundRect(ctx, x, top, ww, bot - top, r);
       ctx.fill();
+      // soft top highlight
+      ctx.globalAlpha = st ? 0.12 : 0.22;
+      ctx.fillStyle = '#fff';
+      roundRect(ctx, x + 2, top + 2, Math.max(1, ww - 4), Math.min(10, Math.max(1, bot - top - 4)), Math.max(1, r - 2));
+      ctx.fill();
       ctx.globalAlpha = 1;
+      // in colour mode, mark the left hand's notes with a small dark stripe
+      if (this.opts.noteColors && n.hand === 'L' && !p.rhythmOnly && bot - top > 8) {
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(x, top + 3, 3, bot - top - 6);
+      }
       if (this.opts.showNames && bot - top > 16 && ww > 12) {
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.font = `700 ${Math.round(Math.min(ww * 0.55, 14))}px system-ui, sans-serif`;
@@ -784,7 +947,7 @@ export class Stage {
       const heardInfo = heard.get(m);
       const hint = this.opts.showHints ? hints.get(m) : null;
       let fill = k.black ? '#16161c' : '#f7f7f2';
-      if (hint) fill = hint === 'L' ? (k.black ? '#a35f00' : '#ffd29a') : k.black ? '#1c56b8' : '#b9d6ff';
+      if (hint) fill = this.opts.noteColors ? noteColor(m) : hint === 'L' ? (k.black ? '#a35f00' : '#ffd29a') : k.black ? '#1c56b8' : '#b9d6ff';
       if (heardInfo) fill = heardInfo.kind === 'good' ? COLORS.hit : heardInfo.kind === 'bad' ? COLORS.wrong : k.black ? '#6b7cff' : '#a9b6ff';
       ctx.fillStyle = fill;
       if (k.black) {
