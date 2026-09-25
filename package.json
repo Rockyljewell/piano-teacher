@@ -1,0 +1,12 @@
+{
+  "name": "piano-teacher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Piano teacher web app: listens to your piano and teaches you from beginner to master.",
+  "scripts": {
+    "start": "npx http-server -c-1 -p 8080 .",
+    "test": "node --test",
+    "eval": "node tests/eval-transcriber.js"
+  }
+}

@@ -1,0 +1,299 @@
+// The coach: placement test, lesson planning, mastery and progress tracking (persisted in
+// localStorage so the student picks up exactly where they left off).
+import { LEVELS, MAX_LEVEL, levelInfo } from './music/curriculum.js';
+import { noteName } from './music/theory.js';
+
+const STORE = 'maestro.progress.v1';
+const PLACEMENT_LADDER = [1, 3, 6, 10, 14, 18, 23, 28, 33, 37, 40];
+export const PASS_SCORE = 75;
+
+export const DEFAULT_SETTINGS = {
+  showStaff: true,
+  showFalling: true,
+  showNames: 'auto',
+  showFingers: true,
+  showHints: true,
+  metronome: 'countin', // 'countin' | 'always' | 'off'
+  sensitivity: 1,
+  latencyMs: 0,
+  autoAdvance: true,
+  lookaheadSec: 3,
+};
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+export class Coach {
+  constructor(storage = globalThis.localStorage) {
+    this.storage = storage;
+    this.s = this._load();
+  }
+
+  _fresh() {
+    return {
+      placed: false,
+      level: 1,
+      mastery: {},
+      tempo: {},
+      counter: {},
+      fails: {},
+      seenIntro: {},
+      retry: null,
+      history: [],
+      stats: { seconds: 0, pieces: 0, notes: 0 },
+      streak: { last: null, days: 0 },
+      settings: { ...DEFAULT_SETTINGS },
+      placement: null,
+    };
+  }
+
+  _load() {
+    try {
+      const raw = this.storage && this.storage.getItem(STORE);
+      if (raw) {
+        const s = JSON.parse(raw);
+        const f = this._fresh();
+        return { ...f, ...s, settings: { ...f.settings, ...(s.settings || {}) }, stats: { ...f.stats, ...(s.stats || {}) } };
+      }
+    } catch {
+      /* corrupted or unavailable storage */
+    }
+    return this._fresh();
+  }
+
+  save() {
+    try {
+      this.storage && this.storage.setItem(STORE, JSON.stringify(this.s));
+    } catch {
+      /* storage full or blocked */
+    }
+  }
+
+  reset() {
+    const settings = this.s.settings;
+    this.s = this._fresh();
+    this.s.settings = settings;
+    this.save();
+  }
+
+  get level() {
+    return this.s.level;
+  }
+
+  get settings() {
+    return this.s.settings;
+  }
+
+  setSetting(k, v) {
+    this.s.settings[k] = v;
+    this.save();
+  }
+
+  mastery(level = this.s.level) {
+    return this.s.mastery[level] || 0;
+  }
+
+  tempoFactor(level = this.s.level) {
+    return this.s.tempo[level] ?? 0.3;
+  }
+
+  showNames(level = this.s.level) {
+    const v = this.s.settings.showNames;
+    return v === 'auto' ? level <= 4 : !!v;
+  }
+
+  // ---- placement --------------------------------------------------------------------------
+  startPlacement() {
+    this.s.placement = { lo: 0, hi: MAX_LEVEL + 1, current: 1, phase: 'climb', tests: [] };
+    this.save();
+    return this.placementActivity();
+  }
+
+  placementActivity() {
+    const p = this.s.placement;
+    if (!p) return null;
+    const lv = levelInfo(p.current);
+    return {
+      kind: 'sight', level: p.current, mode: 'tempo', placement: true,
+      measures: lv.n <= 8 ? 3 : 4, tempoFactor: 0.15,
+      label: `Placement test ${p.tests.length + 1}`,
+    };
+  }
+
+  // Returns {done, level} or {done:false, next}
+  placementResult(result) {
+    const p = this.s.placement;
+    const pass = result.score >= PASS_SCORE;
+    p.tests.push({ level: p.current, score: result.score });
+    if (pass) p.lo = Math.max(p.lo, p.current);
+    else p.hi = Math.min(p.hi, p.current);
+    let next = null;
+    if (p.phase === 'climb' && pass) {
+      next = PLACEMENT_LADDER.find((l) => l > p.current) ?? null;
+      if (next === null || next >= p.hi) {
+        p.phase = 'bisect';
+        next = null;
+      }
+    } else p.phase = 'bisect';
+    if (p.phase === 'bisect') {
+      if (p.hi - p.lo <= 1 || p.tests.length >= 14) next = null;
+      else next = Math.floor((p.lo + p.hi) / 2);
+      if (next !== null && (next <= p.lo || next >= p.hi)) next = null;
+    }
+    if (next === null) {
+      const level = Math.max(1, Math.min(MAX_LEVEL, p.lo || 1));
+      this.s.placed = true;
+      this.s.level = level;
+      // Passing a level in the test earns a head start on it.
+      if (p.lo >= 1) this.s.mastery[level] = Math.max(this.s.mastery[level] || 0, 50);
+      const tests = p.tests;
+      this.s.placement = null;
+      this.save();
+      return { done: true, level, tests };
+    }
+    p.current = next;
+    this.save();
+    return { done: false, next: this.placementActivity(), passed: pass };
+  }
+
+  // ---- lessons ----------------------------------------------------------------------------
+  // What should the student do next at their level?
+  nextActivity() {
+    const level = this.s.level;
+    const lv = levelInfo(level);
+    if (!this.s.seenIntro[level]) return { kind: 'intro', level };
+    if (this.s.retry && this.s.retry.level === level) {
+      const r = this.s.retry;
+      return { kind: 'sight', level, mode: r.mode, seed: r.seed, tempoFactor: this.tempoFactor(level), label: r.mode === 'wait' ? 'Learn it step by step' : 'Try it again at tempo' };
+    }
+    const i = this.s.counter[level] || 0;
+    const plan = ['warmup', 'sight', 'rhythm', 'sight', 'sight'];
+    const slot = plan[i % plan.length];
+    const tf = this.tempoFactor(level);
+    if (slot === 'warmup') {
+      let kind = 'notes';
+      if (level >= 9) {
+        const opts = ['scale'];
+        if (level >= 14) opts.push('chords');
+        if (level >= 25) opts.push('arpeggio');
+        kind = opts[Math.floor(i / plan.length) % opts.length];
+      }
+      return { kind, level, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: kind === 'notes' ? 'Warm-up: note reading' : `Warm-up: ${kind}` };
+    }
+    if (slot === 'rhythm') return { kind: 'rhythm', level, mode: 'tempo', tempoFactor: tf, label: 'Rhythm drill (any key)' };
+    // Very first piece at a beginner level: learn in wait mode.
+    const firstAtLevel = !this.s.history.some((h) => h.level === level && h.kind === 'sight');
+    const mode = firstAtLevel && level <= 4 ? 'wait' : 'tempo';
+    return { kind: 'sight', level, mode, tempoFactor: tf, label: mode === 'wait' ? 'Sight-reading (learn mode)' : 'Sight-reading' };
+  }
+
+  markIntroSeen(level) {
+    this.s.seenIntro[level] = true;
+    this.save();
+  }
+
+  // Record a finished activity. Returns feedback for the results screen.
+  record(activity, piece, result, seconds) {
+    const s = this.s;
+    const level = activity.level;
+    s.stats.seconds += seconds;
+    s.stats.pieces += 1;
+    s.stats.notes += result.hits;
+    const d = today();
+    if (s.streak.last !== d) {
+      const y = new Date(Date.now() - 86400000);
+      const yd = `${y.getFullYear()}-${y.getMonth() + 1}-${y.getDate()}`;
+      s.streak.days = s.streak.last === yd ? s.streak.days + 1 : 1;
+      s.streak.last = d;
+    }
+    s.history.push({ t: Date.now(), level, kind: activity.kind, mode: result.mode, score: result.score, bpm: piece.bpm, placement: !!activity.placement });
+    if (s.history.length > 500) s.history.splice(0, s.history.length - 500);
+
+    const out = { levelUp: false, levelDown: false, gain: 0 };
+    if (activity.placement || activity.free) {
+      this.save();
+      return out;
+    }
+    // Lesson-plan position advances (unless we're doing a retry).
+    if (!activity.retry && !(s.retry && s.retry.level === level)) s.counter[level] = (s.counter[level] || 0) + 1;
+
+    const sc = result.score;
+    const tempo = result.mode === 'tempo';
+    let gain = 0;
+    if (tempo) gain = sc >= 90 ? 34 : sc >= 80 ? 25 : sc >= 70 ? 15 : sc >= 60 ? 8 : -5;
+    else gain = sc >= 90 ? 8 : sc >= 70 ? 4 : 0;
+    if (activity.kind !== 'sight') gain = gain > 0 ? Math.round(gain / 2) : 0;
+    if (level === s.level) {
+      s.mastery[level] = Math.max(0, Math.min(100, (s.mastery[level] || 0) + gain));
+      out.gain = gain;
+    }
+
+    // Tempo adapts to how comfortable the student is.
+    if (tempo && (activity.kind === 'sight' || activity.kind === 'rhythm')) {
+      let tf = this.tempoFactor(level);
+      if (sc >= 92) tf += 0.15;
+      else if (sc >= 80) tf += 0.07;
+      else if (sc < 65) tf -= 0.15;
+      s.tempo[level] = Math.max(-0.5, Math.min(1.3, tf));
+    }
+
+    // Struggling at tempo -> learn the same piece in wait mode, then retry it at tempo.
+    if (activity.kind === 'sight') {
+      if (s.retry && s.retry.level === level) {
+        if (s.retry.mode === 'wait') s.retry = { level, seed: piece.seed, mode: 'tempo' };
+        else s.retry = null;
+      } else if (tempo && sc < 60) s.retry = { level, seed: piece.seed, mode: 'wait' };
+    }
+
+    if (tempo && activity.kind === 'sight') {
+      s.fails[level] = sc < 50 ? (s.fails[level] || 0) + 1 : 0;
+    }
+
+    if (level === s.level && s.mastery[level] >= 100 && s.level < MAX_LEVEL) {
+      s.level += 1;
+      s.retry = null;
+      out.levelUp = true;
+      out.newLevel = s.level;
+    } else if (level === s.level && (s.fails[level] || 0) >= 3 && s.level > 1 && (s.mastery[level] || 0) < 20) {
+      s.fails[level] = 0;
+      s.level -= 1;
+      s.retry = null;
+      out.levelDown = true;
+      out.newLevel = s.level;
+    }
+    this.save();
+    return out;
+  }
+
+  // Human feedback from a result.
+  feedback(piece, result) {
+    const tips = [];
+    const r = result;
+    if (r.score >= 95) tips.push('Outstanding! Clean notes and steady rhythm.');
+    else if (r.score >= 85) tips.push('Great playing!');
+    else if (r.score >= 70) tips.push('Good work. A few more run-throughs and you\'ll own it.');
+    else if (r.score >= 50) tips.push('Keep going. Accuracy first, speed later.');
+    else tips.push('That one was tough. Let\'s slow it down and learn it step by step.');
+    if (r.mode === 'tempo' && r.hits >= 4) {
+      const ms = Math.round(r.meanErr * 1000);
+      if (ms > 45) tips.push(`You tend to play a little late (about ${ms} ms). Look ahead to the next note.`);
+      else if (ms < -45) tips.push(`You tend to rush (about ${-ms} ms early). Feel the beat and wait for it.`);
+      else if (r.timing >= 0.9) tips.push('Your timing is right on the beat.');
+    }
+    if (r.missedByMidi.length) {
+      const names = r.missedByMidi.slice(0, 3).map(([m]) => noteName(m, piece.key));
+      tips.push(`Most missed: ${names.join(', ')}.`);
+    }
+    if (r.extras > Math.max(2, r.total * 0.15)) tips.push('I heard quite a few extra notes. Take a breath and aim carefully.');
+    return tips;
+  }
+
+  summary() {
+    const s = this.s;
+    const recent = s.history.filter((h) => !h.placement).slice(-20);
+    const avg = recent.length ? Math.round(recent.reduce((a, h) => a + h.score, 0) / recent.length) : 0;
+    return { level: s.level, info: levelInfo(s.level), mastery: this.mastery(), avg, stats: s.stats, streak: s.streak.days, history: s.history, levels: LEVELS };
+  }
+}
