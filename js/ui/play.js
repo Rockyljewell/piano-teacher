@@ -8,6 +8,7 @@ import { songPiece } from '../music/songs.js';
 import { levelInfo } from '../music/curriculum.js';
 import { noteName, chordName, Key } from '../music/theory.js';
 import { icon, pip } from './brand.js';
+import { wantsPrep, enterPrep, cancelPrep, prepNote, prepDrawState, placePrep } from './prep.js';
 
 // Grade colours (docs/brand/playful/spec.md): Perfect = sun, Great = mint, early = blue, late = orange.
 export const GRADE_COLORS = { perfect: '#FFC23D', great: '#20C07A', early: '#2F9BFF', late: '#FF9A2E', wrong: '#FF5A6A' };
@@ -81,6 +82,8 @@ export function play(piece, act) {
   $('#screen-play').classList.toggle('placement', !!act.placement);
   S.piece = piece;
   $('#free-display').classList.add('hidden');
+  $('#results').classList.add('hidden');
+  $('#pause-menu').classList.add('hidden');
   show('play');
   const level = act.level ?? piece.level ?? 1;
   stage.setOptions(stageOptions(level));
@@ -103,7 +106,11 @@ export function play(piece, act) {
     prog.classList.remove('hidden');
     prog.innerHTML = placementProgress(act);
   } else prog.classList.add('hidden');
-  startSession(act.mode || 'tempo');
+  const mode = act.mode || 'tempo';
+  if (wantsPrep(piece, act)) {
+    enterPrep(piece, act, mode);
+    loop();
+  } else startSession(mode);
   if (act.placement) {
     const line = S.placementCue === 'harder' ? "Nice! Here's a trickier one." : S.placementCue === 'easier' ? "Let's try an easier one." : 'Play what you can. Both hands!';
     flash(line, 'info', 3200);
@@ -116,7 +123,9 @@ app.play = play;
 function resizeStage() {
   stage.resize();
   placeStrip();
+  placePrep();
 }
+app.stageLayout = () => stage.L;
 
 function placeStrip() {
   const L = stage.L;
@@ -127,6 +136,7 @@ function placeStrip() {
 
 export function startSession(mode) {
   const piece = S.piece;
+  cancelPrep();
   if (S.session) S.session.finished = true;
   S.combo = 0;
   S.bestCombo = 0;
@@ -137,6 +147,7 @@ export function startSession(mode) {
   S.timingRecent = [];
   S.timingLast = '';
   S.lastTap = -1;
+  S.expKey = null;
   // Tell the listener the piece's range: stray sounds far outside it need more evidence.
   if (piece.rhythmOnly || !piece.notes.length) audio.setRange(null);
   else audio.setRange(Math.min(...piece.notes.map((n) => n.midi)), Math.max(...piece.notes.map((n) => n.midi)));
@@ -247,7 +258,7 @@ function onSessionEvent(ev) {
 }
 
 // A short message in the middle of the status strip.
-function flash(text, kind = '', ms = 2200) {
+export function flash(text, kind = '', ms = 2200) {
   const el = $('#feedback-pop');
   el.className = `feedback-pop ${kind}`;
   el.innerHTML = text;
@@ -255,6 +266,8 @@ function flash(text, kind = '', ms = 2200) {
   el.classList.add('show');
   el.style.animationDuration = `${ms}ms`;
 }
+
+app.flash = flash;
 
 function comboFlash(n) {
   flash(`${icon('flame', 20)} ${n} in a row!`);
@@ -269,6 +282,10 @@ audio.on('noteon', (ev) => {
   if (S.free) {
     S.history.push({ midi: ev.midi, on: ev.time, off: null });
     if (S.history.length > 400) S.history.shift();
+    return;
+  }
+  if (S.prep) {
+    prepNote(ev);
     return;
   }
   if (!S.session || S.demo || !S.piece) return;
@@ -304,9 +321,20 @@ function micDot() {
   const md = $('#mic-dot');
   const lvl = Math.min(1, audio.level * 8);
   const on = audio.micOn;
-  md.classList.toggle('on', on && !micHeld);
-  md.classList.toggle('held', on && micHeld);
-  const label = !on ? 'On-screen keys' : micHeld ? (heldWhy === 'talk' ? 'Not listening while I talk' : heldWhy === 'play' ? 'Not listening while I play' : 'Listening paused') : 'Listening';
+  md.classList.toggle('on', on && !micHeld && !listenDown);
+  md.classList.toggle('held', on && micHeld && !listenDown);
+  md.classList.toggle('lost', !!listenDown);
+  const label = listenDown
+    ? 'Mic stopped · tap to check'
+    : !on
+      ? 'On-screen keys'
+      : micHeld
+        ? heldWhy === 'talk'
+          ? 'Not listening while I talk'
+          : heldWhy === 'play'
+            ? 'Not listening while I play'
+            : 'Listening paused'
+        : 'Listening';
   const lab = md.querySelector('.mic-label');
   if (lab.textContent !== label) lab.textContent = label;
   const bars = md.querySelectorAll('.lv i');
@@ -314,6 +342,85 @@ function micDot() {
   md.style.setProperty('--lvl', lvl.toFixed(2));
   audio.level *= 0.9;
 }
+
+// ---- listening health -----------------------------------------------------------------------
+// If iOS stops the audio engine or the microphone mid-lesson (a call, Siri, another app, the
+// voice), grading would freeze or count misses. Pause instead, and ask for a tap: a tap is what
+// lets Safari resume audio and re-open the microphone.
+let listenDown = null; // the failed health state, or null
+let lostTimer = 0;
+let pausedForHealth = false;
+function lostReason(ev) {
+  const r = `${(ev && ev.reason) || ''} ${(ev && ev.context) || ''} ${(ev && ev.mic) || ''}`.toLowerCase();
+  if (/interrupt|suspend|stall|clock|context/.test(r)) return "Something paused the iPad's sound, like a call, Siri or another app. Tap and we'll carry on.";
+  return "The microphone stopped sending sound. Tap and I'll switch it back on.";
+}
+function showLost() {
+  if (!listenDown || S.screen !== 'play') return;
+  $('#lost-why').textContent = lostReason(listenDown);
+  $('#pause-menu').classList.add('hidden');
+  $('#listen-lost').classList.remove('hidden');
+}
+function healthDown(ev) {
+  listenDown = ev;
+  if (S.screen !== 'play') return;
+  if (S.session && !S.session.finished && !S.session.paused && !S.demo) {
+    S.session.pause();
+    pausedForHealth = true;
+  }
+  clearTimeout(lostTimer);
+  // Give automatic recovery a moment unless only a tap can fix it.
+  if (ev.needsGesture) showLost();
+  else lostTimer = setTimeout(showLost, 1500);
+}
+function healthUp() {
+  clearTimeout(lostTimer);
+  const shown = !$('#listen-lost').classList.contains('hidden');
+  listenDown = null;
+  $('#listen-lost').classList.add('hidden');
+  if (pausedForHealth && S.session && S.session.paused && !S.session.finished && $('#pause-menu').classList.contains('hidden')) {
+    S.scheduledTicks.clear();
+    S.session.resume();
+    if (shown) flash('Listening again. Here we go!', 'info', 1800);
+  }
+  pausedForHealth = false;
+}
+audio.on('health', (ev) => {
+  if (!ev) return;
+  if (ev.ok) healthUp();
+  else if (audio.micOn || /context|clock|stall|interrupt|suspend/.test(`${ev.reason || ''} ${ev.context || ''}`)) healthDown(ev);
+});
+$('#btn-lost-fix').addEventListener('click', async () => {
+  const btn = $('#btn-lost-fix');
+  // Call recover() inside the tap itself: iOS only resumes audio / opens the mic on a gesture.
+  const p = typeof audio.recover === 'function' ? audio.recover() : audio.ensureContext().then(() => ({ ok: true }));
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  let h = null;
+  try {
+    h = await p;
+  } catch {
+    h = { ok: false };
+  }
+  btn.disabled = false;
+  btn.textContent = 'Tap to start listening again';
+  if (!h || h.ok !== false) healthUp();
+  else $('#lost-why').textContent = 'Still no sound from the microphone. Try the Listening check, or close and reopen Maestro.';
+});
+$('#btn-lost-check').addEventListener('click', () => {
+  if (app.openDiagnostics) app.openDiagnostics();
+});
+$('#btn-lost-keys').addEventListener('click', () => {
+  S.listenSkipped = true;
+  listenDown = null;
+  healthUp();
+});
+// The mic chip opens the Listening check (pausing the lesson first).
+$('#mic-dot').addEventListener('click', () => {
+  if (!app.openDiagnostics) return;
+  if (S.session && !S.session.finished && !S.session.paused && !S.demo && !S.free) pause();
+  app.openDiagnostics();
+});
 
 function barProgress() {
   const s = S.session;
@@ -339,12 +446,17 @@ export function loop() {
       placeStrip();
     }
     if (S.free) return drawFree();
+    if (S.prep) return drawPrep();
     const s = S.session;
     if (!s) return;
     s.update();
     scheduleTicks();
     const expected = s.expectedNotes(1);
-    audio.setExpected(expected.map((n) => n.midi));
+    const expKey = expected.map((n) => n.midi).join(',');
+    if (expKey !== S.expKey) {
+      S.expKey = expKey; // (the listener runs in a worker: only tell it about changes)
+      audio.setExpected(expected.map((n) => n.midi));
+    }
     const hints = new Map();
     const soon = s.mode === 'wait' ? expected : expected.filter((n) => n.beat - s.beat < 0.6);
     for (const n of soon) hints.set(n.midi, n.hand);
@@ -375,7 +487,30 @@ export function loop() {
   S.raf = requestAnimationFrame(frame);
 }
 
+// Getting ready: the piece waits at the start of the count-in while the keyboard shows the
+// hand position.
+function drawPrep() {
+  const heard = new Map();
+  for (const [m] of audio.heard) heard.set(m, { kind: 'neutral' });
+  stage.draw({
+    nowBeat: -S.piece.beatsPer,
+    status: new Map(),
+    hints: new Map(),
+    heard,
+    prep: prepDrawState(),
+    lookaheadSec: coach.settings.lookaheadSec,
+  });
+  micDot();
+  const total = S.piece.measures || Math.ceil(S.piece.totalBeats / S.piece.beatsPer);
+  const label = `${total} bar${total === 1 ? '' : 's'}`;
+  const el = $('#bar-label');
+  if (el.textContent !== label) el.textContent = label;
+  $('#bar-fill').style.width = '0%';
+}
+
 export function stopPlay(keepScreen) {
+  cancelPrep();
+  S.expKey = null;
   cancelAnimationFrame(S.raf);
   clearTimeout(S.autoTimer);
   clearTimeout(S.demoTimer);
@@ -446,8 +581,9 @@ $('#btn-tempo-up').addEventListener('click', () => changeTempo(5));
 // engine schedules with lookahead and keeps the mic held until the sound has decayed.
 async function startDemo() {
   if (!S.piece) return;
+  const mode = S.session ? S.session.mode : S.prep ? S.prep.mode : S.activity?.mode || 'tempo';
+  cancelPrep();
   await audio.ensureContext();
-  const mode = S.session ? S.session.mode : S.activity?.mode || 'tempo';
   startSession('tempo');
   S.demo = true;
   S.demoMode = mode;

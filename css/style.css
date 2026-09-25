@@ -469,6 +469,37 @@ small { color: var(--ink-3); }
 .countdown { position: absolute; left: 50%; top: 66%; transform: translate(-50%, -50%); font-family: var(--font-display); font-weight: 700; font-size: 120px; color: var(--brand); text-shadow: 0 6px 0 var(--brand-soft), 0 0 0 #fff; pointer-events: none; z-index: 4; line-height: 1; }
 .countdown:empty { display: none; }
 .countdown.pulse { animation: count-pulse .3s var(--ease-spring); }
+
+/* Listening lost: the lesson pauses until a tap brings the microphone back (iOS needs a tap). */
+.lost-dialog { max-width: 520px; text-align: center; }
+.lost-dialog .dialog-pip { display: flex; justify-content: center; }
+.lost-dialog h2 { margin-top: 6px; }
+.lost-dialog p { margin: 8px 0 18px; font-size: 18px; }
+.lost-dialog .col { align-items: stretch; }
+.mic-ind.lost { color: var(--coral-ink); background: var(--coral-soft); border-color: var(--coral); }
+.status-strip .mic-ind { cursor: pointer; pointer-events: auto; }
+
+/* "Get ready" card: over the falling-notes lane, above the hand brackets on the keyboard. */
+.prep { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; width: min(880px, calc(100% - 40px));
+  display: flex; align-items: center; gap: 18px; padding: 14px 20px 14px 14px; overflow: hidden;
+  background: var(--surface); border: 2.5px solid var(--line); border-radius: var(--r-xl); box-shadow: 0 6px 0 var(--edge), var(--shadow-pop);
+  animation: prep-in var(--t-slow) var(--ease-spring) both; }
+.prep-pip { flex: none; width: 92px; display: flex; justify-content: center; }
+.prep-pip svg { display: block; }
+.prep-body { flex: 1; min-width: 0; }
+.prep-title { font-family: var(--font-display); font-weight: 600; font-size: 26px; line-height: 1.15; margin: 2px 0 4px; }
+.prep-text { font-size: 18px; line-height: 1.35; color: var(--ink-2); font-weight: 700; }
+.prep-text b { color: var(--brand-ink); font-weight: 800; }
+.prep-text.nudge { animation: prep-nudge .45s var(--ease-out); }
+.prep-go { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.prep-go .btn { overflow: hidden; }
+.prep-or { font-size: 14px; font-weight: 800; color: var(--ink-3); }
+.prep-ring { position: absolute; left: 0; bottom: 0; height: 5px; width: calc(var(--p, 0) * 100%); background: rgba(255,255,255,.55); border-radius: 0 3px 3px 0; display: none; }
+.prep-ring.on { display: block; }
+@keyframes prep-in { from { opacity: 0; transform: translate(-50%, 14px) scale(.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes prep-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 60% { transform: translateX(5px); } }
+@media (max-width: 1100px) { .prep-pip { width: 72px; } .prep-pip svg { width: 72px; height: auto; } .prep-title { font-size: 22px; } .prep-text { font-size: 16px; } }
+@media (prefers-reduced-motion: reduce) { .prep, .prep-text.nudge { animation: none; } }
 @keyframes count-pulse { from { transform: translate(-50%, -50%) scale(.6); opacity: .2; } }
 .free-display { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; z-index: 3; text-align: center; }
 .fd-notes { font-family: var(--font-display); font-weight: 600; font-size: 56px; color: var(--ink); background: #fff; border: 2.5px solid var(--line); box-shadow: 0 6px 0 var(--edge); border-radius: 26px; padding: 8px 28px; }

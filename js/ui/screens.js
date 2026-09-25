@@ -285,7 +285,9 @@ export function showIntro(level) {
   $('#btn-intro-hear').onclick = () => start(true);
   $('#btn-intro-hear').innerHTML = `${icon('speaker', 20)} Hear it first`;
   show('intro');
-  say(`Level ${lv.n}: ${lv.title}. ${lv.concept}`);
+  // The bubble shows the whole explanation; Pip speaks the short version when the level has one.
+  showLine(`Level ${lv.n}: ${lv.title}. ${lv.concept}`);
+  say(`Level ${lv.n}: ${lv.title}. ${lv.say || lv.concept}`, { silent: true });
 }
 app.showIntro = showIntro;
 

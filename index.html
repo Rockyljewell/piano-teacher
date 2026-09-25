@@ -169,6 +169,19 @@
           <span class="bar-prog"><b id="bar-label"></b><span class="bar"><i id="bar-fill"></i></span></span>
         </div>
         <div id="countdown" class="countdown"></div>
+        <div id="prep" class="prep hidden" role="dialog" aria-label="Get ready"></div>
+        <div id="listen-lost" class="overlay hidden">
+          <div class="dialog lost-dialog" role="alertdialog" aria-labelledby="lost-title">
+            <div class="dialog-pip" data-pip="oops" data-size="112"></div>
+            <h2 id="lost-title">I can't hear your piano</h2>
+            <p id="lost-why" class="muted"></p>
+            <div class="col">
+              <button id="btn-lost-fix" class="btn btn-primary btn-lg">Tap to start listening again</button>
+              <button id="btn-lost-check" class="btn">Listening check</button>
+              <button id="btn-lost-keys" class="btn btn-ghost">Use on-screen keys</button>
+            </div>
+          </div>
+        </div>
         <div id="free-display" class="free-display hidden"></div>
         <div id="pause-menu" class="overlay hidden">
           <div class="dialog pause-dialog">
@@ -342,6 +355,7 @@
             <label class="select-row" id="voice-pick-row"><span>Pip's voice</span><select id="set-voice"><option value="">Automatic</option></select></label>
             <label class="switch-row"><span>Sound effects</span><input type="checkbox" data-set="sounds"></label>
             <label class="switch-row"><span>Hands-free: continue to the next exercise automatically</span><input type="checkbox" data-set="autoAdvance"></label>
+            <label class="switch-row"><span>"Get ready" step: show where your hands go before each exercise</span><input type="checkbox" data-set="prep"></label>
             <label class="select-row"><span>Daily goal</span>
               <select data-set="dailyGoal"><option value="30">Casual (30 XP)</option><option value="50">Regular (50 XP)</option><option value="100">Serious (100 XP)</option><option value="200">Intense (200 XP)</option></select>
             </label>
