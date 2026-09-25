@@ -2,9 +2,9 @@
 // localStorage so the student picks up exactly where they left off).
 import { LEVELS, MAX_LEVEL, levelInfo } from './music/curriculum.js';
 import { noteName } from './music/theory.js';
+import * as P from './placement.js';
 
 const STORE = 'maestro.progress.v1';
-const PLACEMENT_LADDER = [1, 3, 6, 10, 14, 18, 23, 28, 33, 37, 40];
 export const PASS_SCORE = 75;
 
 export const DEFAULT_SETTINGS = {
@@ -18,6 +18,10 @@ export const DEFAULT_SETTINGS = {
   latencyMs: 0,
   autoAdvance: true,
   lookaheadSec: 3,
+  dailyGoal: 50, // XP
+  voice: true,
+  sounds: true,
+  noteColors: 'auto', // colour-coded notes for beginners
 };
 
 function today() {
@@ -95,8 +99,31 @@ export class Coach {
     return this.s.mastery[level] || 0;
   }
 
+  // Where in the level's tempo range to play (0 = slowest). Beginners start at the slowest.
   tempoFactor(level = this.s.level) {
-    return this.s.tempo[level] ?? 0.3;
+    return this.s.tempo[level] ?? (level <= 8 ? 0 : 0.25);
+  }
+
+  // ---- songs ------------------------------------------------------------------------------
+  songKey(songId, arrangementId) {
+    return `${songId}/${arrangementId}`;
+  }
+
+  songRecord(songId, arrangementId) {
+    return (this.s.songs || {})[this.songKey(songId, arrangementId)] || null;
+  }
+
+  recordSong(songId, arrangementId, result) {
+    if (!this.s.songs) this.s.songs = {};
+    const k = this.songKey(songId, arrangementId);
+    const r = this.s.songs[k] || { best: 0, stars: 0, plays: 0 };
+    r.plays++;
+    r.best = Math.max(r.best, result.score);
+    r.stars = Math.max(r.stars, result.stars);
+    r.last = Date.now();
+    this.s.songs[k] = r;
+    this.save();
+    return r;
   }
 
   showNames(level = this.s.level) {
@@ -105,8 +132,11 @@ export class Coach {
   }
 
   // ---- placement --------------------------------------------------------------------------
-  startPlacement() {
-    this.s.placement = { lo: 0, hi: MAX_LEVEL + 1, current: 1, phase: 'climb', tests: [] };
+  // Adaptive, both-hands placement test (see placement.js). `experience` is the answer to
+  // "Have you played piano before?" and only sets the starting point.
+  startPlacement(experience = 'little') {
+    this.s.placement = { experience, post: P.prior(experience), tests: [], current: null };
+    this.s.placement.current = P.nextLevel(this.s.placement.post, []);
     this.save();
     return this.placementActivity();
   }
@@ -114,48 +144,48 @@ export class Coach {
   placementActivity() {
     const p = this.s.placement;
     if (!p) return null;
-    const lv = levelInfo(p.current);
+    const n = p.tests.length;
     return {
-      kind: 'sight', level: p.current, mode: 'tempo', placement: true,
-      measures: lv.n <= 8 ? 3 : 4, tempoFactor: 0.15,
-      label: `Placement test ${p.tests.length + 1}`,
+      kind: 'sight', level: p.current, mode: 'tempo', placement: true, bothHands: true,
+      measures: 4, tempoFactor: 0.1,
+      label: `Test ${n + 1}`,
+      testIndex: n + 1,
+      estTotal: P.estimatedTotal(p.post, p.tests),
+      estimate: P.estimate(p.post),
     };
   }
 
-  // Returns {done, level} or {done:false, next}
+  // Returns {done:false, next, passed, direction, estimate} or {done:true, level, tests, estimate}.
   placementResult(result) {
     const p = this.s.placement;
-    const pass = result.score >= PASS_SCORE;
-    p.tests.push({ level: p.current, score: result.score });
-    if (pass) p.lo = Math.max(p.lo, p.current);
-    else p.hi = Math.min(p.hi, p.current);
-    let next = null;
-    if (p.phase === 'climb' && pass) {
-      next = PLACEMENT_LADDER.find((l) => l > p.current) ?? null;
-      if (next === null || next >= p.hi) {
-        p.phase = 'bisect';
-        next = null;
-      }
-    } else p.phase = 'bisect';
-    if (p.phase === 'bisect') {
-      if (p.hi - p.lo <= 1 || p.tests.length >= 14) next = null;
-      else next = Math.floor((p.lo + p.hi) / 2);
-      if (next !== null && (next <= p.lo || next >= p.hi)) next = null;
-    }
-    if (next === null) {
-      const level = Math.max(1, Math.min(MAX_LEVEL, p.lo || 1));
+    const level = p.current;
+    p.tests.push({ level, score: result.score, noteAcc: result.noteAcc, timing: result.timing, perHand: result.perHand });
+    p.post = P.update(p.post, level, result.score);
+    const estimate = P.estimate(p.post);
+    if (P.shouldStop(p.post, p.tests)) {
+      const final = P.finalLevel(p.post);
       this.s.placed = true;
-      this.s.level = level;
-      // Passing a level in the test earns a head start on it.
-      if (p.lo >= 1) this.s.mastery[level] = Math.max(this.s.mastery[level] || 0, 50);
+      this.s.level = final;
+      this.s.placementHistory = [...(this.s.placementHistory || []), { t: Date.now(), experience: p.experience, tests: p.tests, level: final }].slice(-5);
+      // A small head start on a level the student has already shown they can handle.
+      if (final >= 2) this.s.mastery[final] = Math.max(this.s.mastery[final] || 0, 30);
       const tests = p.tests;
       this.s.placement = null;
       this.save();
-      return { done: true, level, tests };
+      return { done: true, level: final, tests, estimate };
     }
-    p.current = next;
+    p.current = P.nextLevel(p.post, p.tests);
     this.save();
-    return { done: false, next: this.placementActivity(), passed: pass };
+    const direction = p.current > level ? 'harder' : p.current < level ? 'easier' : 'same';
+    return { done: false, next: this.placementActivity(), passed: result.score >= PASS_SCORE, direction, estimate };
+  }
+
+  // Place the student at a level directly (skipping or overriding the placement test).
+  setLevel(level) {
+    this.s.level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+    this.s.placed = true;
+    this.s.placement = null;
+    this.save();
   }
 
   // ---- lessons ----------------------------------------------------------------------------
@@ -211,7 +241,14 @@ export class Coach {
     s.history.push({ t: Date.now(), level, kind: activity.kind, mode: result.mode, score: result.score, bpm: piece.bpm, placement: !!activity.placement });
     if (s.history.length > 500) s.history.splice(0, s.history.length - 500);
 
-    const out = { levelUp: false, levelDown: false, gain: 0 };
+    // XP: every exercise earns some, good ones earn more.
+    const xp = Math.max(1, Math.round(result.score / 10)) + (result.stars || 0) * 3;
+    s.xp = (s.xp || 0) + xp;
+    if (!s.daily || s.daily.date !== d) s.daily = { date: d, xp: 0 };
+    const before = s.daily.xp;
+    s.daily.xp += xp;
+    const goal = s.settings.dailyGoal || 50;
+    const out = { levelUp: false, levelDown: false, gain: 0, xp, goalReached: before < goal && s.daily.xp >= goal };
     if (activity.placement || activity.free) {
       this.save();
       return out;
@@ -294,6 +331,11 @@ export class Coach {
     const s = this.s;
     const recent = s.history.filter((h) => !h.placement).slice(-20);
     const avg = recent.length ? Math.round(recent.reduce((a, h) => a + h.score, 0) / recent.length) : 0;
-    return { level: s.level, info: levelInfo(s.level), mastery: this.mastery(), avg, stats: s.stats, streak: s.streak.days, history: s.history, levels: LEVELS };
+    const d = today();
+    const todayXp = s.daily && s.daily.date === d ? s.daily.xp : 0;
+    return {
+      level: s.level, info: levelInfo(s.level), mastery: this.mastery(), avg, stats: s.stats, streak: s.streak.days, history: s.history, levels: LEVELS,
+      xp: s.xp || 0, todayXp, dailyGoal: s.settings.dailyGoal || 50,
+    };
   }
 }

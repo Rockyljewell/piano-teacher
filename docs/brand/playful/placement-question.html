@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1180, initial-scale=1">
+<title>Maestro · Placement question (playful)</title>
+<!-- Mockup only. Fonts are OFL-1.1 and published as @fontsource-variable/fredoka, @fontsource-variable/nunito, @fontsource/noto-music for self-hosting. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400..700&family=Nunito:wght@500..900&family=Noto+Music&display=block">
+<style>
+/* Maestro · playful direction · design tokens
+   Fonts (OFL-1.1, self-hostable): @fontsource-variable/fredoka, @fontsource-variable/nunito, @fontsource/noto-music
+   Sizes are CSS px at the iPad landscape viewport (1180 x 820). */
+:root {
+  /* ---------- colour: surfaces & ink ---------- */
+  --bg: #FFF7EA;            /* warm cream app background */
+  --bg-sunk: #FBEEDA;       /* rails, wells, keyboard bed */
+  --surface: #FFFFFF;       /* cards */
+  --paper: #FFFCF4;         /* sheet-music card */
+  --paper-line: #3B3552;    /* staff lines on paper */
+  --line: #F0E3CD;          /* hairlines, card borders */
+  --edge: #E6D6BC;          /* 3D bottom edge of white cards/buttons */
+  --ink: #2A2346;           /* text, 13.8:1 on --bg */
+  --ink-2: #5E5775;         /* secondary text, 6.4:1 */
+  --ink-3: #736A8A;         /* tertiary text / placeholders, 4.6:1 */
+  --disabled: #E9E0D0;
+  --disabled-edge: #D7CAB3;
+
+  /* ---------- colour: brand ---------- */
+  --brand: #6F4BF2;         /* Maestro violet; white text 5.3:1 */
+  --brand-edge: #4F30C9;    /* 3D edge under brand fills */
+  --brand-hi: #9B82FF;      /* highlight / focus ring */
+  --brand-soft: #EEE8FF;    /* selected backgrounds */
+  --brand-ink: #4A2FC2;     /* brand text on soft, 7.1:1 */
+
+  /* ---------- colour: rewards & feedback ---------- */
+  --sun: #FFC23D;   --sun-edge: #E09A0B;   --sun-soft: #FFF1C9;   --sun-ink: #8A5A00;    /* XP, stars, Perfect */
+  --flame: #FF7A2F; --flame-edge: #D95A12; --flame-soft: #FFE6D6; --flame-ink: #A8430B; /* streak */
+  --mint: #20C07A;  --mint-edge: #12985C;  --mint-soft: #DDF7EA;  --mint-ink: #0E7A48;  /* hit, Great, on time */
+  --coral: #FF5A6A; --coral-edge: #D93A4C; --coral-soft: #FFE3E6; --coral-ink: #B4232F; /* miss, wrong note */
+  --early: #2F9BFF; --early-edge: #1673D1; --early-soft: #DDEEFF; --early-ink: #1463B8; /* early (cool, left) */
+  --late: #FF9A2E;  --late-edge: #D9760C;  --late-soft: #FFE9CF;  --late-ink: #A65400;  /* late (warm, right) */
+
+  /* ---------- colour: hands ---------- */
+  --rh: #6F4BF2;  --rh-edge: #4F30C9;   /* right hand = brand violet */
+  --lh: #14B8A6;  --lh-edge: #0B8C7E;   /* left hand = teal */
+
+  /* ---------- colour: per-pitch (note colour mode "by pitch") ---------- */
+  --pc-c: #F2545B; --pc-c-edge: #C73840;
+  --pc-d: #FF9A2E; --pc-d-edge: #D9760C;
+  --pc-e: #FFC93D; --pc-e-edge: #DDA10E;   /* use --ink for the letter on E */
+  --pc-f: #3CC46F; --pc-f-edge: #229A51;
+  --pc-g: #22B8CF; --pc-g-edge: #148FA3;
+  --pc-a: #3E7BFA; --pc-a-edge: #2358CC;
+  --pc-b: #A45CF0; --pc-b-edge: #7D38C9;
+
+  /* ---------- stage colours (learning path sections) ---------- */
+  --stage-1: #20C07A;  --stage-1-edge: #12985C;  /* Beginner 1-8 */
+  --stage-2: #6F4BF2;  --stage-2-edge: #4F30C9;  /* Elementary 9-16 */
+  --stage-3: #2F9BFF;  --stage-3-edge: #1673D1;  /* Intermediate 17-26 */
+  --stage-4: #FF7A2F;  --stage-4-edge: #D95A12;  /* Advanced 27-34 */
+  --stage-5: #E0436F;  --stage-5-edge: #B32651;  /* Master 35-40 */
+
+  /* ---------- type ---------- */
+  --font-display: "Fredoka", "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --font-ui: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --font-music: "Noto Music", serif;
+  /* Live numbers (score, combo, BPM, XP, timers): Nunito 900. Its digits are tabular by default (600 units);
+     Fredoka digits are proportional and neither font has a tnum feature. */
+  --font-num: "Nunito", ui-rounded, system-ui, sans-serif;
+
+  --fs-hero: 88px;   --lh-hero: 0.95;   /* results %, level reveal number */
+  --fs-d1: 52px;     --lh-d1: 1.05;     /* big headline */
+  --fs-h1: 36px;     --lh-h1: 1.12;
+  --fs-h2: 28px;     --lh-h2: 1.15;
+  --fs-h3: 22px;     --lh-h3: 1.2;
+  --fs-bubble: 21px; --lh-bubble: 1.35; /* coach speech bubble */
+  --fs-body: 18px;   --lh-body: 1.45;
+  --fs-small: 15px;  --lh-small: 1.4;
+  --fs-eyebrow: 13px;                   /* uppercase, +0.1em tracking, weight 800 */
+  --fs-hud: 30px;                       /* HUD numbers, tabular */
+
+  /* ---------- shape ---------- */
+  --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 22px; --r-xl: 28px; --r-pill: 999px;
+  --depth-s: 4px;   /* chips, small buttons */
+  --depth-m: 5px;   /* buttons, cards */
+  --depth-l: 7px;   /* hero buttons, path nodes */
+
+  /* ---------- elevation ---------- */
+  --shadow-card: 0 1px 0 rgba(42,35,70,.04), 0 10px 24px -14px rgba(42,35,70,.28);
+  --shadow-pop: 0 18px 40px -16px rgba(42,35,70,.38);
+  --shadow-glow: 0 0 0 6px rgba(111,75,242,.18);
+
+  /* ---------- spacing (4-pt) ---------- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px;
+
+  /* ---------- motion ---------- */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);        /* entrances */
+  --ease-in: cubic-bezier(.55, 0, 1, .45);         /* exits */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);  /* pops, overshoot ~8% */
+  --t-press: 90ms; --t-fast: 160ms; --t-base: 240ms; --t-slow: 420ms; --t-hero: 700ms;
+}
+
+/* Shared components for the playful mockups. Tokens come from ../tokens.css (inlined by build.mjs). */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  width: 1180px; height: 820px; overflow: hidden; position: relative;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); font-weight: 600; font-size: var(--fs-body); line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+}
+body.tall { height: auto; overflow: visible; }
+h1, h2, h3, h4, p { margin: 0; }
+h1, h2, h3, .display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+.num { font-family: var(--font-num); font-weight: 900; }
+.eyebrow { font-family: var(--font-ui); font-size: var(--fs-eyebrow); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.muted { color: var(--ink-2); }
+.ic { display: inline-block; vertical-align: middle; flex: none; }
+
+/* ---------- buttons: chunky 3D ---------- */
+.btn {
+  --b-bg: var(--surface); --b-edge: var(--edge); --b-ink: var(--brand-ink); --b-line: var(--line);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 56px; padding: 0 26px; border-radius: var(--r-md);
+  background: var(--b-bg); color: var(--b-ink);
+  border: 2px solid var(--b-line);
+  box-shadow: 0 var(--depth-m) 0 var(--b-edge);
+  font-family: var(--font-display); font-weight: 600; font-size: 21px; letter-spacing: .01em;
+  transition: transform var(--t-press) var(--ease-out), box-shadow var(--t-press) var(--ease-out);
+  white-space: nowrap;
+}
+.btn:active, .btn.is-pressed { transform: translateY(var(--depth-m)); box-shadow: 0 0 0 var(--b-edge); }
+.btn-primary { --b-bg: var(--brand); --b-edge: var(--brand-edge); --b-ink: #fff; --b-line: var(--brand); }
+.btn-sun { --b-bg: var(--sun); --b-edge: var(--sun-edge); --b-ink: var(--ink); --b-line: var(--sun); }
+.btn-white-on-brand { --b-bg: #fff; --b-edge: #D8CCFF; --b-ink: var(--brand-ink); --b-line: #fff; }
+.btn-ghost { --b-bg: transparent; --b-edge: transparent; --b-line: transparent; --b-ink: var(--brand-ink); box-shadow: none; }
+.btn-lg { height: 68px; padding: 0 36px; border-radius: var(--r-lg); font-size: 25px; box-shadow: 0 var(--depth-l) 0 var(--b-edge); }
+.btn-sm { height: 44px; padding: 0 16px; border-radius: var(--r-sm); font-size: 17px; box-shadow: 0 var(--depth-s) 0 var(--b-edge); }
+.btn-block { width: 100%; }
+.btn[disabled] { --b-bg: var(--disabled); --b-edge: var(--disabled-edge); --b-ink: #A79D8A; --b-line: var(--disabled); }
+
+.icon-btn {
+  width: 52px; height: 52px; border-radius: var(--r-md);
+  display: inline-grid; place-items: center;
+  background: var(--surface); color: var(--ink-2);
+  border: 2px solid var(--line); box-shadow: 0 var(--depth-s) 0 var(--edge);
+}
+.icon-btn.brand { background: var(--brand); color: #fff; border-color: var(--brand); box-shadow: 0 var(--depth-s) 0 var(--brand-edge); }
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--surface); border-radius: var(--r-lg);
+  border: 2px solid var(--line); box-shadow: 0 var(--depth-m) 0 var(--edge);
+}
+.card-flat { background: var(--surface); border-radius: var(--r-lg); border: 2px solid var(--line); }
+
+/* ---------- chips ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px;
+  border-radius: var(--r-pill); background: var(--surface); color: var(--ink-2);
+  border: 2px solid var(--line); box-shadow: 0 var(--depth-s) 0 var(--edge);
+  font-weight: 800; font-size: 16px; white-space: nowrap;
+}
+.chip.on { background: var(--brand-soft); color: var(--brand-ink); border-color: var(--brand); box-shadow: 0 var(--depth-s) 0 var(--brand-hi); }
+.chip .count { font-weight: 800; color: var(--ink-3); font-size: 14px; }
+.chip.on .count { color: var(--brand); }
+
+/* stat pill (top bar: streak / XP / level) */
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px 0 10px;
+  border-radius: var(--r-pill); background: var(--surface); border: 2px solid var(--line);
+  font-family: var(--font-num); font-weight: 900; font-size: 19px;
+}
+.pill.flame { color: var(--flame-ink); }
+.pill.sun { color: var(--sun-ink); }
+
+/* ---------- timing chips (hit feedback) ---------- */
+.tchip {
+  --t: var(--mint); --t-edge: var(--mint-edge);
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px 0 6px;
+  border-radius: var(--r-pill); background: #fff; border: 2.5px solid var(--t);
+  box-shadow: 0 4px 0 var(--t-edge), 0 10px 18px -10px rgba(42,35,70,.45);
+  font-family: var(--font-display); font-weight: 600; font-size: 19px; color: var(--ink); white-space: nowrap;
+}
+.tchip .dot { width: 28px; height: 28px; border-radius: 50%; background: var(--t); display: grid; place-items: center; color: #fff; }
+.tchip small { font-family: var(--font-ui); font-weight: 800; font-size: 15px; color: var(--ink-2); }
+.tchip.perfect { --t: var(--sun); --t-edge: var(--sun-edge); }
+.tchip.perfect .dot { color: var(--ink); }
+.tchip.perfect .dot .ic { color: var(--ink); }
+.tchip.great { --t: var(--mint); --t-edge: var(--mint-edge); }
+.tchip.early { --t: var(--early); --t-edge: var(--early-edge); }
+.tchip.late { --t: var(--late); --t-edge: var(--late-edge); }
+.tchip.miss { --t: var(--coral); --t-edge: var(--coral-edge); }
+
+/* ---------- speech bubble (coach) ---------- */
+.bubble {
+  position: relative; background: var(--surface); color: var(--ink);
+  border: 2.5px solid var(--line); border-radius: 22px; padding: 16px 20px;
+  box-shadow: 0 5px 0 var(--edge);
+  font-weight: 700; font-size: var(--fs-bubble); line-height: var(--lh-bubble);
+}
+.bubble b, .bubble strong { color: var(--brand-ink); font-weight: 800; }
+/* tails: a rotated square that shares the border */
+.bubble::after {
+  content: ""; position: absolute; width: 20px; height: 20px; background: var(--surface);
+  border: 2.5px solid var(--line); border-top: 0; border-right: 0; border-radius: 0 0 0 5px;
+}
+.bubble.tail-left::after { left: -12px; top: 50%; margin-top: -10px; transform: rotate(45deg); }
+.bubble.tail-bottom::after { bottom: -12px; left: 50%; margin-left: -10px; transform: rotate(-45deg); }
+.bubble.tail-bottom-left::after { bottom: -12px; left: 34px; transform: rotate(-45deg); }
+.bubble.tail-top-left::after { top: -12px; left: 34px; transform: rotate(135deg); }
+.bubble .speaker { color: var(--brand); margin-right: 6px; vertical-align: -3px; }
+
+/* ---------- progress ---------- */
+.bar { height: 16px; border-radius: 999px; background: #EFE4D2; overflow: hidden; position: relative; }
+.bar > i { display: block; height: 100%; border-radius: 999px; background: var(--brand); position: relative; }
+.bar > i::after { content: ""; position: absolute; left: 8px; right: 8px; top: 3px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.35); }
+.bar.mint > i { background: var(--mint); }
+.bar.sun > i { background: var(--sun); }
+
+/* ---------- navigation rail ---------- */
+.rail {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 212px; padding: 22px 14px 18px;
+  border-right: 2px solid var(--line); background: var(--bg);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.rail .logo { padding: 2px 10px 18px; }
+.nav {
+  display: flex; align-items: center; gap: 14px; height: 60px; padding: 0 12px; border-radius: var(--r-md);
+  border: 2px solid transparent; font-family: var(--font-display); font-weight: 600; font-size: 20px; color: var(--ink-2);
+}
+.nav .tile { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; box-shadow: inset 0 -3px 0 rgba(0,0,0,.14); }
+.nav.on { background: var(--brand-soft); border-color: #D6CAFF; color: var(--brand-ink); }
+.nav .t-learn { background: var(--brand); }
+.nav .t-songs { background: #E0436F; }
+.nav .t-practice { background: var(--mint); }
+.nav .t-free { background: var(--early); }
+.nav .t-progress { background: var(--sun); color: var(--ink); }
+.nav .t-settings { background: #A79FB8; }
+.rail .spacer { flex: 1; }
+
+/* ---------- wordmark ---------- */
+.wordmark { display: inline-block; white-space: nowrap; font-family: var(--font-display); font-weight: 700; color: var(--brand); letter-spacing: -0.02em; line-height: 1; }
+
+/* ---------- path nodes (3D coins) ---------- */
+.node {
+  --n: var(--brand); --n-edge: var(--brand-edge);
+  position: absolute; width: 84px; height: 76px; border-radius: 50%;
+  background: var(--n); box-shadow: 0 8px 0 var(--n-edge);
+  display: grid; place-items: center; color: #fff;
+  font-family: var(--font-display); font-weight: 600; font-size: 28px;
+}
+.node::before { /* glossy top highlight */
+  content: ""; position: absolute; left: 16px; right: 16px; top: 8px; height: 14px; border-radius: 50%;
+  background: rgba(255,255,255,.28);
+}
+.node.done { --n: var(--sun); --n-edge: var(--sun-edge); color: var(--ink); }
+.node.locked { --n: #EAE1D2; --n-edge: #D3C6AF; color: #B2A58E; }
+.node.current { --n: var(--brand); --n-edge: var(--brand-edge); }
+
+/* ---------- misc ---------- */
+.kbd-legend { font-weight: 800; font-size: 13px; color: var(--ink-3); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* idle motion (paused for screenshots via prefers-reduced-motion) */
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes pulse-ring { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(1.35); opacity: 0; } }
+@keyframes pop-in { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes fall { from { transform: translateY(-40px) rotate(0); } to { transform: translateY(880px) rotate(540deg); } }
+.anim-bob { animation: bob 2.4s var(--ease-out) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.rail .me { display: flex; align-items: center; gap: 10px; padding: 12px 10px 0; margin-top: 8px; border-top: 2px solid var(--line); }
+.rail .me svg { border-radius: 14px; }
+.rail .me b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 18px; line-height: 1.1; }
+.rail .me small { display: block; color: var(--ink-3); font-weight: 800; font-size: 13px; }
+
+
+  .top { position: absolute; left: 32px; right: 32px; top: 24px; display: flex; align-items: center; gap: 20px; }
+  .top .bar { flex: 1; height: 18px; }
+  .top .step { font-weight: 800; font-size: 15px; color: var(--ink-3); white-space: nowrap; }
+  .left { position: absolute; left: 56px; top: 128px; width: 470px; }
+  .left .bubble { font-family: var(--font-display); font-weight: 600; font-size: 34px; line-height: 1.15; padding: 22px 26px; }
+  .left .bubble .speaker { vertical-align: -2px; }
+  .left .pipwrap { margin: 30px 0 0 70px; }
+  .left .bubble::after { left: 150px; }
+  .left .note { margin-top: 10px; font-weight: 700; font-size: 17px; color: var(--ink-2); max-width: 420px; }
+  .opts { position: absolute; left: 580px; top: 128px; width: 548px; display: flex; flex-direction: column; gap: 18px; }
+  .opt {
+    display: grid; grid-template-columns: 56px 1fr 32px; align-items: center; gap: 16px;
+    height: 112px; padding: 0 24px; border-radius: 24px; background: #fff;
+    border: 2.5px solid var(--line); box-shadow: 0 5px 0 var(--edge);
+  }
+  .opt .ico { width: 56px; height: 56px; border-radius: 16px; background: var(--brand-soft); display: grid; place-items: center; }
+  .opt b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.15; }
+  .opt small { display: block; font-weight: 700; font-size: 16px; color: var(--ink-2); margin-top: 2px; }
+  .opt .radio { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--edge); }
+  .opt.on { background: var(--brand-soft); border-color: var(--brand); box-shadow: 0 5px 0 var(--brand-hi); }
+  .opt.on b { color: var(--brand-ink); }
+  .opt.on .ico { background: #fff; }
+  .opt.on .radio { border: 0; background: var(--brand); display: grid; place-items: center; color: #fff; }
+  .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 112px; border-top: 2px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 52px; }
+  .foot .btn-lg { min-width: 260px; }
+  
+</style>
+</head>
+<body class="">
+
+  <header class="top">
+    <button class="icon-btn" aria-label="Back"><svg class="ic ic-back " aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M10.6 5.1a1.6 1.6 0 0 1 0 2.3L7.6 10.4H19a1.6 1.6 0 0 1 0 3.2H7.6l3 3a1.6 1.6 0 1 1-2.3 2.3l-5.7-5.8a1.6 1.6 0 0 1 0-2.2l5.7-5.8a1.6 1.6 0 0 1 2.3 0Z"/></svg></button>
+    <div class="bar"><i style="width:12%"></i></div>
+    <span class="step">Find my level</span>
+  </header>
+
+  <section class="left">
+    <div class="bubble tail-bottom-left"><svg class="ic ic-speaker speaker" aria-hidden="true" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M11.3 4.3c.9-.7 2.2-.1 2.2 1.1v13.2c0 1.2-1.3 1.8-2.2 1.1L7 16H4.6C3.7 16 3 15.3 3 14.4V9.6C3 8.7 3.7 8 4.6 8H7l4.3-3.7Z"/><path d="M16.3 8.2a1.3 1.3 0 0 1 1.8.2 5.8 5.8 0 0 1 0 7.2 1.3 1.3 0 1 1-2-1.6 3.2 3.2 0 0 0 0-4 1.3 1.3 0 0 1 .2-1.8Z"/><path d="M18.6 5.2a1.3 1.3 0 0 1 1.8 0 9.8 9.8 0 0 1 0 13.6 1.3 1.3 0 0 1-1.9-1.8 7.2 7.2 0 0 0 0-10 1.3 1.3 0 0 1 .1-1.8Z"/></svg>Have you played piano before?</div>
+    <div class="pipwrap anim-bob"><svg class="pip pip-think " aria-hidden="true" viewBox="0 0 200 200" width="250" height="250" overflow="visible">
+    <ellipse cx="100" cy="194" rx="52" ry="6" fill="rgba(46,43,95,0.14)"/>
+    <ellipse cx="80" cy="187" rx="16" ry="7.5" fill="#FFA629"/>
+    <ellipse cx="120" cy="187" rx="16" ry="7.5" fill="#FFA629"/>
+    <path d="M42 104 C24 118 20 148 30 162 C40 158 47 140 49 118 Z" fill="#2E2B5F"/>
+    
+    
+    <path d="M103 26 L103 6" stroke="#2E2B5F" stroke-width="6" stroke-linecap="round"/>
+    <path d="M103 4 C113 8 124 14 121 30 C118 22 111 18 103 17 Z" fill="#2E2B5F"/>
+    <path d="M100 22 C140 22 166 58 166 110 C166 156 138 186 100 186 C62 186 34 156 34 110 C34 58 60 22 100 22 Z" fill="#2E2B5F"/>
+    <ellipse cx="72" cy="50" rx="14" ry="7" transform="rotate(-32 72 50)" fill="#433F82" opacity=".7"/>
+    <ellipse cx="100" cy="138" rx="50" ry="45" fill="#FFF4E0"/>
+    <circle cx="78" cy="92" r="30" fill="#FFF4E0"/>
+    <circle cx="122" cy="92" r="30" fill="#FFF4E0"/>
+    <ellipse cx="100" cy="112" rx="40" ry="24" fill="#FFF4E0"/>
+    <ellipse cx="64" cy="112" rx="9" ry="5.5" fill="#FF8FA8" opacity=".6"/>
+    <ellipse cx="136" cy="112" rx="9" ry="5.5" fill="#FF8FA8" opacity=".6"/>
+    
+    <ellipse cx="81" cy="91" rx="10.5" ry="13" fill="#1C1936"/>
+    <ellipse cx="121" cy="91" rx="10.5" ry="13" fill="#1C1936"/>
+    <circle cx="86.5" cy="84" r="4.2" fill="#fff"/><circle cx="126.5" cy="84" r="4.2" fill="#fff"/>
+    <circle cx="78" cy="97" r="1.8" fill="#fff" opacity=".85"/><circle cx="118" cy="97" r="1.8" fill="#fff" opacity=".85"/>
+    
+    <path d="M87 106 Q100 99 113 106 Q107 119 100 120 Q93 119 87 106 Z" fill="#FFA629"/>
+    <path d="M91 106.5 Q100 102 109 106.5" fill="none" stroke="#FFD27A" stroke-width="2.4" stroke-linecap="round"/>
+    <g>
+      <path d="M100 140 L79 129 Q73 140 79 151 Z" fill="#6F4BF2"/>
+      <path d="M100 140 L121 129 Q127 140 121 151 Z" fill="#6F4BF2"/>
+      <path d="M82 133 Q80 138 81 142" fill="none" stroke="#9B82FF" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M118 133 Q120 138 119 142" fill="none" stroke="#9B82FF" stroke-width="2.5" stroke-linecap="round"/>
+      <rect x="93.5" y="133.5" width="13" height="13" rx="4.5" fill="#4F30C9"/>
+    </g>
+    <path d="M168 136 C168 116 158 100 142 98 C134 98 131 106 136 111 C144 114 150 122 152 138 Z" fill="#2E2B5F"/>
+    <g fill="#6F4BF2" font-family="Fredoka, Nunito, sans-serif" font-weight="700"><text x="152" y="46" font-size="34">?</text></g></svg></div>
+    <p class="note">Pick one, then I’ll listen to a few short tunes to find your perfect starting level.</p>
+  </section>
+
+  <section class="opts" role="radiogroup" aria-label="Piano experience">
+    
+    <div class="opt" role="radio" aria-checked="false">
+      <span class="ico"><svg class="bars" aria-hidden="true" viewBox="0 0 28 26" width="34" height="32"><rect x="1" y="17" width="5" height="7" rx="2.5" fill="#6F4BF2"/><rect x="8" y="12" width="5" height="12" rx="2.5" fill="#DCD3F7"/><rect x="15" y="7" width="5" height="17" rx="2.5" fill="#DCD3F7"/><rect x="22" y="2" width="5" height="22" rx="2.5" fill="#DCD3F7"/></svg></span>
+      <div><b>Never, I’m brand new</b><small>We’ll start with your very first note.</small></div>
+      <span class="radio"></span>
+    </div>
+    <div class="opt on" role="radio" aria-checked="true">
+      <span class="ico"><svg class="bars" aria-hidden="true" viewBox="0 0 28 26" width="34" height="32"><rect x="1" y="17" width="5" height="7" rx="2.5" fill="#6F4BF2"/><rect x="8" y="12" width="5" height="12" rx="2.5" fill="#6F4BF2"/><rect x="15" y="7" width="5" height="17" rx="2.5" fill="#DCD3F7"/><rect x="22" y="2" width="5" height="22" rx="2.5" fill="#DCD3F7"/></svg></span>
+      <div><b>A little</b><small>I can pick out a tune with one hand.</small></div>
+      <span class="radio"><svg class="ic ic-check " aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.6 6.1a1.7 1.7 0 0 1 .1 2.4l-8.6 9.6a1.7 1.7 0 0 1-2.5 0l-4.4-4.7a1.7 1.7 0 1 1 2.5-2.3l3.1 3.3 7.4-8.2a1.7 1.7 0 0 1 2.4-.1Z"/></svg></span>
+    </div>
+    <div class="opt" role="radio" aria-checked="false">
+      <span class="ico"><svg class="bars" aria-hidden="true" viewBox="0 0 28 26" width="34" height="32"><rect x="1" y="17" width="5" height="7" rx="2.5" fill="#6F4BF2"/><rect x="8" y="12" width="5" height="12" rx="2.5" fill="#6F4BF2"/><rect x="15" y="7" width="5" height="17" rx="2.5" fill="#6F4BF2"/><rect x="22" y="2" width="5" height="22" rx="2.5" fill="#DCD3F7"/></svg></span>
+      <div><b>Yes, I’ve had lessons</b><small>I read notes and play with both hands.</small></div>
+      <span class="radio"></span>
+    </div>
+    <div class="opt" role="radio" aria-checked="false">
+      <span class="ico"><svg class="bars" aria-hidden="true" viewBox="0 0 28 26" width="34" height="32"><rect x="1" y="17" width="5" height="7" rx="2.5" fill="#6F4BF2"/><rect x="8" y="12" width="5" height="12" rx="2.5" fill="#6F4BF2"/><rect x="15" y="7" width="5" height="17" rx="2.5" fill="#6F4BF2"/><rect x="22" y="2" width="5" height="22" rx="2.5" fill="#6F4BF2"/></svg></span>
+      <div><b>Lots, challenge me!</b><small>I play real pieces from sheet music.</small></div>
+      <span class="radio"></span>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <button class="btn btn-ghost">Skip, start at Level 1</button>
+    <button class="btn btn-primary btn-lg">Continue</button>
+  </footer>
+  
+</body>
+</html>

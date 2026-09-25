@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="Maestro app mark">
+<title>Maestro app mark</title>
+<defs>
+    <linearGradient id="g-neon" x1="0" y1="0" x2="1" y2="0.18">
+      <stop offset="0" stop-color="#7B5CFF"/><stop offset="0.52" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FF9A3D"/>
+    </linearGradient>
+    <linearGradient id="g-wm" gradientUnits="userSpaceOnUse" x1="0" y1="-780" x2="6577" y2="0">
+      <stop offset="0" stop-color="#8C6BFF"/><stop offset="0.5" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FFA24A"/>
+    </linearGradient>
+    <linearGradient id="g-mo-head" x1="0.1" y1="0.05" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#FF6FC8"/><stop offset="0.55" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+    <linearGradient id="g-volt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E2FF7A"/><stop offset="1" stop-color="#A9F02B"/>
+    </linearGradient>
+    <linearGradient id="g-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFEE9A"/><stop offset="0.5" stop-color="#FFD23F"/><stop offset="1" stop-color="#F29A1C"/>
+    </linearGradient>
+    <linearGradient id="g-mark-bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#3A2A9E"/><stop offset="1" stop-color="#120E3A"/>
+    </linearGradient>
+    <radialGradient id="g-mark-glow" cx="0.5" cy="0.62" r="0.55">
+      <stop offset="0" stop-color="#FF3FA4" stop-opacity="0.55"/><stop offset="1" stop-color="#FF3FA4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+<path d="M32 1.5c20.6 0 30.5 9.9 30.5 30.5S52.6 62.5 32 62.5 1.5 52.6 1.5 32 11.4 1.5 32 1.5z" fill="url(#g-mark-bg)"/>
+    <path d="M32 1.5c20.6 0 30.5 9.9 30.5 30.5S52.6 62.5 32 62.5 1.5 52.6 1.5 32 11.4 1.5 32 1.5z" fill="url(#g-mark-glow)"/>
+    <rect x="8" y="51.2" width="48" height="5.4" rx="2.7" fill="url(#g-neon)" opacity=".35"/>
+    <rect x="8" y="52.5" width="48" height="2.8" rx="1.4" fill="url(#g-neon)"/>
+    <rect x="40.6" y="7.5" width="5" height="31" rx="2.5" fill="#F5F3FF"/>
+    <path d="M45.6 8c7 3.2 11.6 8.4 9.6 16.4-.8 3-2.3 4.8-3.9 6 2-6.1-.2-11-5.7-13.3z" fill="url(#g-volt)"/>
+    <g transform="rotate(-18 27.5 38.5)"><ellipse cx="27.5" cy="38.5" rx="18" ry="13.6" fill="url(#g-mo-head)"/><ellipse cx="22" cy="31.5" rx="8.5" ry="3.2" fill="#fff" opacity=".25"/></g>
+    <ellipse cx="21.6" cy="38.6" rx="4.1" ry="4.8" fill="#fff"/><ellipse cx="31.6" cy="35.4" rx="4.1" ry="4.8" fill="#fff"/>
+    <circle cx="22.8" cy="37.6" r="2.3" fill="#150F35"/><circle cx="32.8" cy="34.4" r="2.3" fill="#150F35"/>
+    <path d="M22 45.6c3 2.6 7.2 2.2 9.8-1.2" stroke="#2A0A2A" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+</svg>

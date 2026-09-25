@@ -24,11 +24,14 @@ export function renderPiano(notes, { sr = 48000, length, seed = 7, noise = 0.001
   const N = Math.ceil(end * sr);
   const out = new Float32Array(N);
   for (const n of notes) {
+    // Timbre belongs to the key (string, hammer), not to the strike: same key + velocity sounds
+    // the same every time (+-1 dB per partial).
+    const krand = rng(seed * 131 + n.midi * 7919);
     const f0 = 440 * Math.pow(2, (n.midi - 69 + tuningCents / 100) / 12);
-    const b = B(n.midi) * bScale * (0.7 + rand() * 0.8);
+    const b = B(n.midi) * bScale * (0.7 + krand() * 0.8);
     const vel = n.vel ?? 0.6;
     const tau0 = Math.max(0.5, 4.5 * Math.pow(2, -(n.midi - 36) / 18));
-    const p = 0.8 + rand() * 0.7;
+    const p = 0.8 + krand() * 0.7;
     const start = Math.floor(n.t * sr);
     const relEnd = Math.floor((n.t + n.dur) * sr);
     const stop = Math.min(N, relEnd + Math.floor(0.12 * sr));
@@ -36,8 +39,8 @@ export function renderPiano(notes, { sr = 48000, length, seed = 7, noise = 0.001
     for (let h = 1; h < 40; h++) {
       const f = h * f0 * Math.sqrt(1 + b * h * h);
       if (f > sr * 0.45) break;
-      let a = Math.pow(h, -p) * Math.pow(10, (rand() - 0.5) * 0.6);
-      if (n.midi < 45 && h === 1) a *= 0.15 + rand() * 0.3;
+      let a = Math.pow(h, -p) * Math.pow(10, (krand() - 0.5) * 0.6 + (rand() - 0.5) * 0.1);
+      if (n.midi < 45 && h === 1) a *= 0.15 + krand() * 0.3;
       if (n.midi < 40 && h === 2) a *= 0.5;
       // brighter when louder
       a *= Math.pow(vel, 0.3 + 0.05 * h);

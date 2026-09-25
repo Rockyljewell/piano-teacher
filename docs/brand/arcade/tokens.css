@@ -1,0 +1,97 @@
+/* Maestro · Arcade direction · design tokens
+   Fonts (OFL-1.1, self-host later via npm):
+     @fontsource-variable/unbounded  (display, numbers, CTA labels)
+     @fontsource-variable/lexend     (UI + body; built for reading fluency)
+*/
+:root {
+  /* ---- surfaces: "arcade night" ---- */
+  --ink-0: #07061A;       /* deepest: keyboard well, overlays */
+  --bg: #0E0C2A;          /* app background */
+  --bg-2: #131036;        /* play-field background */
+  --surface-1: #1A1744;   /* cards */
+  --surface-2: #231F58;   /* raised cards, inputs */
+  --surface-3: #2E2972;   /* hover / selected fill */
+  --stroke: rgba(177, 166, 255, 0.14);
+  --stroke-2: rgba(177, 166, 255, 0.28);
+  --text: #F5F3FF;        /* 17.3:1 on --bg */
+  --text-2: #C4BFEA;      /* 10.9:1 on --bg */
+  --text-3: #938DCB;      /*  6.3:1 on --bg, 5.5:1 on --surface-1 */
+
+  /* ---- brand ---- */
+  --violet: #7B5CFF;
+  --pink: #FF3FA4;
+  --orange: #FF9A3D;
+  --volt: #C8FF3D;        /* primary action. Always with --ink text (16.1:1) */
+  --volt-2: #A9F02B;
+  --volt-edge: #5B9A0C;   /* 3D button lip */
+  --gold: #FFD23F;
+  --mint: #3DF5B0;
+  --sky: #4CC3FF;
+  --coral: #FF5A6E;
+  --ink: #0E0C2A;         /* text on bright fills */
+
+  --grad-neon: linear-gradient(100deg, #7B5CFF 0%, #FF3FA4 52%, #FF9A3D 100%);
+  --grad-volt: linear-gradient(180deg, #E2FF7A 0%, #C8FF3D 45%, #A9F02B 100%);
+  --grad-card: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 40%);
+  --grad-gold: linear-gradient(180deg, #FFE98A 0%, #FFD23F 50%, #F5A623 100%);
+
+  /* ---- semantic: timing grades ---- */
+  --perfect: #FFD23F;     /* gold + star icon   */
+  --great: #3DF5B0;       /* mint               */
+  --early: #A493FF;       /* cool = ahead       */
+  --late: #FF9A3D;        /* warm = behind      */
+  --miss: #FF5A6E;        /* coral, never pure red */
+
+  /* ---- hands (falling notes, key hints) ---- */
+  --rh: #35D6FF;          /* right hand: cyan  */
+  --lh: #FF5FB7;          /* left hand: pink   */
+
+  /* ---- stage colours (5 stages) ---- */
+  --st-1: #3DF5B0;        /* Beginner      1-8   */
+  --st-2: #4CC3FF;        /* Elementary    9-16  */
+  --st-3: #A493FF;        /* Intermediate  17-26 */
+  --st-4: #FF5FB7;        /* Advanced      27-34 */
+  --st-5: #FFD23F;        /* Master        35-40 */
+
+  /* ---- paper (sheet music) ---- */
+  --paper: #FFF8EA;
+  --paper-2: #F3E6CB;
+  --paper-ink: #1B1733;
+  --paper-line: #6A6384;
+  --paper-muted: #7E7896;   /* bar numbers, fingering: 4.0:1 */
+  /* grade colours for played noteheads on paper (all >= 4.4:1 on --paper) */
+  --paper-perfect: #9A6A00;
+  --paper-great: #0A8559;
+  --paper-early: #5B45D6;
+  --paper-late: #BF5510;
+  --paper-miss: #C42A45;
+
+  /* ---- type ---- */
+  --font-display: 'Unbounded', 'Lexend', system-ui, sans-serif;
+  --font-ui: 'Lexend', system-ui, -apple-system, sans-serif;
+
+  /* ---- radii ---- */
+  --r-xs: 8px;
+  --r-s: 12px;
+  --r-m: 18px;
+  --r-l: 24px;
+  --r-xl: 32px;
+  --r-pill: 999px;
+
+  /* ---- spacing (4-pt) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+
+  /* ---- elevation ---- */
+  --sh-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 40px -12px rgba(3, 2, 18, 0.7);
+  --sh-float: 0 24px 60px -16px rgba(3, 2, 18, 0.85);
+  --sh-lip: 0 6px 0 #0A0822;                  /* chunky 3D lip for secondary buttons */
+  --glow-volt: 0 0 0 1px rgba(200, 255, 61, 0.35), 0 10px 36px -6px rgba(200, 255, 61, 0.45);
+  --glow-pink: 0 0 28px rgba(255, 63, 164, 0.55);
+  --glow-gold: 0 0 26px rgba(255, 210, 63, 0.6);
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);        /* default UI */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);     /* overshoot for rewards */
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);         /* exits */
+  --t-tap: 90ms; --t-fast: 160ms; --t-base: 240ms; --t-slow: 420ms; --t-reward: 700ms;
+}

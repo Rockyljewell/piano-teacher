@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Maestro · Arcade · Songs</title>
+<meta charset="utf-8"><meta name="viewport" content="width=1180, initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700;800;900&display=swap" rel="stylesheet"><style>
+/* Maestro · Arcade direction · design tokens
+   Fonts (OFL-1.1, self-host later via npm):
+     @fontsource-variable/unbounded  (display, numbers, CTA labels)
+     @fontsource-variable/lexend     (UI + body; built for reading fluency)
+*/
+:root {
+  /* ---- surfaces: "arcade night" ---- */
+  --ink-0: #07061A;       /* deepest: keyboard well, overlays */
+  --bg: #0E0C2A;          /* app background */
+  --bg-2: #131036;        /* play-field background */
+  --surface-1: #1A1744;   /* cards */
+  --surface-2: #231F58;   /* raised cards, inputs */
+  --surface-3: #2E2972;   /* hover / selected fill */
+  --stroke: rgba(177, 166, 255, 0.14);
+  --stroke-2: rgba(177, 166, 255, 0.28);
+  --text: #F5F3FF;        /* 17.3:1 on --bg */
+  --text-2: #C4BFEA;      /* 10.9:1 on --bg */
+  --text-3: #938DCB;      /*  6.3:1 on --bg, 5.5:1 on --surface-1 */
+
+  /* ---- brand ---- */
+  --violet: #7B5CFF;
+  --pink: #FF3FA4;
+  --orange: #FF9A3D;
+  --volt: #C8FF3D;        /* primary action. Always with --ink text (16.1:1) */
+  --volt-2: #A9F02B;
+  --volt-edge: #5B9A0C;   /* 3D button lip */
+  --gold: #FFD23F;
+  --mint: #3DF5B0;
+  --sky: #4CC3FF;
+  --coral: #FF5A6E;
+  --ink: #0E0C2A;         /* text on bright fills */
+
+  --grad-neon: linear-gradient(100deg, #7B5CFF 0%, #FF3FA4 52%, #FF9A3D 100%);
+  --grad-volt: linear-gradient(180deg, #E2FF7A 0%, #C8FF3D 45%, #A9F02B 100%);
+  --grad-card: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 40%);
+  --grad-gold: linear-gradient(180deg, #FFE98A 0%, #FFD23F 50%, #F5A623 100%);
+
+  /* ---- semantic: timing grades ---- */
+  --perfect: #FFD23F;     /* gold + star icon   */
+  --great: #3DF5B0;       /* mint               */
+  --early: #A493FF;       /* cool = ahead       */
+  --late: #FF9A3D;        /* warm = behind      */
+  --miss: #FF5A6E;        /* coral, never pure red */
+
+  /* ---- hands (falling notes, key hints) ---- */
+  --rh: #35D6FF;          /* right hand: cyan  */
+  --lh: #FF5FB7;          /* left hand: pink   */
+
+  /* ---- stage colours (5 stages) ---- */
+  --st-1: #3DF5B0;        /* Beginner      1-8   */
+  --st-2: #4CC3FF;        /* Elementary    9-16  */
+  --st-3: #A493FF;        /* Intermediate  17-26 */
+  --st-4: #FF5FB7;        /* Advanced      27-34 */
+  --st-5: #FFD23F;        /* Master        35-40 */
+
+  /* ---- paper (sheet music) ---- */
+  --paper: #FFF8EA;
+  --paper-2: #F3E6CB;
+  --paper-ink: #1B1733;
+  --paper-line: #6A6384;
+  --paper-muted: #7E7896;   /* bar numbers, fingering: 4.0:1 */
+  /* grade colours for played noteheads on paper (all >= 4.4:1 on --paper) */
+  --paper-perfect: #9A6A00;
+  --paper-great: #0A8559;
+  --paper-early: #5B45D6;
+  --paper-late: #BF5510;
+  --paper-miss: #C42A45;
+
+  /* ---- type ---- */
+  --font-display: 'Unbounded', 'Lexend', system-ui, sans-serif;
+  --font-ui: 'Lexend', system-ui, -apple-system, sans-serif;
+
+  /* ---- radii ---- */
+  --r-xs: 8px;
+  --r-s: 12px;
+  --r-m: 18px;
+  --r-l: 24px;
+  --r-xl: 32px;
+  --r-pill: 999px;
+
+  /* ---- spacing (4-pt) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+
+  /* ---- elevation ---- */
+  --sh-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 40px -12px rgba(3, 2, 18, 0.7);
+  --sh-float: 0 24px 60px -16px rgba(3, 2, 18, 0.85);
+  --sh-lip: 0 6px 0 #0A0822;                  /* chunky 3D lip for secondary buttons */
+  --glow-volt: 0 0 0 1px rgba(200, 255, 61, 0.35), 0 10px 36px -6px rgba(200, 255, 61, 0.45);
+  --glow-pink: 0 0 28px rgba(255, 63, 164, 0.55);
+  --glow-gold: 0 0 26px rgba(255, 210, 63, 0.6);
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);        /* default UI */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);     /* overshoot for rewards */
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);         /* exits */
+  --t-tap: 90ms; --t-fast: 160ms; --t-base: 240ms; --t-slow: 420ms; --t-reward: 700ms;
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1180px; height: 820px; overflow: hidden; }
+body {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background:
+    radial-gradient(900px 520px at 6% -12%, rgba(123, 92, 255, 0.34), transparent 62%),
+    radial-gradient(760px 520px at 108% 112%, rgba(255, 63, 164, 0.2), transparent 60%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+svg { display: block; }
+.num { font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.display { font-family: var(--font-display); letter-spacing: -0.01em; }
+.label {
+  font: 700 12px/16px var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3);
+}
+.muted { color: var(--text-2); }
+.grad-text { background: var(--grad-neon); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ico { width: 22px; height: 22px; flex: none; }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 56px; padding: 0 26px; border-radius: var(--r-m); border: 0;
+  font: 700 18px/1 var(--font-ui); color: var(--text); cursor: pointer; white-space: nowrap;
+  background: var(--surface-2); box-shadow: var(--sh-lip), inset 0 0 0 1.5px var(--stroke-2);
+  position: relative;
+}
+.btn .ico { width: 22px; height: 22px; }
+.btn-volt {
+  background: var(--grad-volt); color: var(--ink);
+  font: 800 20px/1 var(--font-display); letter-spacing: 0.04em; text-transform: uppercase;
+  box-shadow: 0 6px 0 var(--volt-edge), 0 18px 40px -10px rgba(200, 255, 61, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.65);
+}
+.btn-volt.xl { height: 72px; font-size: 24px; border-radius: 22px; padding: 0 40px; }
+.btn-ghost { background: transparent; box-shadow: none; color: var(--text-2); }
+.icon-btn {
+  width: 52px; height: 52px; border-radius: 16px; display: inline-grid; place-items: center;
+  background: var(--surface-2); box-shadow: 0 4px 0 #0A0822, inset 0 0 0 1.5px var(--stroke-2); color: var(--text);
+}
+.icon-btn .ico { width: 24px; height: 24px; }
+
+/* ---------- chips & pills ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--r-pill);
+  font: 600 16px/1 var(--font-ui); color: var(--text-2); background: var(--surface-1); box-shadow: inset 0 0 0 1.5px var(--stroke-2);
+  white-space: nowrap;
+}
+.chip.on { background: var(--text); color: var(--ink); box-shadow: none; }
+.chip .count { font: 700 13px/1 var(--font-ui); opacity: 0.6; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 12px; border-radius: var(--r-pill);
+  background: var(--surface-1); box-shadow: inset 0 0 0 1.5px var(--stroke); font: 700 17px/1 var(--font-ui);
+}
+.tag {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px;
+  font: 700 12px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--grad-card), var(--surface-1); border-radius: var(--r-l);
+  box-shadow: var(--sh-card), inset 0 0 0 1px var(--stroke);
+  position: relative;
+}
+
+/* ---------- level coin (3D node) ---------- */
+.coin {
+  --c: var(--st-2);
+  width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; position: relative;
+  font: 800 22px/1 var(--font-display); color: var(--ink);
+  background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.55), transparent 42%), var(--c);
+  box-shadow: 0 6px 0 color-mix(in srgb, var(--c) 45%, #07061A), inset 0 -4px 0 rgba(0, 0, 0, 0.12);
+}
+.coin.locked {
+  background: var(--surface-2); color: var(--text-3);
+  box-shadow: 0 6px 0 #0A0822, inset 0 0 0 2px var(--stroke-2);
+}
+
+/* ---------- star ---------- */
+.star { width: 18px; height: 18px; color: var(--gold); }
+.star.off { color: rgba(177, 166, 255, 0.22); }
+
+/* ---------- timing chips ---------- */
+.tchip {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px 0 10px; border-radius: 12px;
+  font: 800 15px/1 var(--font-ui); letter-spacing: 0.02em; color: var(--ink); white-space: nowrap;
+}
+.tchip .ico { width: 18px; height: 18px; }
+.tchip small { font: 600 15px/1 var(--font-ui); opacity: 0.78; }
+.tchip.perfect { background: var(--grad-gold); box-shadow: var(--glow-gold); }
+.tchip.great { background: var(--great); box-shadow: 0 0 22px rgba(61, 245, 176, 0.5); }
+.tchip.early { background: var(--early); box-shadow: 0 0 22px rgba(164, 147, 255, 0.5); }
+.tchip.late { background: var(--late); box-shadow: 0 0 22px rgba(255, 154, 61, 0.5); }
+.tchip.miss { background: transparent; color: var(--miss); box-shadow: inset 0 0 0 2px var(--miss); }
+
+/* ---------- toggles ---------- */
+.seg {
+  display: inline-flex; padding: 4px; border-radius: 16px; background: var(--ink-0); box-shadow: inset 0 0 0 1.5px var(--stroke);
+}
+.seg b {
+  display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 12px;
+  font: 700 15px/1 var(--font-ui); color: var(--text-3);
+}
+.seg b.on { background: var(--surface-3); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--stroke-2), 0 3px 0 #07061A; }
+
+/* ---------- progress ---------- */
+.bar { height: 12px; border-radius: 99px; background: rgba(177, 166, 255, 0.14); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 99px; background: var(--grad-neon); box-shadow: 0 0 14px rgba(255, 63, 164, 0.6); }
+
+/* ---------- motion (live in HTML; screenshots freeze a frame) ---------- */
+@keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.55); opacity: 0; } }
+@keyframes float-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes pop-in { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+</style>
+<style>
+  .top { position: absolute; left: 32px; right: 32px; top: 22px; height: 56px; display: flex; align-items: center; gap: 16px; }
+  .top h1 { font: 900 34px/1 var(--font-display); letter-spacing: -0.01em; }
+  .top p { font: 500 15px/1.2 var(--font-ui); color: var(--text-3); margin-top: 5px; }
+  .top .sp { flex: 1; }
+  .search { display: flex; align-items: center; gap: 10px; width: 300px; height: 52px; padding: 0 16px; border-radius: 16px; background: var(--ink-0); box-shadow: inset 0 0 0 1.5px var(--stroke-2); font: 500 16px/1 var(--font-ui); color: var(--text-3); }
+  .search .ico { width: 20px; height: 20px; }
+
+  .filters { position: absolute; left: 32px; right: 32px; top: 98px; display: flex; align-items: center; gap: 10px; }
+  .filters .chip { height: 44px; font-size: 15.5px; padding: 0 15px; gap: 7px; }
+  .filters .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .filters .sp { flex: 1; }
+  .switch { display: inline-flex; align-items: center; gap: 10px; font: 600 15px/1 var(--font-ui); color: var(--text-2); }
+  .switch { white-space: nowrap; }
+  .switch b { width: 54px; height: 32px; border-radius: 99px; background: var(--volt); position: relative; box-shadow: 0 0 14px rgba(200,255,61,.45); }
+  .switch b::after { content: ''; position: absolute; right: 3px; top: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.3); }
+
+  .sec { position: absolute; left: 32px; right: 32px; top: 164px; display: flex; align-items: baseline; gap: 12px; }
+  .sec h2 { font: 800 19px/1 var(--font-display); }
+  .sec span { font: 500 14px/1 var(--font-ui); color: var(--text-3); }
+  .grid { position: absolute; left: 32px; right: 32px; top: 198px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .song { overflow: hidden; height: 256px; display: flex; flex-direction: column; }
+  .cov { height: 128px; position: relative; overflow: hidden; }
+  .cov > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cov .cat { position: absolute; left: 12px; top: 12px; height: 26px; padding: 0 10px; border-radius: 8px; display: inline-flex; align-items: center; background: rgba(7,6,26,.55); font: 700 12px/1 var(--font-ui); color: #fff; letter-spacing: .02em; backdrop-filter: blur(6px); }
+  .cov .lv { position: absolute; right: 12px; top: 12px; height: 28px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 5px; font: 800 12.5px/1 var(--font-display); color: var(--ink); background: var(--c); box-shadow: 0 3px 0 color-mix(in srgb, var(--c) 45%, #07061A); }
+  .body { padding: 14px 16px 14px; display: flex; flex-direction: column; flex: 1; }
+  .body h3 { font: 700 18px/1.2 var(--font-ui); }
+  .body .by { font: 500 14px/1.2 var(--font-ui); color: var(--text-3); margin-top: 4px; }
+  .arr { display: flex; gap: 6px; margin-top: auto; align-items: center; }
+  .cov .st { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 1px; padding: 5px 7px; border-radius: 9px; background: rgba(7,6,26,.55); }
+  .cov .st svg { width: 15px; height: 15px; color: var(--gold); }
+  .cov .st svg.off { color: rgba(255,255,255,.28); }
+  .arr span { white-space: nowrap; height: 28px; padding: 0 9px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; font: 700 12.5px/1 var(--font-ui); color: var(--text-2); background: rgba(177,166,255,.1); }
+  .arr span i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .arr span.done { color: var(--ink); background: var(--c); }
+  .arr .stars { margin-left: auto; display: flex; }
+  .arr .stars svg { width: 15px; height: 15px; color: var(--gold); }
+  .arr .stars svg.off { color: rgba(177,166,255,.22); }
+  .stretch { position: absolute; left: 12px; bottom: 12px; height: 24px; padding: 0 9px; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px; font: 800 11px/1 var(--font-ui); letter-spacing: .1em; color: var(--ink); background: var(--gold); }
+  .import { height: 256px; border-radius: var(--r-l); border: 2px dashed rgba(200,255,61,.45); background: rgba(200,255,61,.04); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 22px; gap: 10px; }
+  .import .ic { width: 64px; height: 64px; border-radius: 20px; background: var(--grad-volt); color: var(--ink); display: grid; place-items: center; box-shadow: 0 5px 0 var(--volt-edge), 0 0 26px rgba(200,255,61,.35); }
+  .import .ic .ico { width: 30px; height: 30px; }
+  .import h3 { font: 800 18px/1.2 var(--font-display); margin-top: 6px; }
+  .import p { font: 500 14px/1.4 var(--font-ui); color: var(--text-2); }
+  .fade { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: linear-gradient(180deg, transparent, var(--bg)); }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-neon" x1="0" y1="0" x2="1" y2="0.18">
+      <stop offset="0" stop-color="#7B5CFF"/><stop offset="0.52" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FF9A3D"/>
+    </linearGradient>
+    <linearGradient id="g-wm" gradientUnits="userSpaceOnUse" x1="0" y1="-780" x2="6577" y2="0">
+      <stop offset="0" stop-color="#8C6BFF"/><stop offset="0.5" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FFA24A"/>
+    </linearGradient>
+    <linearGradient id="g-mo-head" x1="0.1" y1="0.05" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#FF6FC8"/><stop offset="0.55" stop-color="#FF3FA4"/><stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+    <linearGradient id="g-volt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E2FF7A"/><stop offset="1" stop-color="#A9F02B"/>
+    </linearGradient>
+    <linearGradient id="g-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFEE9A"/><stop offset="0.5" stop-color="#FFD23F"/><stop offset="1" stop-color="#F29A1C"/>
+    </linearGradient>
+    <linearGradient id="g-mark-bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#3A2A9E"/><stop offset="1" stop-color="#120E3A"/>
+    </linearGradient>
+    <radialGradient id="g-mark-glow" cx="0.5" cy="0.62" r="0.55">
+      <stop offset="0" stop-color="#FF3FA4" stop-opacity="0.55"/><stop offset="1" stop-color="#FF3FA4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ================= ICONS (24 grid, currentColor) ================= -->
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.8v14.4a1.2 1.2 0 0 0 1.8 1l11-7.2a1.2 1.2 0 0 0 0-2L9.8 3.8A1.2 1.2 0 0 0 8 4.8z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="5.5" y="4" width="4.6" height="16" rx="1.6" fill="currentColor"/><rect x="13.9" y="4" width="4.6" height="16" rx="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M10.3 3h3.4l.5 2.6c.7.3 1.3.6 1.9 1.1l2.5-.9 1.7 2.9-2 1.7a7 7 0 0 1 0 2.2l2 1.7-1.7 2.9-2.5-.9c-.6.5-1.2.8-1.9 1.1l-.5 2.6h-3.4l-.5-2.6a7 7 0 0 1-1.9-1.1l-2.5.9-1.7-2.9 2-1.7a7 7 0 0 1 0-2.2l-2-1.7 1.7-2.9 2.5.9c.6-.5 1.2-.8 1.9-1.1z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12.6 2.2c.4 3.1 5.9 5.3 5.9 11.2A6.4 6.4 0 0 1 12 21.8a6.4 6.4 0 0 1-6.5-6.4c0-3 1.7-4.9 3-6.1.2 1.9 1 3 2.2 3.4-.6-3.4.3-7 1.9-10.5z" fill="currentColor"/><path d="M12 21.8a3.3 3.3 0 0 1-3.3-3.3c0-2 1.6-2.9 2.4-4.6.9 1.9 4.2 2.6 4.2 4.9a3.3 3.3 0 0 1-3.3 3z" fill="#FFE98A"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.8 1.8L4.6 13.4h6.1l-1.3 8.8 9.9-12.3h-6.2l.7-8.1z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="3" fill="currentColor"/><path d="M8.2 10.5V8a3.8 3.8 0 0 1 7.6 0v2.5" stroke="currentColor" stroke-width="2.4" fill="none"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 17.5V5.6l11-2.4v11.9" stroke="currentColor" stroke-width="2.3" fill="none" stroke-linejoin="round"/><ellipse cx="6.4" cy="17.8" rx="3.2" ry="2.6" fill="currentColor"/><ellipse cx="17.4" cy="15.4" rx="3.2" ry="2.6" fill="currentColor"/><path d="M9 8.4l11-2.4" stroke="currentColor" stroke-width="2.3"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/></g><circle cx="12" cy="12" r="1.8" fill="currentColor"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3.5 12h1.5M7.5 8v8M11 4.5v15M14.5 8.5v7M18 6v12M21 10.5v3" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5.5" y="11" width="3.4" height="7" rx="1.2" fill="currentColor"/><rect x="10.3" y="7" width="3.4" height="11" rx="1.2" fill="currentColor"/><rect x="15.1" y="3.5" width="3.4" height="14.5" rx="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.3 6.5a8 8 0 0 1 0 11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-metro" viewBox="0 0 24 24"><path d="M9.2 3.5h5.6l4 16.5H5.2z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/><path d="M12 16l5.5-9.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><path d="M7 16.2h10" stroke="currentColor" stroke-width="2.1"/></symbol>
+  <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11M7.8 3.5c0 5 8.4 5 8.4 8.5s-8.4 3.5-8.4 8.5M16.2 3.5c0 5-8.4 5-8.4 8.5s8.4 3.5 8.4 8.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" fill="none"/><path d="M9.4 18.6c.9-1.6 4.3-1.6 5.2 0z" fill="currentColor"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4M7.5 8.5L12 4l4.5 4.5M4.5 14.5v3.2a2.3 2.3 0 0 0 2.3 2.3h10.4a2.3 2.3 0 0 0 2.3-2.3v-3.2" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.3" stroke="currentColor" stroke-width="2.3" fill="none"/><path d="M15.2 15.2l5 5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3.5 8l4.3 3.6L12 5l4.2 6.6L20.5 8l-1.8 10.5H5.3z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 3.5h10v5.5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 5.5H4v1.5a3.5 3.5 0 0 0 3.5 3.5M17 5.5h3v1.5a3.5 3.5 0 0 1-3.5 3.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 14v3.5M8 20.5h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M4 3.8v4.4h4.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 5l7.5 11h-15z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 19L4.5 8h15z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="8.5" y="3" width="7" height="11.5" rx="3.5" fill="currentColor"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-keys" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M9 19.5v-5M15 19.5v-5" stroke="currentColor" stroke-width="2"/><rect x="7.3" y="4.5" width="3.2" height="9" rx=".8" fill="currentColor"/><rect x="13.5" y="4.5" width="3.2" height="9" rx=".8" fill="currentColor"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.4" fill="currentColor"/><circle cx="18" cy="6" r="2.4" fill="currentColor"/><path d="M8.4 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.6" stroke="currentColor" stroke-width="2.1" stroke-dasharray="0.1 3.4" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5C11.3 16.9 7.1 12.7 1.5 12 7.1 11.3 11.3 7.1 12 1.5z" fill="currentColor"/></symbol>
+  <symbol id="i-hands" viewBox="0 0 24 24"><path d="M7 20.5c-2-1-3-3-3-5.5V9.8a1.3 1.3 0 0 1 2.6 0V13M6.6 12V5.3a1.3 1.3 0 0 1 2.6 0V11M9.2 10.5V4a1.3 1.3 0 0 1 2.6 0v8M11.8 6a1.3 1.3 0 0 1 2.6 0v6.5l1.6-1.9a1.4 1.4 0 0 1 2.2 1.7l-3.5 5a6 6 0 0 1-4.9 3.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+
+  <!-- ================= BRAND MARK (app icon) ================= -->
+  <symbol id="mark" viewBox="0 0 64 64">
+    <path d="M32 1.5c20.6 0 30.5 9.9 30.5 30.5S52.6 62.5 32 62.5 1.5 52.6 1.5 32 11.4 1.5 32 1.5z" fill="url(#g-mark-bg)"/>
+    <path d="M32 1.5c20.6 0 30.5 9.9 30.5 30.5S52.6 62.5 32 62.5 1.5 52.6 1.5 32 11.4 1.5 32 1.5z" fill="url(#g-mark-glow)"/>
+    <rect x="8" y="51.2" width="48" height="5.4" rx="2.7" fill="url(#g-neon)" opacity=".35"/>
+    <rect x="8" y="52.5" width="48" height="2.8" rx="1.4" fill="url(#g-neon)"/>
+    <rect x="40.6" y="7.5" width="5" height="31" rx="2.5" fill="#F5F3FF"/>
+    <path d="M45.6 8c7 3.2 11.6 8.4 9.6 16.4-.8 3-2.3 4.8-3.9 6 2-6.1-.2-11-5.7-13.3z" fill="url(#g-volt)"/>
+    <g transform="rotate(-18 27.5 38.5)"><ellipse cx="27.5" cy="38.5" rx="18" ry="13.6" fill="url(#g-mo-head)"/><ellipse cx="22" cy="31.5" rx="8.5" ry="3.2" fill="#fff" opacity=".25"/></g>
+    <ellipse cx="21.6" cy="38.6" rx="4.1" ry="4.8" fill="#fff"/><ellipse cx="31.6" cy="35.4" rx="4.1" ry="4.8" fill="#fff"/>
+    <circle cx="22.8" cy="37.6" r="2.3" fill="#150F35"/><circle cx="32.8" cy="34.4" r="2.3" fill="#150F35"/>
+    <path d="M22 45.6c3 2.6 7.2 2.2 9.8-1.2" stroke="#2A0A2A" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+  </symbol>
+
+  <!-- ================= MASCOT "Mo" — an eighth note with a lot of rhythm ================= -->
+  <symbol id="mo" viewBox="0 0 200 224">
+    <ellipse cx="98" cy="214" rx="62" ry="7" fill="#000" opacity=".32"/>
+    <!-- stem + flag -->
+    <rect x="148" y="18" width="15" height="118" rx="7.5" fill="#F5F3FF"/>
+    <path d="M163 20c20 9 36 25 34 50-1 14-7 23-14 29 6-19 1-35-20-44z" fill="url(#g-volt)"/>
+    <path d="M166 24c10 5 19 12 24 22" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".55" fill="none"/>
+    <!-- arm (wave) -->
+    <path d="M33 150c-14-4-22-16-20-31" stroke="#FF4FA9" stroke-width="11" stroke-linecap="round" fill="none"/>
+    <circle cx="13.5" cy="116" r="9.5" fill="#FF6FC0"/>
+    <!-- head -->
+    <g transform="rotate(-17 94 148)">
+      <ellipse cx="94" cy="148" rx="74" ry="57" fill="url(#g-mo-head)"/>
+      <ellipse cx="70" cy="119" rx="36" ry="13" fill="#fff" opacity=".24"/>
+    </g>
+    <!-- face -->
+    <ellipse cx="68" cy="143" rx="17" ry="20" fill="#fff"/>
+    <ellipse cx="111" cy="130" rx="17" ry="20" fill="#fff"/>
+    <circle cx="73" cy="139" r="9.5" fill="#150F35"/><circle cx="116" cy="126" r="9.5" fill="#150F35"/>
+    <circle cx="76.5" cy="135" r="3.4" fill="#fff"/><circle cx="119.5" cy="122" r="3.4" fill="#fff"/>
+    <ellipse cx="52" cy="170" rx="10" ry="6" fill="#FFC2E2" opacity=".6"/><ellipse cx="136" cy="152" rx="10" ry="6" fill="#FFC2E2" opacity=".6"/>
+    <path d="M80 168c10 13 29 12 38-6-12 6-25 8-38 6z" fill="#2A0A2A"/>
+    <path d="M90 173.5c6 3.5 13 3 18-1.5-5-1.5-12-1-18 1.5z" fill="#FF7A9C"/>
+  </symbol>
+
+  <symbol id="mo-cheer" viewBox="0 0 200 224">
+    <ellipse cx="98" cy="214" rx="62" ry="7" fill="#000" opacity=".32"/>
+    <rect x="148" y="18" width="15" height="118" rx="7.5" fill="#F5F3FF"/>
+    <path d="M163 20c20 9 36 25 34 50-1 14-7 23-14 29 6-19 1-35-20-44z" fill="url(#g-volt)"/>
+    <path d="M166 24c10 5 19 12 24 22" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".55" fill="none"/>
+    <!-- both arms up -->
+    <path d="M34 140c-12-10-18-26-14-44" stroke="#FF4FA9" stroke-width="11" stroke-linecap="round" fill="none"/>
+    <circle cx="21" cy="92" r="9.5" fill="#FF6FC0"/>
+    <path d="M148 160c14-4 26-12 32-26" stroke="#FF7A5A" stroke-width="11" stroke-linecap="round" fill="none"/>
+    <circle cx="182" cy="130" r="9.5" fill="#FF9A5A"/>
+    <g transform="rotate(-17 94 148)">
+      <ellipse cx="94" cy="148" rx="74" ry="57" fill="url(#g-mo-head)"/>
+      <ellipse cx="70" cy="119" rx="36" ry="13" fill="#fff" opacity=".24"/>
+    </g>
+    <!-- happy eyes -->
+    <path d="M53 145c4-13 24-15 30-3" stroke="#150F35" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M96 132c4-13 24-15 30-3" stroke="#150F35" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <ellipse cx="52" cy="167" rx="10" ry="6" fill="#FFC2E2" opacity=".7"/><ellipse cx="136" cy="150" rx="10" ry="6" fill="#FFC2E2" opacity=".7"/>
+    <path d="M74 160c10 24 42 22 50-8-16 8-33 10-50 8z" fill="#2A0A2A"/>
+    <path d="M88 176c9 5 20 4 27-4-8-2-18-1-27 4z" fill="#FF7A9C"/>
+  </symbol>
+
+  <symbol id="mo-listen" viewBox="0 0 200 224">
+    <ellipse cx="98" cy="214" rx="62" ry="7" fill="#000" opacity=".32"/>
+    <rect x="148" y="18" width="15" height="118" rx="7.5" fill="#F5F3FF"/>
+    <path d="M163 20c20 9 36 25 34 50-1 14-7 23-14 29 6-19 1-35-20-44z" fill="url(#g-volt)"/>
+    <g transform="rotate(-17 94 148)">
+      <ellipse cx="94" cy="148" rx="74" ry="57" fill="url(#g-mo-head)"/>
+      <ellipse cx="70" cy="119" rx="36" ry="13" fill="#fff" opacity=".24"/>
+      <!-- headphones -->
+      <path d="M28 142c0-44 34-66 66-66s66 22 66 66" stroke="#2A2470" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <rect x="14" y="128" width="24" height="40" rx="12" fill="#35D6FF"/>
+      <rect x="150" y="128" width="24" height="40" rx="12" fill="#35D6FF"/>
+    </g>
+    <!-- eyes looking up to the music -->
+    <ellipse cx="72" cy="141" rx="16" ry="19" fill="#fff"/>
+    <ellipse cx="112" cy="129" rx="16" ry="19" fill="#fff"/>
+    <circle cx="77" cy="134" r="9" fill="#150F35"/><circle cx="117" cy="122" r="9" fill="#150F35"/>
+    <circle cx="80" cy="130.5" r="3.2" fill="#fff"/><circle cx="120" cy="118.5" r="3.2" fill="#fff"/>
+    <ellipse cx="58" cy="168" rx="9" ry="5.5" fill="#FFC2E2" opacity=".6"/><ellipse cx="134" cy="152" rx="9" ry="5.5" fill="#FFC2E2" opacity=".6"/>
+    <path d="M86 168c7 6 18 5 24-3" stroke="#2A0A2A" stroke-width="6" stroke-linecap="round" fill="none"/>
+  </symbol>
+
+  <!-- ================= WORDMARK ================= -->
+  <symbol id="wordmark" viewBox="-30 -800 6637 850">
+    <g fill="url(#g-wm)">
+      <path d="M1215 -750V0H970V-653L1017 -647L765 0H510L258 -644L305 -651V0H60V-750H459L683 -139H594L816 -750ZM1503 -126V-331H2014V-126ZM1935 -750 2264 0H1989L1730 -636H1796L1537 0H1262L1591 -750ZM2980 -464V-286H2415V-464ZM2592 -375 2546 -96 2448 -204H3017V0H2291L2346 -375L2291 -750H3012V-546H2448L2546 -654ZM3088 -247H3350Q3354 -225 3373.0 -209.5Q3392 -194 3425.0 -185.5Q3458 -177 3504 -177Q3564 -177 3597.5 -189.0Q3631 -201 3631 -228Q3631 -246 3612.0 -258.5Q3593 -271 3534 -275L3410 -283Q3241 -294 3166.0 -355.0Q3091 -416 3091 -516Q3091 -600 3139.0 -656.0Q3187 -712 3273.5 -740.0Q3360 -768 3476 -768Q3589 -768 3676.5 -736.5Q3764 -705 3815.5 -648.0Q3867 -591 3872 -515H3610Q3607 -533 3590.5 -546.0Q3574 -559 3544.0 -566.0Q3514 -573 3471 -573Q3416 -573 3384.5 -562.0Q3353 -551 3353 -526Q3353 -509 3371.5 -497.0Q3390 -485 3443 -481L3583 -472Q3693 -465 3761.0 -439.5Q3829 -414 3860.5 -369.0Q3892 -324 3892 -258Q3892 -175 3843.0 -113.0Q3794 -51 3705.5 -16.5Q3617 18 3499 18Q3377 18 3285.0 -15.0Q3193 -48 3141.5 -108.0Q3090 -168 3088 -247ZM4204 -639H4462V0H4204ZM3934 -750H4732V-520H3934ZM4981 -429H5233Q5271 -429 5292.0 -447.0Q5313 -465 5313 -499Q5313 -533 5292.0 -551.0Q5271 -569 5233 -569H4945L5061 -685V0H4803V-750H5273Q5363 -750 5430.5 -718.5Q5498 -687 5535.5 -631.0Q5573 -575 5573 -499Q5573 -425 5535.5 -368.5Q5498 -312 5430.5 -281.0Q5363 -250 5273 -250H4981ZM5069 -351H5354L5603 0H5308Z"/>
+      <path d="M6567.0 -375.0A470 393 0 1 1 5627.0 -375.0A470 393 0 1 1 6567.0 -375.0ZM6310.2 -517.5A262 150 -34 1 0 5875.8 -224.5A262 150 -34 1 0 6310.2 -517.5Z" fill-rule="evenodd"/>
+      
+    </g>
+  </symbol>
+  <symbol id="wordmark-mono" viewBox="-30 -800 6637 850">
+    <g fill="currentColor">
+      <path d="M1215 -750V0H970V-653L1017 -647L765 0H510L258 -644L305 -651V0H60V-750H459L683 -139H594L816 -750ZM1503 -126V-331H2014V-126ZM1935 -750 2264 0H1989L1730 -636H1796L1537 0H1262L1591 -750ZM2980 -464V-286H2415V-464ZM2592 -375 2546 -96 2448 -204H3017V0H2291L2346 -375L2291 -750H3012V-546H2448L2546 -654ZM3088 -247H3350Q3354 -225 3373.0 -209.5Q3392 -194 3425.0 -185.5Q3458 -177 3504 -177Q3564 -177 3597.5 -189.0Q3631 -201 3631 -228Q3631 -246 3612.0 -258.5Q3593 -271 3534 -275L3410 -283Q3241 -294 3166.0 -355.0Q3091 -416 3091 -516Q3091 -600 3139.0 -656.0Q3187 -712 3273.5 -740.0Q3360 -768 3476 -768Q3589 -768 3676.5 -736.5Q3764 -705 3815.5 -648.0Q3867 -591 3872 -515H3610Q3607 -533 3590.5 -546.0Q3574 -559 3544.0 -566.0Q3514 -573 3471 -573Q3416 -573 3384.5 -562.0Q3353 -551 3353 -526Q3353 -509 3371.5 -497.0Q3390 -485 3443 -481L3583 -472Q3693 -465 3761.0 -439.5Q3829 -414 3860.5 -369.0Q3892 -324 3892 -258Q3892 -175 3843.0 -113.0Q3794 -51 3705.5 -16.5Q3617 18 3499 18Q3377 18 3285.0 -15.0Q3193 -48 3141.5 -108.0Q3090 -168 3088 -247ZM4204 -639H4462V0H4204ZM3934 -750H4732V-520H3934ZM4981 -429H5233Q5271 -429 5292.0 -447.0Q5313 -465 5313 -499Q5313 -533 5292.0 -551.0Q5271 -569 5233 -569H4945L5061 -685V0H4803V-750H5273Q5363 -750 5430.5 -718.5Q5498 -687 5535.5 -631.0Q5573 -575 5573 -499Q5573 -425 5535.5 -368.5Q5498 -312 5430.5 -281.0Q5363 -250 5273 -250H4981ZM5069 -351H5354L5603 0H5308Z"/>
+      <path d="M6567.0 -375.0A470 393 0 1 1 5627.0 -375.0A470 393 0 1 1 6567.0 -375.0ZM6310.2 -517.5A262 150 -34 1 0 5875.8 -224.5A262 150 -34 1 0 6310.2 -517.5Z" fill-rule="evenodd"/>
+      
+    </g>
+  </symbol>
+</svg>
+
+<header class="top">
+  <span class="icon-btn"><svg class="ico"><use href="#i-back"/></svg></span>
+  <div><h1>Songs</h1><p>41 free, public-domain pieces · every one arranged for your level</p></div>
+  <div class="sp"></div>
+  <div class="search"><svg class="ico"><use href="#i-search"/></svg>Title or composer</div>
+  <span class="btn" style="height:52px;border-radius:16px"><svg class="ico"><use href="#i-upload"/></svg>Import MIDI</span>
+</header>
+
+<div class="filters">
+  <span class="chip on">All <span class="count">41</span></span>
+  <span class="chip"><i style="background:#3DF5B0"></i>Kids &amp; folk <span class="count">10</span></span>
+  <span class="chip"><i style="background:#FF5A6E"></i>Holiday <span class="count">9</span></span>
+  <span class="chip"><i style="background:#A493FF"></i>Hymns &amp; ballads <span class="count">3</span></span>
+  <span class="chip"><i style="background:#4CC3FF"></i>Classical <span class="count">16</span></span>
+  <span class="chip"><i style="background:#FF9A3D"></i>Ragtime &amp; blues <span class="count">3</span></span>
+  <div class="sp"></div>
+  <span class="switch">Near Level 12<b></b></span>
+</div>
+
+<div class="sec"><h2>Great for Level 12</h2><span>Sorted by how close they are to where you are now</span></div>
+<div class="grid" id="grid"></div>
+<div class="fade"></div>
+
+<script>
+const GLYPHS = {"gClef":{"w":2.684,"d":"M1.504 -1.66C1.496 -1.708 1.504 -1.712 1.528 -1.736C1.96 -2.14 2.288 -2.648 2.288 -3.26C2.288 -3.608 2.192 -3.952 2.028 -4.192C1.968 -4.28 1.864 -4.392 1.82 -4.392C1.764 -4.392 1.64 -4.288 1.56 -4.2C1.264 -3.872 1.168 -3.372 1.168 -2.956C1.168 -2.724 1.196 -2.464 1.224 -2.3C1.232 -2.252 1.236 -2.244 1.188 -2.204C0.612 -1.728 0 -1.156 0 -0.348C0 0.348 0.476 1.008 1.456 1.008C1.548 1.008 1.652 1 1.732 0.984C1.776 0.976 1.784 0.972 1.792 1.02C1.84 1.288 1.9 1.636 1.9 1.824C1.9 2.416 1.5 2.488 1.264 2.488C1.048 2.488 0.944 2.424 0.944 2.372C0.944 2.344 0.98 2.332 1.072 2.304C1.196 2.268 1.34 2.16 1.34 1.928C1.34 1.708 1.2 1.52 0.956 1.52C0.688 1.52 0.528 1.732 0.528 1.98C0.528 2.24 0.684 2.632 1.288 2.632C1.556 2.632 2.076 2.512 2.076 1.832C2.076 1.604 2.004 1.224 1.96 0.976C1.952 0.928 1.956 0.932 2.012 0.908C2.416 0.748 2.684 0.408 2.684 -0.044C2.684 -0.556 2.308 -1.008 1.72 -1.008C1.616 -1.008 1.616 -1.008 1.604 -1.08ZM1.88 -3.772C2.012 -3.772 2.12 -3.664 2.12 -3.444C2.12 -3 1.74 -2.64 1.424 -2.364C1.396 -2.34 1.38 -2.344 1.372 -2.396C1.356 -2.5 1.348 -2.636 1.348 -2.764C1.348 -3.388 1.636 -3.772 1.88 -3.772ZM1.444 -1.048C1.456 -0.972 1.456 -0.976 1.384 -0.952C1.032 -0.832 0.804 -0.516 0.804 -0.176C0.804 0.184 0.992 0.44 1.264 0.532C1.296 0.544 1.344 0.556 1.372 0.556C1.404 0.556 1.42 0.536 1.42 0.512C1.42 0.484 1.388 0.472 1.36 0.46C1.192 0.388 1.072 0.216 1.072 0.032C1.072 -0.196 1.228 -0.368 1.472 -0.436C1.536 -0.452 1.544 -0.448 1.552 -0.404L1.752 0.788C1.76 0.832 1.756 0.832 1.696 0.844C1.632 0.856 1.552 0.864 1.472 0.864C0.772 0.864 0.32 0.476 0.32 -0.08C0.32 -0.316 0.36 -0.632 0.692 -1.008C0.932 -1.276 1.116 -1.424 1.304 -1.576C1.344 -1.608 1.352 -1.604 1.36 -1.56ZM1.72 -0.412C1.712 -0.46 1.716 -0.472 1.764 -0.468C2.088 -0.44 2.356 -0.168 2.356 0.184C2.356 0.436 2.204 0.64 1.98 0.752C1.932 0.776 1.924 0.776 1.916 0.728Z","x0":0,"x1":2.684,"y0":-4.392,"y1":2.632},"fClef":{"w":2.736,"d":"M1.008 -1.048C0.312 -1.048 0 -0.54 0 -0.156C0 0.164 0.168 0.44 0.492 0.44C0.744 0.44 0.916 0.264 0.916 0.016C0.916 -0.24 0.728 -0.4 0.532 -0.4C0.424 -0.4 0.384 -0.372 0.332 -0.372C0.28 -0.372 0.268 -0.404 0.268 -0.444C0.268 -0.604 0.508 -0.896 0.916 -0.896C1.34 -0.896 1.524 -0.48 1.524 0.148C1.524 1.264 0.972 1.888 0.04 2.42C0.004 2.44 -0.02 2.46 -0.02 2.492C-0.02 2.516 -0.004 2.54 0.032 2.54C0.052 2.54 0.076 2.532 0.1 2.52C1.084 2.04 2.124 1.328 2.124 0.112C2.124 -0.584 1.7 -1.048 1.008 -1.048ZM2.516 -0.72C2.392 -0.72 2.296 -0.624 2.296 -0.5C2.296 -0.376 2.392 -0.28 2.516 -0.28C2.64 -0.28 2.736 -0.376 2.736 -0.5C2.736 -0.624 2.64 -0.72 2.516 -0.72ZM2.52 0.284C2.396 0.284 2.304 0.376 2.304 0.5C2.304 0.624 2.396 0.716 2.52 0.716C2.644 0.716 2.736 0.624 2.736 0.5C2.736 0.376 2.644 0.284 2.52 0.284Z","x0":-0.02,"x1":2.736,"y0":-1.048,"y1":2.54},"noteheadBlack":{"w":1.18,"d":"M0.388 0.5C0.744 0.5 1.18 0.172 1.18 -0.168C1.18 -0.372 1.02 -0.5 0.792 -0.5C0.352 -0.5 0 -0.176 0 0.168C0 0.376 0.172 0.5 0.388 0.5Z","x0":0,"x1":1.18,"y0":-0.5,"y1":0.5},"noteheadHalf":{"w":1.18,"d":"M0.388 0.5C1.048 0.5 1.18 -0.036 1.18 -0.168C1.18 -0.372 1.016 -0.5 0.784 -0.5C0.188 -0.5 0 -0.04 0 0.168C0 0.38 0.168 0.5 0.388 0.5ZM0.3 0.348C0.216 0.348 0.168 0.304 0.14 0.256C0.128 0.232 0.116 0.204 0.116 0.176C0.116 -0.02 0.696 -0.336 0.884 -0.336C0.96 -0.336 1.004 -0.3 1.032 -0.252C1.044 -0.228 1.056 -0.204 1.056 -0.176C1.056 -0.004 0.492 0.348 0.3 0.348Z","x0":0,"x1":1.18,"y0":-0.5,"y1":0.5},"noteheadWhole":{"w":1.688,"d":"M0.864 -0.5C0.332 -0.5 0 -0.28 0 -0.008C0 0.26 0.228 0.5 0.824 0.5C1.48 0.5 1.688 0.272 1.688 -0.008C1.688 -0.292 1.236 -0.5 0.864 -0.5ZM0.444 -0.252C0.488 -0.392 0.636 -0.412 0.76 -0.412C1.036 -0.412 1.256 -0.116 1.256 0.124C1.256 0.248 1.204 0.36 1.072 0.392C1.032 0.404 0.988 0.408 0.948 0.408C0.804 0.408 0.656 0.312 0.572 0.2C0.492 0.108 0.432 -0.028 0.432 -0.156C0.432 -0.188 0.436 -0.22 0.444 -0.252Z","x0":0,"x1":1.688,"y0":-0.5,"y1":0.5},"augmentationDot":{"w":0.4,"d":"M0.4 0C0.4 -0.112 0.312 -0.2 0.2 -0.2C0.088 -0.2 0 -0.112 0 0C0 0.112 0.088 0.2 0.2 0.2C0.312 0.2 0.4 0.112 0.4 0Z","x0":0,"x1":0.4,"y0":-0.2,"y1":0.2},"restQuarter":{"w":1.08,"d":"M0.312 0.152C0.376 0.232 0.432 0.308 0.484 0.392C0.492 0.408 0.508 0.44 0.508 0.448C0.508 0.452 0.508 0.46 0.504 0.464C0.496 0.48 0.48 0.484 0.46 0.484C0.444 0.484 0.412 0.476 0.396 0.472C0.392 0.472 0.384 0.472 0.38 0.472L0.348 0.46C0.14 0.46 0.004 0.648 0.004 0.844C0.004 1.044 0.176 1.24 0.468 1.464C0.5 1.488 0.54 1.5 0.572 1.5C0.6 1.5 0.628 1.492 0.632 1.476C0.636 1.464 0.64 1.456 0.64 1.448C0.64 1.412 0.608 1.38 0.576 1.352C0.524 1.352 0.48 1.244 0.472 1.208C0.46 1.176 0.456 1.14 0.456 1.104C0.456 0.94 0.54 0.812 0.708 0.812C0.824 0.812 0.956 0.856 1.024 0.88L1.028 0.884C1.044 0.888 1.052 0.888 1.06 0.888C1.072 0.888 1.08 0.884 1.08 0.872C1.08 0.824 0.976 0.692 0.932 0.644C0.78 0.46 0.656 0.312 0.656 0.088C0.656 0.084 0.656 0.08 0.656 0.076L0.66 0.048C0.66 0.044 0.66 0.04 0.66 0.036C0.676 -0.196 0.82 -0.388 0.924 -0.552C0.936 -0.572 0.94 -0.592 0.94 -0.612C0.94 -0.652 0.924 -0.688 0.924 -0.688C0.924 -0.688 0.332 -1.392 0.264 -1.46C0.244 -1.48 0.216 -1.492 0.192 -1.492C0.152 -1.492 0.112 -1.464 0.112 -1.408C0.112 -1.388 0.116 -1.368 0.128 -1.344C0.144 -1.3 0.372 -1.096 0.372 -0.808C0.372 -0.66 0.312 -0.488 0.132 -0.3C0.092 -0.26 0.076 -0.216 0.076 -0.184C0.076 -0.128 0.116 -0.088 0.116 -0.088Z","x0":0.004,"x1":1.08,"y0":-1.492,"y1":1.5},"flag8thUp":{"w":1.056,"d":"M0.952 3.16C0.952 3.16 1.056 2.78 1.056 2.468C1.056 1.968 0.848 1.496 0.596 1.096C0.392 0.78 0.224 0.436 0.16 0.052C0.148 -0.012 0.116 -0.036 0.076 -0.036C0.032 -0.036 0 -0.024 0 0.024L0 0.98C0.264 1.028 0.644 1.572 0.788 1.912C0.848 2.048 0.884 2.276 0.884 2.512C0.884 2.692 0.856 2.88 0.788 3.06C0.78 3.084 0.776 3.104 0.776 3.12C0.776 3.184 0.816 3.22 0.84 3.236C0.864 3.252 0.932 3.228 0.952 3.16Z","x0":0,"x1":1.056,"y0":-0.036,"y1":3.241},"flag8thDown":{"w":1.224,"d":"M0.96 -3.04C1.016 -2.872 1.044 -2.672 1.044 -2.492C1.044 -2.256 0.944 -1.92 0.884 -1.784C0.736 -1.448 0.536 -1.124 0 -0.944L0 -0.004C0 0.036 0.032 0.056 0.064 0.056C0.1 0.056 0.152 0.032 0.16 -0.032C0.228 -0.412 0.524 -0.76 0.728 -1.076C0.98 -1.472 1.224 -1.948 1.224 -2.448C1.224 -2.76 1.144 -3.044 1.112 -3.172C1.1 -3.216 1.076 -3.232 1.048 -3.232C0.988 -3.232 0.92 -3.156 0.96 -3.04Z","x0":0,"x1":1.224,"y0":-3.232,"y1":0.056},"timeSig4":{"w":1.88,"d":"M1.448 0.296L1.448 -0.56C1.448 -0.592 1.444 -0.628 1.4 -0.628C1.364 -0.628 1.344 -0.62 1.32 -0.592L0.94 -0.132C0.924 -0.112 0.904 -0.088 0.904 -0.04L0.904 0.296L0.364 0.296C0.684 0.024 1.324 -0.884 1.336 -0.932L1.34 -0.944C1.34 -0.98 1.312 -1.004 1.28 -1.004C1.244 -1.004 1.08 -0.996 1.008 -0.996C0.936 -0.996 0.756 -1.004 0.724 -1.004C0.688 -1.004 0.632 -0.992 0.632 -0.928C0.632 -0.432 0.24 0.124 0.12 0.292L0.096 0.324C0.096 0.324 0.096 0.328 0.096 0.328L0.092 0.332C0.084 0.352 0.08 0.368 0.08 0.38C0.08 0.42 0.112 0.448 0.16 0.448L0.904 0.448L0.904 0.7C0.904 0.808 0.816 0.84 0.744 0.84C0.68 0.84 0.652 0.876 0.652 0.916C0.652 0.956 0.668 1 0.728 1L1.58 1C1.62 1 1.66 0.972 1.66 0.916C1.66 0.86 1.612 0.836 1.572 0.836C1.532 0.836 1.448 0.812 1.448 0.684L1.448 0.448L1.74 0.448C1.78 0.448 1.8 0.42 1.8 0.372C1.8 0.324 1.784 0.296 1.74 0.296Z","x0":0.08,"x1":1.8,"y0":-1.004,"y1":1},"timeSig3":{"w":1.684,"d":"M0.852 -0.992C0.848 -0.992 0.844 -0.992 0.836 -0.992L0.808 -0.996C0.804 -0.996 0.796 -0.996 0.792 -0.996C0.448 -0.996 0.104 -0.768 0.104 -0.556C0.104 -0.424 0.18 -0.248 0.428 -0.232L0.448 -0.232C0.624 -0.232 0.712 -0.36 0.712 -0.492L0.712 -0.524C0.7 -0.672 0.6 -0.68 0.58 -0.688C0.56 -0.696 0.5 -0.688 0.5 -0.744L0.5 -0.76C0.508 -0.828 0.632 -0.86 0.668 -0.86C1.008 -0.86 1.04 -0.648 1.04 -0.552L1.04 -0.524C1.04 -0.228 0.804 -0.112 0.552 -0.1C0.512 -0.096 0.456 -0.076 0.456 -0.032C0.456 0.016 0.524 0.016 0.556 0.016C1.016 0.016 1.052 0.328 1.052 0.38C1.052 0.804 0.836 0.852 0.748 0.852C0.732 0.852 0.716 0.848 0.712 0.848C0.68 0.844 0.604 0.844 0.6 0.784L0.6 0.764C0.6 0.676 0.688 0.616 0.692 0.5C0.692 0.332 0.576 0.212 0.404 0.212C0.388 0.212 0.376 0.212 0.36 0.216C0.292 0.228 0.216 0.268 0.168 0.32C0.1 0.38 0.08 0.476 0.08 0.564C0.088 0.876 0.372 0.996 0.764 1.004L0.8 1.004C1.196 1.004 1.604 0.8 1.604 0.448L1.604 0.42C1.596 0.304 1.568 0.228 1.492 0.14C1.468 0.108 1.436 0.08 1.396 0.056L1.312 0.008L1.18 -0.028C1.16 -0.032 1.148 -0.032 1.14 -0.048C1.136 -0.056 1.136 -0.06 1.136 -0.068C1.136 -0.084 1.14 -0.1 1.152 -0.104C1.196 -0.116 1.24 -0.12 1.276 -0.14C1.436 -0.216 1.52 -0.32 1.52 -0.504C1.52 -0.872 1.02 -0.98 0.852 -0.992Z","x0":0.08,"x1":1.604,"y0":-0.996,"y1":1.004},"accidentalFlat":{"w":0.904,"d":"M0.048 0.68C0.06 0.696 0.072 0.7 0.084 0.7C0.096 0.7 0.108 0.692 0.108 0.692C0.228 0.624 0.324 0.516 0.424 0.448C0.78 0.2 0.904 -0.044 0.904 -0.228C0.904 -0.456 0.728 -0.6 0.544 -0.612C0.476 -0.612 0.38 -0.58 0.324 -0.544C0.3 -0.524 0.256 -0.488 0.236 -0.488C0.228 -0.488 0.224 -0.488 0.216 -0.492C0.188 -0.504 0.172 -0.532 0.172 -0.56C0.176 -0.648 0.2 -1.608 0.2 -1.688C0.2 -1.732 0.164 -1.756 0.124 -1.756C0.068 -1.756 0.004 -1.716 0 -1.644C0 -1.644 0.016 0.64 0.048 0.68ZM0.188 0.324C0.188 0.324 0.176 0.084 0.176 -0.076C0.176 -0.14 0.18 -0.188 0.184 -0.204C0.212 -0.284 0.372 -0.4 0.464 -0.4C0.58 -0.4 0.628 -0.268 0.628 -0.168C0.628 0.048 0.444 0.264 0.272 0.372C0.256 0.38 0.244 0.384 0.232 0.384C0.196 0.384 0.188 0.344 0.188 0.324Z","x0":0,"x1":0.904,"y0":-1.756,"y1":0.7},"accidentalSharp":{"w":0.996,"d":"M0.948 -0.472C0.976 -0.484 0.996 -0.516 0.996 -0.54L0.996 -0.824C0.996 -0.844 0.984 -0.856 0.968 -0.856C0.96 -0.856 0.956 -0.856 0.948 -0.852C0.948 -0.852 0.868 -0.82 0.848 -0.816C0.82 -0.816 0.792 -0.836 0.792 -0.868L0.792 -1.356C0.792 -1.38 0.768 -1.4 0.736 -1.4C0.696 -1.4 0.672 -1.38 0.672 -1.356L0.672 -0.836C0.668 -0.796 0.656 -0.744 0.62 -0.72C0.572 -0.692 0.436 -0.636 0.368 -0.62C0.332 -0.62 0.32 -0.668 0.32 -0.7L0.32 -1.18C0.32 -1.204 0.292 -1.224 0.264 -1.224C0.224 -1.224 0.2 -1.204 0.2 -1.18L0.2 -0.64C0.2 -0.584 0.176 -0.544 0.152 -0.532C0.128 -0.52 0.048 -0.488 0.048 -0.488C0.02 -0.48 0 -0.448 0 -0.424L0 -0.14C0 -0.116 0.012 -0.104 0.036 -0.104L0.044 -0.108C0.048 -0.108 0.108 -0.132 0.14 -0.148L0.144 -0.152C0.176 -0.152 0.2 -0.112 0.2 -0.08L0.2 0.316C0.2 0.36 0.18 0.396 0.156 0.408C0.132 0.416 0.048 0.452 0.048 0.452C0.02 0.46 0 0.492 0 0.516L0 0.8C0 0.824 0.012 0.836 0.036 0.836L0.044 0.832C0.048 0.832 0.104 0.808 0.14 0.796C0.144 0.792 0.148 0.792 0.152 0.792C0.18 0.792 0.2 0.836 0.2 0.856L0.2 1.348C0.2 1.372 0.224 1.392 0.252 1.392C0.292 1.392 0.32 1.372 0.32 1.348L0.32 0.792C0.32 0.74 0.34 0.712 0.36 0.704L0.604 0.604C0.604 0.604 0.608 0.604 0.608 0.604L0.616 0.6C0.652 0.6 0.672 0.648 0.672 0.672L0.672 1.172C0.672 1.196 0.696 1.216 0.724 1.216C0.768 1.216 0.792 1.196 0.792 1.172L0.792 0.604C0.792 0.572 0.808 0.524 0.836 0.512C0.864 0.5 0.948 0.468 0.948 0.468C0.976 0.456 0.996 0.424 0.996 0.4L0.996 0.116C0.996 0.096 0.984 0.084 0.968 0.084C0.96 0.084 0.956 0.084 0.948 0.088L0.844 0.128C0.82 0.128 0.792 0.104 0.792 0.056L0.792 -0.316C0.792 -0.344 0.812 -0.42 0.844 -0.432ZM0.672 0.18C0.648 0.26 0.46 0.34 0.368 0.34C0.344 0.34 0.324 0.332 0.32 0.32C0.312 0.304 0.308 0.216 0.308 0.12C0.308 -0.004 0.312 -0.144 0.32 -0.176C0.328 -0.244 0.512 -0.328 0.612 -0.328C0.64 -0.328 0.664 -0.32 0.672 -0.304C0.68 -0.284 0.688 -0.184 0.688 -0.076C0.688 0.032 0.68 0.144 0.672 0.18Z","x0":0,"x1":0.996,"y0":-1.4,"y1":1.392}};
+const CAT = {
+  'Kids & folk': ['#1FD696', '#0A7A5C', '#FFFFFF'],
+  'Holiday': ['#FF5A6E', '#B3244A', '#FFD23F'],
+  'Hymns & ballads': ['#A493FF', '#5B3FD9', '#FFFFFF'],
+  'Classical': ['#4CC3FF', '#2A4FD9', '#FFFFFF'],
+  'Ragtime & blues': ['#FF9A3D', '#D9406A', '#FFE14D'],
+};
+const STAGE = (lv) => lv <= 8 ? 'var(--st-1)' : lv <= 16 ? 'var(--st-2)' : lv <= 26 ? 'var(--st-3)' : lv <= 34 ? 'var(--st-4)' : 'var(--st-5)';
+// [title, composer, category, arrangements [[label, level, stars]], opening melody (semitones from C4, durations in 8ths)]
+const SONGS = [
+  ['Ode to Joy', 'Ludwig van Beethoven', 'Classical', [['RH', 1, 3], ['Easy', 7, 3], ['Both', 12, 2]], [[4,2],[4,2],[5,2],[7,2],[7,2],[5,2],[4,2],[2,2],[0,2],[0,2],[2,2],[4,2],[4,3],[2,1],[2,4]]],
+  ['Amazing Grace', 'Traditional · “New Britain”', 'Hymns & ballads', [['RH', 12, 1], ['Both', 12, 0]], [[-5,2],[0,4],[4,1],[2,1],[0,1],[4,4],[2,2],[0,4],[-3,2],[-5,4]]],
+  ['Jingle Bells', 'James Lord Pierpont', 'Holiday', [['RH', 2, 3], ['Both', 12, 0]], [[4,2],[4,2],[4,4],[4,2],[4,2],[4,4],[4,2],[7,2],[0,3],[2,1],[4,6]]],
+  ['Greensleeves', 'Traditional (English)', 'Hymns & ballads', [['RH', 13, 0], ['Both', 16, 0]], [[-3,2],[0,4],[2,2],[4,3],[5,1],[4,2],[2,4],[-1,2],[-5,3],[-3,1],[-1,2],[0,4]]],
+  ['Twinkle, Twinkle, Little Star', 'Traditional (French melody)', 'Kids & folk', [['RH', 2, 3], ['Both', 6, 3], ['Chords', 14, 0]], [[0,2],[0,2],[7,2],[7,2],[9,2],[9,2],[7,4],[5,2],[5,2],[4,2],[4,2],[2,2],[2,2],[0,4]]],
+  ['Canon in D', 'Johann Pachelbel', 'Classical', [['Both', 16, 0]], [[6,4],[4,4],[2,4],[1,4],[-1,4],[-3,4],[-1,4],[1,4]]],
+  ['Für Elise', 'Ludwig van Beethoven', 'Classical', [['Theme', 20, 0], ['Both', 26, 0]], [[16,1],[15,1],[16,1],[15,1],[16,1],[11,1],[14,1],[12,1],[9,3],[0,1],[4,1],[9,1],[11,3]]],
+  ['Minuet in G', 'Christian Petzold', 'Classical', [['RH', 13, 0], ['Both', 17, 0]], [[14,2],[7,1],[9,1],[11,1],[12,1],[14,2],[7,2],[7,2]]],
+  ['Happy Birthday to You', 'Mildred J. Hill', 'Kids & folk', [['RH', 9, 2], ['Both', 15, 0]], [[7,1],[7,1],[9,2],[7,2],[12,2],[11,4]]],
+  ['The Entertainer', 'Scott Joplin', 'Ragtime & blues', [['Theme', 21, 0], ['Both', 35, 0]], [[2,1],[3,1],[4,1],[12,2],[4,1],[12,2],[4,1],[12,5]]],
+  ['Prelude in C, BWV 846', 'Johann Sebastian Bach', 'Classical', [['Both', 25, 0]], [[0,1],[4,1],[7,1],[12,1],[16,1],[7,1],[12,1],[16,1],[0,1],[4,1],[7,1],[12,1],[16,1],[7,1],[12,1],[16,1]]],
+];
+function cover(song, idx) {
+  const [a, b, c] = CAT[song[2]];
+  const mel = song[4];
+  const W = 264, H = 128;
+  const total = mel.reduce((s, m) => s + m[1], 0);
+  const lo = Math.min(...mel.map(m => m[0])), hi = Math.max(...mel.map(m => m[0]));
+  const x0 = 18, x1 = W - 18, y0 = 48, y1 = H - 12;
+  let x = x0, o = `<defs><linearGradient id="cg${idx}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>`;
+  o += `<rect width="${W}" height="${H}" fill="url(#cg${idx})"/>`;
+  o += `<circle cx="${W * 0.82}" cy="-10" r="110" fill="#fff" opacity=".12"/>`;
+  for (let k = 0; k < 5; k++) o += `<rect x="0" y="${y0 + k * ((y1 - y0) / 4)}" width="${W}" height="1" fill="#fff" opacity=".14"/>`;
+  for (const [p, d] of mel) {
+    const w = ((x1 - x0) * d) / total;
+    const y = y1 - ((p - lo) / Math.max(1, hi - lo)) * (y1 - y0 - 10) - 10;
+    o += `<rect x="${x + 1.5}" y="${y}" width="${Math.max(4, w - 3)}" height="12" rx="6" fill="${c}" opacity=".95" style="filter:drop-shadow(0 0 6px ${c})"/>`;
+    x += w;
+  }
+  return o;
+}
+let html = '';
+SONGS.forEach((s, i) => {
+  const top = Math.min(...s[3].map(a => a[1]));
+  const main = s[3].find(a => a[1] >= 12) || s[3][s[3].length - 1];
+  const stars = Math.max(...s[3].map(a => a[2]));
+  const stretch = top > 16;
+  html += `<div class="card song">
+    <div class="cov"><svg viewBox="0 0 264 128" preserveAspectRatio="none">${cover(s, i)}</svg>
+      <span class="cat">${s[2]}</span>
+      <span class="lv" style="--c:${STAGE(main[1])}">LV ${[...new Set([top, Math.max(...s[3].map(a => a[1]))])].join('–')}</span>
+      ${stars ? `<span class="st">${[0,1,2].map(k => `<svg class="${k < stars ? '' : 'off'}"><use href="#i-star"/></svg>`).join('')}</span>` : ''}
+      ${stretch ? '<span class="stretch"><svg class="ico" style="width:12px;height:12px"><use href="#i-up"/></svg>STRETCH GOAL</span>' : ''}
+    </div>
+    <div class="body">
+      <h3>${s[0]}</h3>
+      <div class="by">${s[1]}</div>
+      <div class="arr">
+        ${s[3].map(([l, lv, st]) => `<span class="${st === 3 ? 'done' : ''}" style="--c:${STAGE(lv)}"><i></i>${l} ${lv}</span>`).join('')}
+        
+      </div>
+    </div>
+  </div>`;
+  if (i === 6) html += `<div class="import"><span class="ic"><svg class="ico"><use href="#i-upload"/></svg></span><h3>Import a MIDI file</h3><p>Bring any piece from Mutopia, IMSLP or your own files. Maestro arranges it into falling notes and sheet music.</p></div>`;
+});
+document.getElementById('grid').innerHTML = html;
+</script>
+</body>
+</html>

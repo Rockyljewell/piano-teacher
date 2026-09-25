@@ -197,7 +197,18 @@ function transposeRange(key, lo, hi, lv) {
 }
 
 export function generate(levelN, opts = {}) {
-  const lv = levelInfo(levelN);
+  let lv = levelInfo(levelN);
+  // Both-hands variant of one-hand levels (used by the placement test): the right hand keeps
+  // the level's melody and the left hand adds long bass notes.
+  if (opts.bothHands && (lv.hands === 'R' || lv.hands === 'L')) {
+    const src = lv.rh || lv.lh;
+    lv = {
+      ...lv,
+      hands: 'both',
+      rh: lv.rh || { lo: 60, hi: 67, motion: src.motion, rhythm: src.rhythm },
+      lh: { style: 'pedal', lo: 43, hi: 55 },
+    };
+  }
   const seed = opts.seed ?? ((Math.random() * 2 ** 31) | 0);
   const rng = makeRng(seed);
   const kind = opts.kind || 'sight';
@@ -630,7 +641,7 @@ export function generateRhythm(levelN, opts = {}) {
   });
 }
 
-function finish(p) {
+export function finish(p) {
   p.events.sort((a, b) => a.beat - b.beat || (a.staff < b.staff ? -1 : 1));
   p.totalBeats = p.measures * p.beatsPer;
   // Flatten into gradable notes (tied continuations are held, not struck).
