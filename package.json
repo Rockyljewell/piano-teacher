@@ -9,6 +9,10 @@
     "test": "node --test",
     "eval": "node tests/eval-transcriber.js",
     "test:audio": "node --test tests/audio.test.js",
-    "test:songs": "node --test tests/songs.test.js tests/midi.test.js"
+    "test:songs": "node --test tests/songs.test.js tests/midi.test.js",
+    "eval:noise": "node tests/noise-eval.js",
+    "corpus": "node tests/corpus-fetch.js",
+    "fit": "node tests/noise-fit.js",
+    "e2e": "node e2e/smoke.mjs"
   }
 }
