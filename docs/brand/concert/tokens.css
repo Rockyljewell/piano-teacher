@@ -1,0 +1,111 @@
+/* Maestro · Concert direction · design tokens */
+:root {
+  /* Stage: warm ebony backgrounds (never pure black) */
+  --stage-950: #0A0807;
+  --stage-900: #0F0C0A;
+  --stage-850: #15110E;
+  --stage-800: #1B1612;
+  --stage-750: #221C17;
+  --stage-700: #2C251E;
+  --stage-600: #3A3128;
+
+  /* Ivory: text and the paper the music is printed on */
+  --ivory-50: #FCF8EF;
+  --ivory-100: #F5EEDF;
+  --ivory-200: #E8DFCC;
+  --ivory-300: #D4C9B4;
+  --ivory-400: #B3A892;
+  --ivory-500: #8F8574;
+  --ivory-600: #6B6356;
+  --paper: #FBF6EA;
+  --paper-edge: #EFE6D2;
+  --ink: #1D1A16;
+  --ink-soft: #5B5346;
+
+  /* Gold leaf: brand accent, primary actions, "Perfect" */
+  --gold-100: #FBF0D2;
+  --gold-200: #F3DDA5;
+  --gold-300: #E9C77F;
+  --gold-400: #D9AE5C;
+  --gold-500: #C4953E;
+  --gold-600: #A07629;
+  --gold-700: #6E511C;
+  --gold-ink: #1E1606;
+  --gold-grad: linear-gradient(180deg, #F4DC9F 0%, #DDB263 52%, #C4953E 100%);
+  --gold-metal: linear-gradient(160deg, #F6E3AE 0%, #D9AE5C 55%, #A87A2C 100%);
+
+  /* Velvet: the curtain. Used sparingly for depth and the Master stage */
+  --velvet-400: #B4485A;
+  --velvet-500: #8E2A3B;
+  --velvet-700: #4B1520;
+  --velvet-900: #240A10;
+
+  /* Hands */
+  --rh-300: #AFCDFF;
+  --rh-400: #7DB0FF;
+  --rh-500: #4F8FEA;
+  --rh-700: #1F4F9A;
+  --lh-300: #FFC7AA;
+  --lh-400: #F6A07A;
+  --lh-500: #E27B52;
+  --lh-700: #9A4222;
+
+  /* Feedback (timing tiers, not directions) */
+  --perfect: #E9C77F;
+  --great: #F3DDA5;
+  --good: #D4C9B4;
+  --offbeat: #F2A65A;   /* Early / Late */
+  --miss: #E8707E;
+  --wrong: #F0525F;
+  --listening: #8FD1A6;
+  /* The same tiers printed on paper */
+  --paper-perfect: #A07629;
+  --paper-offbeat: #B85F1A;
+  --paper-miss: #B8384A;
+
+  /* Lines */
+  --line: rgba(245, 238, 223, 0.08);
+  --line-2: rgba(245, 238, 223, 0.14);
+  --line-gold: rgba(217, 174, 92, 0.45);
+
+  /* Type */
+  --font-display: 'Fraunces', 'Iowan Old Style', Palatino, Georgia, serif;
+  --font-ui: 'Manrope', -apple-system, 'SF Pro Text', system-ui, sans-serif;
+
+  /* Radii */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* Spacing (4 pt grid) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-14: 56px;
+  --s-18: 72px;
+
+  /* Elevation */
+  --e-1: inset 0 1px 0 rgba(255, 244, 220, 0.05), 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --e-2: inset 0 1px 0 rgba(255, 244, 220, 0.06), 0 24px 64px rgba(0, 0, 0, 0.5);
+  --e-paper: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 18px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --glow-gold: 0 10px 34px rgba(217, 174, 92, 0.34), inset 0 1px 0 rgba(255, 248, 225, 0.7);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-press: 90ms;
+  --t-quick: 160ms;
+  --t-base: 240ms;
+  --t-gentle: 420ms;
+  --t-stage: 700ms;
+  --t-reveal: 1200ms;
+}

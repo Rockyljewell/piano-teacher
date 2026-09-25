@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1180">
+<title>Maestro · Placement: your level (Concert)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Stage: warm ebony backgrounds (never pure black) */
+  --stage-950: #0A0807;
+  --stage-900: #0F0C0A;
+  --stage-850: #15110E;
+  --stage-800: #1B1612;
+  --stage-750: #221C17;
+  --stage-700: #2C251E;
+  --stage-600: #3A3128;
+
+  /* Ivory: text and the paper the music is printed on */
+  --ivory-50: #FCF8EF;
+  --ivory-100: #F5EEDF;
+  --ivory-200: #E8DFCC;
+  --ivory-300: #D4C9B4;
+  --ivory-400: #B3A892;
+  --ivory-500: #8F8574;
+  --ivory-600: #6B6356;
+  --paper: #FBF6EA;
+  --paper-edge: #EFE6D2;
+  --ink: #1D1A16;
+  --ink-soft: #5B5346;
+
+  /* Gold leaf: brand accent, primary actions, "Perfect" */
+  --gold-100: #FBF0D2;
+  --gold-200: #F3DDA5;
+  --gold-300: #E9C77F;
+  --gold-400: #D9AE5C;
+  --gold-500: #C4953E;
+  --gold-600: #A07629;
+  --gold-700: #6E511C;
+  --gold-ink: #1E1606;
+  --gold-grad: linear-gradient(180deg, #F4DC9F 0%, #DDB263 52%, #C4953E 100%);
+  --gold-metal: linear-gradient(160deg, #F6E3AE 0%, #D9AE5C 55%, #A87A2C 100%);
+
+  /* Velvet: the curtain. Used sparingly for depth and the Master stage */
+  --velvet-400: #B4485A;
+  --velvet-500: #8E2A3B;
+  --velvet-700: #4B1520;
+  --velvet-900: #240A10;
+
+  /* Hands */
+  --rh-300: #AFCDFF;
+  --rh-400: #7DB0FF;
+  --rh-500: #4F8FEA;
+  --rh-700: #1F4F9A;
+  --lh-300: #FFC7AA;
+  --lh-400: #F6A07A;
+  --lh-500: #E27B52;
+  --lh-700: #9A4222;
+
+  /* Feedback (timing tiers, not directions) */
+  --perfect: #E9C77F;
+  --great: #F3DDA5;
+  --good: #D4C9B4;
+  --offbeat: #F2A65A;   /* Early / Late */
+  --miss: #E8707E;
+  --wrong: #F0525F;
+  --listening: #8FD1A6;
+  /* The same tiers printed on paper */
+  --paper-perfect: #A07629;
+  --paper-offbeat: #B85F1A;
+  --paper-miss: #B8384A;
+
+  /* Lines */
+  --line: rgba(245, 238, 223, 0.08);
+  --line-2: rgba(245, 238, 223, 0.14);
+  --line-gold: rgba(217, 174, 92, 0.45);
+
+  /* Type */
+  --font-display: 'Fraunces', 'Iowan Old Style', Palatino, Georgia, serif;
+  --font-ui: 'Manrope', -apple-system, 'SF Pro Text', system-ui, sans-serif;
+
+  /* Radii */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* Spacing (4 pt grid) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-14: 56px;
+  --s-18: 72px;
+
+  /* Elevation */
+  --e-1: inset 0 1px 0 rgba(255, 244, 220, 0.05), 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --e-2: inset 0 1px 0 rgba(255, 244, 220, 0.06), 0 24px 64px rgba(0, 0, 0, 0.5);
+  --e-paper: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 18px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --glow-gold: 0 10px 34px rgba(217, 174, 92, 0.34), inset 0 1px 0 rgba(255, 248, 225, 0.7);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-press: 90ms;
+  --t-quick: 160ms;
+  --t-base: 240ms;
+  --t-gentle: 420ms;
+  --t-stage: 700ms;
+  --t-reveal: 1200ms;
+}
+
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1180px; height: 820px; overflow: hidden; background: var(--stage-900); color: var(--ivory-100);
+  font-family: var(--font-ui); -webkit-font-smoothing: antialiased; font-feature-settings: 'tnum' 0; }
+button { font: inherit; color: inherit; border: 0; background: none; }
+.screen { position: relative; width: 1180px; height: 820px; overflow: hidden; }
+.stage-bg { position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(760px 460px at 50% -8%, rgba(240, 200, 130, 0.15), rgba(240, 200, 130, 0.04) 55%, transparent 75%),
+    radial-gradient(520px 380px at -6% 104%, rgba(142, 42, 59, 0.16), transparent 70%),
+    radial-gradient(520px 380px at 106% 104%, rgba(142, 42, 59, 0.12), transparent 70%),
+    linear-gradient(180deg, #16120E 0%, #0E0B09 60%, #0B0907 100%); }
+.stage-bg::after { content: ''; position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 .95  0 0 0 0 .85  0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); opacity: 0.05; mix-blend-mode: overlay; }
+.layer { position: absolute; inset: 0; z-index: 1; }
+
+/* ---- type ---- */
+.display { font-family: var(--font-display); font-weight: 560; letter-spacing: -0.012em; line-height: 1.04; }
+.display.i, .ital { font-family: var(--font-display); font-style: italic; font-weight: 420; }
+.eyebrow { font: 700 12px/1 var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold-300); }
+.eyebrow.muted { color: var(--ivory-500); }
+.muted { color: var(--ivory-400); }
+.num { font-variant-numeric: tabular-nums lining-nums; }
+
+/* ---- surfaces ---- */
+.card { background: linear-gradient(180deg, rgba(34, 28, 23, 0.92), rgba(24, 20, 16, 0.92)); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--e-1); }
+.card.flat { background: rgba(27, 22, 18, 0.7); }
+.paper { background: radial-gradient(120% 140% at 30% 0%, #FFFCF4 0%, var(--paper) 45%, #F3EBD8 100%); color: var(--ink);
+  border-radius: 18px; box-shadow: var(--e-paper); }
+
+/* ---- buttons ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 24px;
+  border-radius: var(--r-pill); font: 700 17px/1 var(--font-ui); letter-spacing: 0.01em; white-space: nowrap; }
+.btn .ic { flex: none; }
+.btn-gold { background: var(--gold-grad); color: var(--gold-ink); box-shadow: var(--glow-gold); }
+.btn-gold.xl { height: 64px; padding: 0 34px 0 14px; font-size: 20px; gap: 14px; }
+.btn-gold .play-dot { width: 40px; height: 40px; border-radius: 50%; background: var(--gold-ink); color: var(--gold-300);
+  display: grid; place-items: center; box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
+.btn-ghost { border: 1px solid var(--line-2); color: var(--ivory-100); background: rgba(245, 238, 223, 0.04); }
+.btn-outline-gold { border: 1px solid var(--line-gold); color: var(--gold-200); background: rgba(217, 174, 92, 0.07); }
+.btn-quiet { color: var(--ivory-300); padding: 0 12px; }
+.icon-btn { width: 44px; height: 44px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--ivory-200);
+  background: rgba(245, 238, 223, 0.05); border: 1px solid var(--line); }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: var(--r-pill);
+  font: 650 14px/1 var(--font-ui); color: var(--ivory-300); border: 1px solid var(--line); background: rgba(245, 238, 223, 0.03); white-space: nowrap; }
+.chip.on { color: var(--gold-ink); background: var(--gold-grad); border-color: transparent; box-shadow: 0 6px 18px rgba(217,174,92,.25); }
+.chip .count { font-weight: 600; opacity: 0.6; }
+.stat-chip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px 0 11px; border-radius: var(--r-pill);
+  background: rgba(245, 238, 223, 0.05); border: 1px solid var(--line); font: 700 15px/1 var(--font-ui); color: var(--ivory-100); }
+.stat-chip .ic { color: var(--gold-300); }
+.stat-chip small { font-weight: 600; color: var(--ivory-500); font-size: 13px; }
+
+/* ---- top bar ---- */
+.topbar { position: absolute; left: 0; right: 0; top: 0; height: 76px; padding: 0 28px; display: flex; align-items: center; gap: 24px; z-index: 5; }
+.lockup { display: flex; align-items: center; gap: 12px; }
+.tabs { display: flex; gap: 2px; margin-left: 20px; padding: 5px; border-radius: var(--r-pill); background: rgba(245,238,223,.035); border: 1px solid var(--line); }
+.tabs a { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 15px; white-space: nowrap; border-radius: var(--r-pill); font: 650 15px/1 var(--font-ui); color: var(--ivory-400); }
+.tabs a.on { color: var(--ivory-50); background: rgba(245,238,223,.09); box-shadow: inset 0 1px 0 rgba(255,244,220,.08); }
+.tabs a .ic { opacity: .85; }
+.tabs a.on .ic { color: var(--gold-300); opacity: 1; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 600 16px/1 var(--font-display);
+  color: var(--gold-200); background: radial-gradient(circle at 30% 25%, #3a2f22, #1c1712); border: 1px solid var(--line-gold); }
+
+/* ---- timing chips ---- */
+.tchip { position: absolute; transform: translate(-50%, -100%); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border-radius: var(--r-pill); font: 800 16px/1 var(--font-ui); white-space: nowrap; letter-spacing: 0.005em; }
+.tchip::after { content: ''; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg); background: inherit; border-right: inherit; border-bottom: inherit; border-radius: 0 0 3px 0; }
+.tchip.perfect { background: var(--gold-grad); color: var(--gold-ink); box-shadow: 0 8px 22px rgba(217,174,92,.45); }
+.tchip.great { background: #2A2319; color: var(--great); border: 1.5px solid rgba(243,221,165,.7); }
+.tchip.off { background: #2B1E13; color: var(--offbeat); border: 1.5px solid rgba(242,166,90,.75); }
+.tchip.miss { background: #2A1518; color: var(--miss); border: 1.5px solid rgba(232,112,126,.7); }
+.tchip b { font-weight: 600; opacity: .85; }
+
+
+  .pbar { position: absolute; left: 0; right: 0; top: 0; height: 84px; padding: 0 32px; display: flex; align-items: center; z-index: 5; }
+  .pstep { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; }
+  .ps { display: flex; align-items: center; gap: 9px; font: 650 14px/1 var(--font-ui); color: var(--ivory-500); }
+  .ps i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font: 800 12px/1 var(--font-ui); border: 1.5px solid var(--ivory-600); }
+  .ps.done { color: var(--ivory-300); } .ps.done i { background: var(--gold-400); border-color: transparent; color: var(--gold-ink); }
+  .ps.now { color: var(--ivory-50); } .ps.now i { border-color: var(--gold-300); color: var(--gold-200); box-shadow: 0 0 0 4px rgba(217,174,92,.15); }
+  .pl { width: 36px; height: 1.5px; background: var(--line-2); }
+  .pbar .skip { margin-left: auto; }
+
+  .spot { position: absolute; inset: 0; background:
+      radial-gradient(300px 300px at 50% 44%, rgba(255,222,150,.26), rgba(255,222,150,.06) 60%, transparent 75%),
+      linear-gradient(180deg, rgba(255,226,160,.13), rgba(255,226,160,0) 70%); clip-path: polygon(40% 0, 60% 0, 82% 100%, 18% 100%); }
+  .floor { position: absolute; left: 50%; top: 560px; width: 560px; height: 90px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(241,199,122,.22), transparent); }
+  .medal { position: absolute; left: 50%; top: 110px; width: 390px; height: 390px; transform: translateX(-50%); }
+  .medal .inner { position: absolute; inset: 58px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 30%, rgba(60,46,30,.9), rgba(20,16,12,.95)); border: 1px solid rgba(233,199,127,.5); box-shadow: inset 0 0 40px rgba(241,199,122,.12), 0 30px 80px rgba(0,0,0,.6); }
+  .medal .inner small { font: 700 12px/1 var(--font-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--ivory-400); }
+  .medal .inner .lv { font: italic 400 30px/1 var(--font-display); color: var(--gold-200); margin-top: 12px; }
+  .medal .inner .n { font: 560 132px/.9 var(--font-display); background: linear-gradient(180deg, #FBEFCB, #E2B868 60%, #B8893A); -webkit-background-clip: text; background-clip: text; color: transparent; margin-top: 2px; }
+  .say { position: absolute; left: 0; right: 0; top: 520px; text-align: center; }
+  .say h1 { font-size: 42px; }
+  .say p { font: 500 18px/1.5 var(--font-ui); color: var(--ivory-300); margin-top: 10px; }
+  .cta { position: absolute; left: 0; right: 0; bottom: 44px; display: flex; justify-content: center; gap: 12px; }
+  .cta .btn-gold { height: 60px; padding: 0 30px; font-size: 19px; }
+  .panel { position: absolute; top: 150px; width: 300px; height: 306px; padding: 20px 22px; }
+  .panel h4 { font: 700 12px/1 var(--font-ui); letter-spacing: .16em; text-transform: uppercase; color: var(--ivory-400); margin-bottom: 14px; }
+  .panel.l { left: 36px; } .panel.r { right: 36px; }
+  .can li { list-style: none; display: flex; gap: 10px; align-items: flex-start; font: 600 15px/1.35 var(--font-ui); color: var(--ivory-200); padding: 7px 0; }
+  .can li .ic { color: var(--gold-300); flex: none; margin-top: 1px; }
+  .next { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .next small { display: block; font: 700 11px/1 var(--font-ui); letter-spacing: .16em; text-transform: uppercase; color: var(--gold-300); }
+  .next b { display: block; font: 560 21px/1.2 var(--font-display); margin-top: 8px; }
+  .next span { display: block; font: 550 14px/1.4 var(--font-ui); color: var(--ivory-400); margin-top: 4px; }
+  
+</style>
+</head>
+<body>
+<div class="screen"><div class="stage-bg"></div><div class="spot"></div><div class="floor"></div>
+  <div class="pbar"><svg class="wordmark" width="130.7" height="28" viewBox="-10 -1400 6675 1430" aria-label="Maestro"><path d="M843 -521 821 -485 1141 -1368Q1148 -1388 1154.5 -1394.0Q1161 -1400 1172 -1400H1508Q1513 -1400 1515.0 -1398.0Q1517 -1396 1517 -1394Q1517 -1391 1514.5 -1389.0Q1512 -1387 1506 -1386L1421 -1373Q1404 -1370 1395.5 -1356.5Q1387 -1343 1389 -1322L1478 -72Q1480 -47 1486.0 -38.5Q1492 -30 1513 -26L1593 -14Q1599 -13 1601.5 -11.5Q1604 -10 1604 -6Q1604 -4 1602.0 -2.0Q1600 0 1595 0H1077Q1073 0 1070.5 -2.0Q1068 -4 1068 -6Q1068 -10 1070.5 -11.5Q1073 -13 1080 -14L1159 -26Q1181 -30 1189.5 -39.5Q1198 -49 1196 -72L1112 -1263L1128 -1276L729 -138Q724 -122 719.0 -117.5Q714 -113 710 -113Q707 -113 704.0 -115.0Q701 -117 698.0 -122.5Q695 -128 692 -138L253 -1257L267 -1284L186 -145Q183 -104 212.0 -73.5Q241 -43 290 -30L373 -14Q378 -13 380.0 -11.5Q382 -10 382 -6Q382 -4 380.5 -2.0Q379 0 375 0H-3Q-8 0 -10.0 -2.0Q-12 -4 -12 -6Q-12 -10 -8.5 -11.5Q-5 -13 -1 -14L58 -29Q103 -42 133.0 -72.0Q163 -102 166 -148L244 -1242Q250 -1303 242.5 -1335.5Q235 -1368 209 -1372L136 -1383Q125 -1385 120.0 -1386.5Q115 -1388 115 -1392Q115 -1400 130 -1400H474Q484 -1400 490.5 -1394.5Q497 -1389 503 -1374Z" fill="#F5EEDF"/><path d="M2184 -93V-102L2173 -92V-736Q2173 -808 2143.0 -846.0Q2113 -884 2057 -884Q1995 -884 1964.0 -853.0Q1933 -822 1933 -782V-701Q1933 -651 1898.0 -617.0Q1863 -583 1807 -583Q1768 -583 1742.5 -606.5Q1717 -630 1717 -678Q1717 -731 1759.0 -781.5Q1801 -832 1883.5 -865.0Q1966 -898 2086 -898Q2250 -898 2331.5 -829.5Q2413 -761 2413 -635V-116Q2413 -81 2425.0 -65.5Q2437 -50 2455 -50Q2473 -50 2487.0 -61.0Q2501 -72 2505 -98Q2505 -101 2506.5 -102.5Q2508 -104 2510 -104Q2512 -104 2513.5 -102.5Q2515 -101 2515 -98Q2515 -79 2497.5 -52.0Q2480 -25 2441.0 -3.5Q2402 18 2337 18Q2257 18 2220.5 -13.0Q2184 -44 2184 -93ZM1667 -194Q1667 -303 1757.0 -369.5Q1847 -436 2043 -436Q2104 -436 2143.5 -423.5Q2183 -411 2217 -393L2209 -386Q2175 -402 2140.0 -411.0Q2105 -420 2061 -420Q1986 -420 1945.5 -370.0Q1905 -320 1905 -229Q1905 -141 1944.0 -95.5Q1983 -50 2045 -50Q2087 -50 2127.5 -69.5Q2168 -89 2195 -126L2206 -120Q2162 -53 2085.5 -17.5Q2009 18 1921 18Q1808 18 1737.5 -41.5Q1667 -101 1667 -194Z" fill="#F5EEDF"/><path d="M3375 -517Q3375 -508 3369.5 -503.0Q3364 -498 3352 -498H2733V-515H3120Q3137 -515 3137 -534Q3137 -712 3089.5 -797.0Q3042 -882 2974 -882Q2918 -882 2877.0 -843.5Q2836 -805 2813.5 -726.0Q2791 -647 2791 -525Q2791 -319 2877.0 -216.0Q2963 -113 3103 -113Q3206 -113 3277.5 -170.5Q3349 -228 3357 -326Q3358 -330 3360.0 -331.5Q3362 -333 3363 -333Q3365 -333 3367.0 -331.0Q3369 -329 3369 -324Q3363 -225 3311.5 -147.5Q3260 -70 3175.5 -25.0Q3091 20 2986 20Q2862 20 2768.5 -35.0Q2675 -90 2622.0 -189.5Q2569 -289 2569 -422Q2569 -564 2622.5 -671.0Q2676 -778 2774.0 -838.0Q2872 -898 3003 -898Q3116 -898 3199.5 -848.5Q3283 -799 3329.0 -713.0Q3375 -627 3375 -517Z" fill="#F5EEDF"/><path d="M3819 -1Q3888 -1 3928.5 -37.0Q3969 -73 3969 -131Q3969 -172 3950.0 -205.0Q3931 -238 3885.5 -266.0Q3840 -294 3761 -319Q3643 -358 3576.0 -404.5Q3509 -451 3480.5 -508.5Q3452 -566 3452 -639Q3452 -764 3537.0 -832.0Q3622 -900 3764 -900Q3825 -900 3864.0 -888.5Q3903 -877 3924.0 -865.0Q3945 -853 3951 -853Q3961 -853 3986.0 -865.0Q4011 -877 4035.5 -888.5Q4060 -900 4068 -900Q4072 -900 4075.5 -898.5Q4079 -897 4080 -889L4133 -601Q4135 -593 4134.0 -588.5Q4133 -584 4130 -582Q4127 -581 4124.0 -582.0Q4121 -583 4119 -587Q4061 -698 4007.0 -762.5Q3953 -827 3896.5 -854.5Q3840 -882 3773 -882Q3698 -882 3656.5 -844.5Q3615 -807 3615 -744Q3615 -702 3634.5 -668.0Q3654 -634 3704.0 -605.0Q3754 -576 3846 -550Q3951 -520 4015.0 -475.5Q4079 -431 4107.0 -374.0Q4135 -317 4135 -247Q4135 -165 4095.5 -105.5Q4056 -46 3989.0 -13.5Q3922 19 3837 19Q3782 19 3742.0 3.5Q3702 -12 3677.5 -27.5Q3653 -43 3647 -43Q3642 -43 3620.5 -29.0Q3599 -15 3576.5 -0.5Q3554 14 3546 14Q3541 14 3536.0 9.5Q3531 5 3529 -5L3486 -252Q3485 -263 3486.0 -267.5Q3487 -272 3490 -274Q3493 -276 3495.0 -274.5Q3497 -273 3500 -269Q3580 -123 3660.0 -62.0Q3740 -1 3819 -1Z" fill="#F5EEDF"/><path d="M4296 -845 4209 -863Q4203 -864 4201.0 -866.0Q4199 -868 4199 -871Q4199 -874 4201.0 -876.0Q4203 -878 4206 -878H4294Q4300 -878 4304.5 -880.0Q4309 -882 4313 -887L4506 -1077Q4511 -1082 4516.5 -1085.0Q4522 -1088 4527 -1088Q4533 -1088 4536.5 -1084.0Q4540 -1080 4540 -1073V-231Q4540 -150 4570.5 -110.5Q4601 -71 4654 -71Q4673 -71 4690.0 -76.5Q4707 -82 4722.0 -94.5Q4737 -107 4748.5 -127.0Q4760 -147 4768 -176Q4770 -182 4774.5 -182.0Q4779 -182 4777 -175Q4761 -109 4732.5 -66.5Q4704 -24 4659.5 -3.0Q4615 18 4551 18Q4435 18 4372.0 -37.0Q4309 -92 4309 -206V-826Q4309 -835 4306.5 -839.5Q4304 -844 4296 -845ZM4466 -857 4473 -878H4770Q4775 -878 4777.5 -876.5Q4780 -875 4780 -870Q4780 -865 4773.5 -861.0Q4767 -857 4755 -857Z" fill="#F5EEDF"/><path d="M5144 -499Q5144 -631 5182.0 -719.5Q5220 -808 5279.5 -853.0Q5339 -898 5404 -898Q5478 -898 5518.0 -851.5Q5558 -805 5558 -719Q5558 -644 5523.0 -608.0Q5488 -572 5436 -572Q5388 -572 5364.0 -599.0Q5340 -626 5338 -679L5336 -711Q5336 -742 5324.0 -758.0Q5312 -774 5282 -774Q5251 -774 5222.0 -743.0Q5193 -712 5174.5 -649.5Q5156 -587 5156 -493ZM5156 -877V-545V-61Q5156 -50 5162.5 -41.0Q5169 -32 5181 -30L5280 -14Q5286 -13 5287.5 -11.0Q5289 -9 5289 -6Q5289 -4 5286.5 -2.0Q5284 0 5280 0H4836Q4832 0 4829.0 -2.5Q4826 -5 4826 -7Q4826 -9 4829.5 -11.5Q4833 -14 4839 -15L4893 -24Q4906 -26 4911.5 -33.5Q4917 -41 4917 -51V-788Q4917 -795 4914.5 -799.5Q4912 -804 4904 -804H4836Q4834 -804 4831.5 -806.0Q4829 -808 4829 -810Q4829 -813 4831.5 -815.0Q4834 -817 4838 -818L5126 -887Q5133 -889 5137.0 -889.5Q5141 -890 5145 -890Q5151 -890 5153.5 -886.0Q5156 -882 5156 -877Z" fill="#F5EEDF"/><path d="M6163 -898Q6295 -898 6397.0 -839.0Q6499 -780 6557.0 -675.5Q6615 -571 6615 -435Q6615 -301 6555.5 -198.5Q6496 -96 6391.0 -38.0Q6286 20 6151 20Q6019 20 5917.5 -37.5Q5816 -95 5758.5 -197.5Q5701 -300 5701 -435Q5701 -570 5760.0 -674.0Q5819 -778 5923.5 -838.0Q6028 -898 6163 -898ZM6212 3Q6274 -3 6313.5 -57.0Q6353 -111 6366.5 -212.0Q6380 -313 6363 -459Q6346 -607 6310.0 -702.5Q6274 -798 6222.0 -842.5Q6170 -887 6105 -880Q6041 -874 6002.0 -819.0Q5963 -764 5951.0 -663.0Q5939 -562 5956 -418Q5973 -273 6009.5 -177.5Q6046 -82 6098.0 -36.5Q6150 9 6212 3Z" fill="#D9AE5C"/><path d="M5598 -690A560 560 0 0 1 6718 -690H6656A498 410 0 0 0 5660 -690Z" fill="#D9AE5C"/></svg><div class="pstep"><span class="ps done"><i><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" ><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg></i>About you</span><span class="pl"></span><span class="ps done"><i><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" ><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg></i>Short tests</span><span class="pl"></span><span class="ps now"><i>3</i>Your level</span></div></div>
+  <div class="layer">
+    <div class="medal"><svg viewBox="0 0 390 390" width="390" height="390" style="position:absolute;inset:0">
+    <defs><path id="circ" d="M195,195 m-160,0 a160,160 0 1,1 320,0 a160,160 0 1,1 -320,0"/>
+    <linearGradient id="rimG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F6E3AE"/><stop offset="1" stop-color="#A87A2C"/></linearGradient></defs>
+    <circle cx="195" cy="195" r="184" fill="none" stroke="rgba(233,199,127,.25)" stroke-width="1"/>
+    <circle cx="195" cy="195" r="140" fill="none" stroke="rgba(233,199,127,.18)" stroke-width="1"/>
+    <text font-family="Manrope" font-weight="700" font-size="13.5" fill="#E9C77F"><textPath href="#circ" startOffset="0" textLength="1000" lengthAdjust="spacing">STAGE II · ELEMENTARY · LEVEL 12 · DOTTED RHYTHMS · PLACED BY EAR · </textPath></text>
+  </svg><div class="inner"><small>You’re starting at</small><span class="lv">Level</span><span class="n">12</span></div></div>
+    <div class="say"><h1 class="display">You read both clefs with confidence.</h1><p>Seven short tests placed you in Elementary. Up next: the long–short lilt of dotted rhythms.</p></div>
+    <div class="card panel l"><h4>How we found it</h4><svg width="256" height="150" viewBox="0 0 256 150">
+    <rect x="0" y="53.25" width="256" height="2" fill="rgba(233,199,127,.35)"/>
+    <text x="0" y="46.25" font-family="Manrope" font-weight="800" font-size="11" letter-spacing="1" fill="#E9C77F">LEVEL 12</text>
+    <polyline points="12,105.25 50.666666666666664,79.75 89.33333333333333,54.25 128,28.75 166.66666666666666,41.5 205.33333333333331,54.25 244,47.875" fill="none" stroke="rgba(245,238,223,.45)" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="12" cy="105.25" r="6.5" fill="#E9C77F"/><path d="M9 105.25l2 2.2 4-4.2" fill="none" stroke="#1E1606" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50.666666666666664" cy="79.75" r="6.5" fill="#E9C77F"/><path d="M47.666666666666664 79.75l2 2.2 4-4.2" fill="none" stroke="#1E1606" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="89.33333333333333" cy="54.25" r="6.5" fill="#E9C77F"/><path d="M86.33333333333333 54.25l2 2.2 4-4.2" fill="none" stroke="#1E1606" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="128" cy="28.75" r="6" fill="#15110E" stroke="rgba(232,112,126,.9)" stroke-width="1.6"/><path d="M125.6 26.35l4.8 4.8m0-4.8l-4.8 4.8" stroke="#E8707E" stroke-width="1.5" stroke-linecap="round"/><circle cx="166.66666666666666" cy="41.5" r="6" fill="#15110E" stroke="rgba(232,112,126,.9)" stroke-width="1.6"/><path d="M164.26666666666665 39.1l4.8 4.8m0-4.8l-4.8 4.8" stroke="#E8707E" stroke-width="1.5" stroke-linecap="round"/><circle cx="205.33333333333331" cy="54.25" r="6.5" fill="#E9C77F"/><path d="M202.33333333333331 54.25l2 2.2 4-4.2" fill="none" stroke="#1E1606" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="244" cy="47.875" r="6" fill="#15110E" stroke="rgba(232,112,126,.9)" stroke-width="1.6"/><path d="M241.6 45.475l4.8 4.8m0-4.8l-4.8 4.8" stroke="#E8707E" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="12" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">4</text><text x="50.666666666666664" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">8</text><text x="89.33333333333333" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">12</text><text x="128" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">16</text><text x="166.66666666666666" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">14</text><text x="205.33333333333331" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">12</text><text x="244" y="146" text-anchor="middle" font-family="Manrope" font-weight="700" font-size="11" fill="rgba(245,238,223,.45)">13</text>
+  </svg><p style="font:600 13px/1.45 var(--font-ui);color:var(--ivory-400);margin-top:8px">Each pass stepped up, each stumble stepped down, until the level held.</p>
+      <div style="display:flex;gap:16px;margin-top:12px;font:700 12px/1 var(--font-ui);color:var(--ivory-300)"><span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;background:#E9C77F"></i>Passed</span><span style="display:flex;align-items:center;gap:6px"><i style="width:10px;height:10px;border-radius:50%;border:1.5px solid #E8707E"></i>Too hard, for now</span></div></div>
+    <div class="card panel r"><h4>You can already</h4><ul class="can">
+      <li><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" ><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg>Read treble and bass clef</li>
+      <li><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" ><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg>Play hands together over long bass notes</li>
+      <li><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" ><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg>Keep eighth notes steady</li></ul>
+      <div class="next"><small>First lesson</small><b>Dotted rhythms</b><span>Levels 1–11 stay open if you want a refresher.</span></div></div>
+    <div class="cta"><button class="btn btn-ghost" style="height:60px">Start from Level 1 instead</button><button class="btn btn-gold"><span>Begin Level 12</span><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M5 12h14M13.5 6.5L19 12l-5.5 5.5"/></svg></button></div>
+  </div></div>
+</body>
+</html>

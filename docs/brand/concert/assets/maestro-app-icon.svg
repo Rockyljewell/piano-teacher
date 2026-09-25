@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 64 64" aria-label="Maestro app icon">
+<defs>
+  <linearGradient id="ai1bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241D16"/><stop offset="1" stop-color="#0C0A08"/></linearGradient>
+  <radialGradient id="ai1sp" cx=".5" cy=".62" r=".5"><stop offset="0" stop-color="#F1C77A" stop-opacity=".42"/><stop offset=".45" stop-color="#C4953E" stop-opacity=".12"/><stop offset="1" stop-color="#C4953E" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ai1g" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#F7E6B4"/><stop offset=".55" stop-color="#D9AE5C"/><stop offset="1" stop-color="#A87A2C"/></linearGradient>
+</defs>
+<rect width="64" height="64" rx="14.2" fill="url(#ai1bg)"/>
+<ellipse cx="32" cy="40" rx="26" ry="20" fill="url(#ai1sp)"/>
+<g transform="translate(32 34) scale(.74) translate(-32 -34)"><path d="M7 44A25 25 0 0 1 57 44H54.2A22.2 19.6 0 0 0 9.8 44Z" fill="url(#ai1g)"/><circle cx="32" cy="39.6" r="4.9" fill="url(#ai1g)"/></g>
+<ellipse cx="32" cy="45.2" rx="9" ry="1.1" fill="#F1C77A" opacity=".28"/>
+<rect x=".5" y=".5" width="63" height="63" rx="13.7" fill="none" stroke="rgba(255,236,200,.10)"/>
+</svg>
