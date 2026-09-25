@@ -544,7 +544,7 @@ const LIBRARY = [
         id: 'both', name: 'Both hands', level: 6, key: 'C', time: '4/4', bpm: 96,
         rh: `E4:h/3 D4/2 | C4:w/1 | E4:h/3 D4/2 | C4:w/1 |
              C4:q/1 C4 C4 C4 | D4/2 D4 D4 D4 | E4:h/3 D4/2 | C4:w/1`,
-        lh: `C3:w/5 | C3 | C3 | C3 | C3 | G3/1 | C3:h/5 G3/1 | C3:w/5`,
+        lh: `C3:h/5 G3/1 | C3:w/5 | C3:h/5 G3/1 | C3:w/5 | C3 | G3/1 | C3:h/5 G3/1 | C3:w/5`,
       },
     ],
   },
@@ -557,7 +557,7 @@ const LIBRARY = [
     category: 'Kids & folk',
     license: PD_TRAD,
     source: 'Traditional American nursery song (1830).',
-    about: 'Four neighbouring notes and a steady beat. Keep your thumb on middle C.',
+    about: 'Four notes (C, D, E and G) and a steady beat. Keep your thumb on middle C.',
     arrangements: [
       {
         id: 'rh', name: 'Right hand', level: 1, key: 'C', time: '4/4', bpm: 88,
@@ -682,10 +682,10 @@ const LIBRARY = [
       },
       {
         id: 'both', name: 'Both hands', level: 15, key: 'G', time: '3/4', bpm: 100, pickup: 1,
-        rh: `D4:8. D4:16 | E4:q D4 G4 | F#4:h D4:8. D4:16 | E4:q D4 A4 | G4:h D4:8. D4:16 |
-             D5:q B4 G4 | F#4 E4 C5:8. C5:16 | B4:q G4 A4 | G4:h.`,
+        note: "The pickup \"Hap-py\" is written as two even eighth notes.",
+        rh: `D4:8 D4 | E4:q D4 G4 | F#4:h D4:8 D4 | E4:q D4 A4 | G4:h D4:8 D4 | D5:q B4 G4 | F#4 E4 C5:8 C5 | B4:q G4 A4 | G4:h.`,
         lh: `r:q | [B2 D3 G3]:h. | [A2 C3 F#3] | [A2 C3 F#3] | [B2 D3 G3] |
-             [B2 F3 G3] | [C3 E3 G3] | [B2 D3 G3]:q [A2 C3 F#3]:h | [B2 D3 G3]:h.`,
+             [B2 F3 G3] | [C3 E3 G3] | [B2 D3 G3]:h [A2 C3 F#3]:q | [B2 D3 G3]:h.`,
       },
     ],
   },
@@ -702,7 +702,7 @@ const LIBRARY = [
     arrangements: [
       {
         id: 'rh', name: 'Right hand', level: 2, key: 'C', time: '4/4', bpm: 100,
-        note: 'The dotted rhythm of the first bar is smoothed into even quarter notes.',
+        note: "The dotted rhythm of bars 1 and 5 is smoothed into even quarter notes.",
         rh: `G4:q/5 A4 G4/5 F4/4 | E4/3 F4/4 G4:h/5 | D4:q/2 E4/3 F4:h/4 | E4:q/3 F4/4 G4:h/5 |
              G4:q/5 A4 G4/5 F4/4 | E4/3 F4/4 G4:h/5 | D4:h/2 G4/5 | E4:q/3 C4:h./1`,
       },
@@ -727,6 +727,7 @@ const LIBRARY = [
     arrangements: [
       {
         id: 'turns', name: 'Hands take turns', level: 4, key: 'C', time: '4/4', bpm: 88,
+        note: "In bars 9 to 12 the left hand moves up: pinky on the G below middle C, thumb on the D above middle C.",
         rh: `C4:q/1 C4 C4 D4/2 | E4:h/3 D4/2 | C4:q/1 E4/3 D4/2 D4 | C4:w/1 |
              C4:q/1 C4 C4 D4/2 | E4:h/3 D4/2 | C4:q/1 E4/3 D4/2 D4 | C4:w/1 |
              R | R | R | R |
@@ -750,7 +751,7 @@ const LIBRARY = [
     arrangements: [
       {
         id: 'turns', name: 'Hands take turns', level: 7, key: 'C', time: '4/4', bpm: 96,
-        note: 'The right hand plays the tune; the left hand answers "ding, dang, dong" below middle C.',
+        note: "The right hand plays the tune; the left hand answers \"ding, dang, dong\" on middle C and the G below it.",
         rh: `C4:q/1 D4/2 E4/3 C4/1 | C4/1 D4/2 E4/3 C4/1 | E4/3 F4/4 G4:h/5 | E4:q/3 F4/4 G4:h/5 |
              G4:8/5 A4 G4/5 F4/4 E4:q/3 C4/1 | G4:8/5 A4 G4/5 F4/4 E4:q/3 C4/1 | R | R`,
         lh: `R | R | R | R | R | R | C4:q/1 G3/5 C4:h/1 | C4:q/1 G3/5 C4:h/1`,
@@ -762,11 +763,11 @@ const LIBRARY = [
       },
       {
         id: 'round', name: 'Round for two hands', level: 24, key: 'F', time: '4/4', bpm: 100,
-        note: 'The left hand starts the same tune two bars later, an octave lower.',
+        note: "The left hand starts the same tune two bars later, two octaves lower.",
         rh: `F4:q G4 A4 F4 | F4 G4 A4 F4 | A4 Bb4 C5:h | A4:q Bb4 C5:h |
              C5:8 D5 C5 Bb4 A4:q F4 | C5:8 D5 C5 Bb4 A4:q F4 | F4 C4 F4:h | F4:q C4 F4:h | R | R`,
-        lh: `R | R | F3:q G3 A3 F3 | F3 G3 A3 F3 | A3 Bb3 C4:h | A3:q Bb3 C4:h |
-             C4:8 D4 C4 Bb3 A3:q F3 | C4:8 D4 C4 Bb3 A3:q F3 | F3 C3 F3:h | F3:q C3 F3:h`,
+        lh: `R | R | F2:q G2 A2 F2 | F2 G2 A2 F2 | A2 Bb2 C3:h | A2:q Bb2 C3:h |
+             C3:8 D3 C3 Bb2 A2:q F2 | C3:8 D3 C3 Bb2 A2:q F2 | F2 C2 F2:h | F2:q C2 F2:h`,
       },
     ],
   },
@@ -838,13 +839,13 @@ const LIBRARY = [
     about: 'First sung on Christmas Eve 1818 in Oberndorf, Austria. A slow, rocking 6/8.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 14, key: 'C', time: '6/8', bpm: 76,
+        id: 'rh', name: 'Right hand', level: 19, key: 'C', time: '6/8', bpm: 76,
         rh: `G4:8. A4:16 G4:8 E4:q. | G4:8. A4:16 G4:8 E4:q. | D5:q D5:8 B4:q. | C5:q C5:8 G4:q. |
              A4:q A4:8 C5:8. B4:16 A4:8 | G4:8. A4:16 G4:8 E4:q. | A4:q A4:8 C5:8. B4:16 A4:8 | G4:8. A4:16 G4:8 E4:q. |
              D5:q D5:8 F5:8. D5:16 B4:8 | C5:q. E5:q r:8 | C5:8. G4:16 E4:8 G4:8. F4:16 D4:8 | C4:h.`,
       },
       {
-        id: 'both', name: 'Both hands', level: 17, key: 'C', time: '6/8', bpm: 76,
+        id: 'both', name: 'Both hands', level: 19, key: 'C', time: '6/8', bpm: 76,
         rh: `G4:8. A4:16 G4:8 E4:q. | G4:8. A4:16 G4:8 E4:q. | D5:q D5:8 B4:q. | C5:q C5:8 G4:q. |
              A4:q A4:8 C5:8. B4:16 A4:8 | G4:8. A4:16 G4:8 E4:q. | A4:q A4:8 C5:8. B4:16 A4:8 | G4:8. A4:16 G4:8 E4:q. |
              D5:q D5:8 F5:8. D5:16 B4:8 | C5:q. E5:q r:8 | C5:8. G4:16 E4:8 G4:8. F4:16 D4:8 | C4:h.`,
@@ -865,7 +866,7 @@ const LIBRARY = [
     about: 'It opens with a whole D major scale walking down: a great scale workout in disguise.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 16, key: 'D', time: '2/4', bpm: 84,
+        id: 'rh', name: 'Right hand', level: 19, key: 'D', time: '2/4', bpm: 84,
         rh: `D5:q C#5:8. B4:16 | A4:q. G4:8 | F#4:q E4 | D4:q. A4:8 | B4:q. B4:8 | C#5:q. C#5:8 | D5:h~ | D5:q. D5:8 |
              D5:8 C#5 B4 A4 | A4:8. G4:16 F#4:8 D5:8 | D5:8 C#5 B4 A4 | A4:8. G4:16 F#4:8 F#4:8 |
              F#4:8 F#4 F#4 F#4:16 G4 | A4:q. G4:16 F#4 | E4:8 E4 E4 E4:16 F#4 | G4:q. F#4:16 E4 |
@@ -929,7 +930,7 @@ const LIBRARY = [
     about: 'A lullaby carol in F major: every B is B flat.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 11, key: 'F', time: '3/4', bpm: 96, pickup: 1,
+        id: 'rh', name: 'Right hand', level: 12, key: 'F', time: '3/4', bpm: 96, pickup: 1,
         rh: `C5:q | C5:q. Bb4:8 A4:q | A4:q. G4:8 F4:q | F4:q E4 D4 | C4:h C4:q |
              C4:q. D4:8 C4:q | C4:q G4 E4 | D4 C4 F4 | A4:h C5:q |
              C5:q. Bb4:8 A4:q | A4:q. G4:8 F4:q | F4:q E4 D4 | C4:h C4:q |
@@ -941,7 +942,7 @@ const LIBRARY = [
              C4:q. D4:8 C4:q | C4:q G4 E4 | D4 C4 F4 | A4:h C5:q |
              C5:q. Bb4:8 A4:q | A4:q. G4:8 F4:q | F4:q E4 D4 | C4:h C4:q |
              Bb4:q. A4:8 G4:q | A4:q G4 F4 | G4 D4 E4 | F4:h r:q`,
-        lh: `r:q | [F2 C3]:h. | % | [Bb2 F3]:q [C3 G3] [D3 A3] | [F2 C3]:h. | % | [C3 G3] | % | [F2 C3] |
+        lh: `r:q | [F2 C3]:h. | % | [Bb2 F3]:q [C3 G3] [D3 A3] | [F2 C3]:h. | % | [C3 G3] | [Bb2 F3]:q [C3 G3] [F2 C3] | [F2 C3]:h. |
              % | % | [Bb2 F3]:q [C3 G3] [D3 A3] | [F2 C3]:h. | [Bb2 F3] | [F2 C3] | [C3 G3] | [F2 C3]:h r:q`,
       },
     ],
@@ -992,7 +993,7 @@ const LIBRARY = [
     category: 'Holiday',
     license: PD_BY('John Francis Wade', 1786),
     source: MUTOPIA('WadeJF/adeste_fideles/adeste_fideles.ly') + ' (melody and bass line).',
-    about: 'Adeste Fideles. The chorus climbs three times, each time a little higher.',
+    about: 'Adeste Fideles. The chorus sings "O come, let us adore Him" three times, building to the final cadence.',
     arrangements: [
       {
         id: 'rh', name: 'Right hand', level: 12, key: 'G', time: '4/4', bpm: 96, pickup: 1,
@@ -1073,9 +1074,9 @@ const LIBRARY = [
              C5:q. A4:8 A4:q F4 | G4:q. F4:8 G4:q D5 | C5:q. A4:8 A4:q C5 | D5:h. D5:q |
              C5:q. A4:8 A4:q F4 | G4:q. F4:8 G4:q A4 | F4:q. D4:8 D4:q C4 | F4:h. r:q`,
         lh: `r:q | [F3 A3 C4]:w | [E3 G3 C4] | [F3 A3 C4] | [F3 Bb3 D4] |
-             [F3 A3 C4] | [E3 G3 C4] | [F3 Bb3 D4]:h [E3 G3 C4] | [F3 A3 C4]:w |
+             [F3 A3 C4] | [E3 G3 C4] | [D3 F3 Bb3]:h. [C3 E3 G3]:q | [F3 A3 C4]:w |
              [F3 A3 C4] | [E3 G3 C4] | [F3 A3 C4] | [F3 Bb3 D4] |
-             [F3 A3 C4] | [E3 G3 C4] | [F3 Bb3 D4]:h [E3 G3 C4] | [F3 A3 C4]:h. r:q`,
+             [F3 A3 C4] | [E3 G3 C4] | [D3 F3 Bb3]:h. [C3 E3 G3]:q | [F3 A3 C4]:h. r:q`,
       },
     ],
   },
@@ -1089,26 +1090,26 @@ const LIBRARY = [
     origin: 'hymn',
     category: 'Hymns & ballads',
     license: PD_TRAD,
-    source: MUTOPIA('Anonymous/new_britain/new_britain.ly') + ' (melody and bass line).',
+    source: MUTOPIA('Anonymous/new_britain/new_britain.ly') + ' (bass line); melody rhythm as in E. O. Excell\'s 1900 setting, since the Mutopia file holds "me" a beat too long.',
     about: 'The most famous American hymn tune, in a slow 3/4.',
     arrangements: [
       {
-        id: 'rh', name: 'Right hand', level: 9, key: 'G', time: '3/4', bpm: 80, pickup: 1,
+        id: 'rh', name: 'Right hand', level: 12, key: 'G', time: '3/4', bpm: 80, pickup: 1,
         rh: `D4:q | G4:h B4:8 G4 | B4:h A4:q | G4:h E4:q | D4:h D4:q |
-             G4:h B4:8 G4 | B4:h A4:q | D5:h. | B4:q D5:q. B4:8 |
-             D5:8 B4 G4:h | D4:q E4:q. G4:8 | G4:8 E4 D4:h | D4:q G4:h |
-             B4:8 G4 B4:h | A4:q G4:h | G4:h r:q`,
+             G4:h B4:8 G4 | B4:h A4:q | D5:h B4:q | D5:q. B4:8 D5 B4 |
+             G4:h D4:q | E4:q. G4:8 G4 E4 | D4:h D4:q | G4:h B4:8 G4 |
+             B4:h A4:q | G4:h.`,
       },
       {
         id: 'both', name: 'Both hands', level: 12, key: 'G', time: '3/4', bpm: 80, pickup: 1,
         rh: `D4:q | G4:h B4:8 G4 | B4:h A4:q | G4:h E4:q | D4:h D4:q |
-             G4:h B4:8 G4 | B4:h A4:q | D5:h. | B4:q D5:q. B4:8 |
-             D5:8 B4 G4:h | D4:q E4:q. G4:8 | G4:8 E4 D4:h | D4:q G4:h |
-             B4:8 G4 B4:h | A4:q G4:h | G4:h r:q`,
+             G4:h B4:8 G4 | B4:h A4:q | D5:h B4:q | D5:q. B4:8 D5 B4 |
+             G4:h D4:q | E4:q. G4:8 G4 E4 | D4:h D4:q | G4:h B4:8 G4 |
+             B4:h A4:q | G4:h.`,
         lh: `G2:q | G2:h G2:8 B2 | D3:h D3:q | E3:h C3:q | G2:h G2:q |
-             G2:h G2:8 B2 | D3:h C3:q | B2:h. | G2:q G3:h |
-             G3:q B2:h | B2:q C3:q. B2:8 | C3:q G2:h | B2:q E3:h |
-             D3:q D3:h | D3:q G2:h | G2:h r:q`,
+             G2:h G2:8 B2 | D3:h C3:q | B2:h G2:q | G3:h G3:q |
+             B2:h B2:q | C3:q. B2:8 C3:q | G2:h B2:q | E3:h D3:q |
+             D3:h D3:q | G2:h.`,
       },
     ],
   },
