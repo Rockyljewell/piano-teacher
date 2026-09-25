@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Maestro Piano Coach</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="description" content="A piano teacher that listens to you play, finds your level and takes you from beginner to master.">
+  <meta name="theme-color" content="#0e1120">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Maestro">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- HOME ------------------------------------------------------------------------------ -->
+    <section id="screen-home" class="screen active">
+      <div class="home-wrap">
+        <header class="brand">
+          <div class="logo" aria-hidden="true">
+            <svg viewBox="0 0 64 64"><rect x="6" y="14" width="52" height="36" rx="6" fill="#1b2140"/><g fill="#fbf7ee"><rect x="10" y="18" width="7" height="28" rx="1.5"/><rect x="19" y="18" width="7" height="28" rx="1.5"/><rect x="28" y="18" width="7" height="28" rx="1.5"/><rect x="37" y="18" width="7" height="28" rx="1.5"/><rect x="46" y="18" width="7" height="28" rx="1.5"/></g><g fill="#0e1120"><rect x="15" y="18" width="5" height="17" rx="1"/><rect x="24" y="18" width="5" height="17" rx="1"/><rect x="42" y="18" width="5" height="17" rx="1"/></g><circle cx="50" cy="12" r="7" fill="#3b8cff"/></svg>
+          </div>
+          <div>
+            <h1>Maestro</h1>
+            <p class="tagline">Your piano coach. It listens, grades you, and takes you from first notes to mastery.</p>
+          </div>
+        </header>
+
+        <div class="hero">
+          <div class="hero-status" id="home-status"></div>
+          <button id="btn-start" class="btn primary huge">Start</button>
+          <p class="hint" id="home-hint">Put your iPad on the music stand in landscape, then tap Start.</p>
+        </div>
+
+        <div class="tiles">
+          <button class="tile" data-go="map"><span class="ti">🗺️</span><b>Lessons</b><small>All 40 levels</small></button>
+          <button class="tile" data-go="practice"><span class="ti">🎯</span><b>Practice</b><small>Sight-reading, rhythm, scales, chords</small></button>
+          <button class="tile" data-go="free"><span class="ti">👂</span><b>Free play</b><small>See every note it hears</small></button>
+          <button class="tile" data-go="placement"><span class="ti">🧭</span><b>Placement test</b><small>Find your level again</small></button>
+          <button class="tile" data-go="progress"><span class="ti">📈</span><b>Progress</b><small>Stats and history</small></button>
+          <button class="tile" data-go="settings"><span class="ti">⚙️</span><b>Settings</b><small>Display, mic, timing</small></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MIC SETUP -------------------------------------------------------------------------- -->
+    <section id="screen-setup" class="screen">
+      <div class="card narrow">
+        <h2>Let's set up listening</h2>
+        <ol class="steps">
+          <li id="step-mic"><b>Microphone</b><span>Allow access so Maestro can hear your piano.</span></li>
+          <li id="step-quiet"><b>Silence check</b><span>Stay quiet for two seconds while I measure the room.</span></li>
+          <li id="step-c"><b>Play middle C</b><span>Play the C near the middle of your keyboard.</span></li>
+        </ol>
+        <div class="meter"><div id="setup-meter"></div></div>
+        <p id="setup-msg" class="msg"></p>
+        <div class="row">
+          <button id="btn-setup-go" class="btn primary">Allow microphone</button>
+          <button id="btn-setup-skip" class="btn ghost">Skip</button>
+        </div>
+        <p class="fine">Tip: the iPad microphone is at the top edge. On the music stand it hears the piano well. Digital piano with MIDI? Plug it in and Maestro will use it too (in browsers that support Web MIDI).</p>
+      </div>
+    </section>
+
+    <!-- LEVEL INTRO ------------------------------------------------------------------------ -->
+    <section id="screen-intro" class="screen">
+      <div class="card intro">
+        <div class="stage-badge" id="intro-stage"></div>
+        <h2 id="intro-title"></h2>
+        <p id="intro-concept" class="concept"></p>
+        <ul id="intro-tips" class="tips"></ul>
+        <div class="row">
+          <button id="btn-intro-go" class="btn primary">Let's play</button>
+          <button class="btn ghost" data-go="home">Home</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLAY ------------------------------------------------------------------------------- -->
+    <section id="screen-play" class="screen play">
+      <div class="hud">
+        <button id="btn-exit" class="icon-btn" aria-label="Exit">✕</button>
+        <div class="hud-title">
+          <b id="hud-title"></b>
+          <small id="hud-sub"></small>
+        </div>
+        <div class="hud-stats">
+          <div><small>Score</small><b id="hud-score">0</b></div>
+          <div><small>Streak</small><b id="hud-combo">0</b></div>
+          <div class="beat-dots" id="hud-beats"></div>
+        </div>
+        <div class="hud-actions">
+          <button id="btn-mode" class="chip" title="Wait mode stops until you play the right notes">Tempo</button>
+          <button id="btn-tempo-down" class="chip" aria-label="Slower">−</button>
+          <span id="hud-bpm" class="bpm">♩ 60</span>
+          <button id="btn-tempo-up" class="chip" aria-label="Faster">+</button>
+          <button id="btn-listen" class="chip" title="Hear how it should sound">🔊 Listen</button>
+          <button id="btn-view" class="chip" title="Display options">👁</button>
+          <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
+        </div>
+      </div>
+      <div class="stage-wrap">
+        <canvas id="stage"></canvas>
+        <div id="mic-dot" class="mic-dot" title="Microphone level"></div>
+        <div id="feedback-pop" class="feedback-pop"></div>
+        <div id="countdown" class="countdown"></div>
+        <div id="free-display" class="free-display hidden"></div>
+        <div id="view-menu" class="popover hidden">
+          <label><input type="checkbox" data-opt="showStaff"> Sheet music</label>
+          <label><input type="checkbox" data-opt="showFalling"> Falling notes</label>
+          <label><input type="checkbox" data-opt="showNames"> Note names</label>
+          <label><input type="checkbox" data-opt="showFingers"> Finger numbers</label>
+          <label><input type="checkbox" data-opt="showHints"> Keyboard hints</label>
+          <label>Metronome
+            <select data-opt="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
+          </label>
+        </div>
+        <div id="pause-menu" class="overlay hidden">
+          <div class="card small">
+            <h2>Paused</h2>
+            <div class="col">
+              <button id="btn-resume" class="btn primary">Resume</button>
+              <button id="btn-restart" class="btn">Restart</button>
+              <button id="btn-skip" class="btn">Skip this exercise</button>
+              <button id="btn-quit" class="btn ghost">Home</button>
+            </div>
+          </div>
+        </div>
+        <div id="results" class="overlay hidden">
+          <div class="card results">
+            <div class="stars" id="res-stars"></div>
+            <div class="big-score"><span id="res-score">0</span><small>%</small></div>
+            <div class="res-grid">
+              <div><b id="res-notes"></b><small>notes hit</small></div>
+              <div><b id="res-timing"></b><small>timing</small></div>
+              <div><b id="res-extra"></b><small>extra notes</small></div>
+              <div><b id="res-offset"></b><small>avg. offset</small></div>
+            </div>
+            <div id="res-level" class="res-level"></div>
+            <ul id="res-tips" class="tips"></ul>
+            <div class="row">
+              <button id="btn-next" class="btn primary">Next</button>
+              <button id="btn-retry" class="btn">Retry</button>
+              <button id="btn-res-home" class="btn ghost">Home</button>
+            </div>
+            <div id="res-auto" class="auto"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LEVEL MAP --------------------------------------------------------------------------- -->
+    <section id="screen-map" class="screen scroll">
+      <div class="topbar"><button class="icon-btn" data-go="home">‹</button><h2>Lessons</h2></div>
+      <div id="map-list" class="map-list"></div>
+    </section>
+
+    <!-- PRACTICE ---------------------------------------------------------------------------- -->
+    <section id="screen-practice" class="screen scroll">
+      <div class="topbar"><button class="icon-btn" data-go="home">‹</button><h2>Practice</h2></div>
+      <div class="card form">
+        <label>Exercise
+          <div class="seg" id="pr-kind">
+            <button data-v="sight" class="on">Sight-reading</button>
+            <button data-v="rhythm">Rhythm</button>
+            <button data-v="scale">Scales</button>
+            <button data-v="arpeggio">Arpeggios</button>
+            <button data-v="chords">Chords</button>
+            <button data-v="notes">Note reading</button>
+          </div>
+        </label>
+        <label>Level <span id="pr-level-name" class="muted"></span>
+          <input type="range" id="pr-level" min="1" max="40" value="1">
+        </label>
+        <label>Mode
+          <div class="seg" id="pr-mode">
+            <button data-v="tempo" class="on">Tempo (graded on time)</button>
+            <button data-v="wait">Wait (stops for you)</button>
+          </div>
+        </label>
+        <label>Tempo <span id="pr-tempo-val" class="muted"></span>
+          <input type="range" id="pr-tempo" min="-50" max="130" value="30">
+        </label>
+        <div class="row"><button id="btn-pr-go" class="btn primary">Start practice</button></div>
+      </div>
+    </section>
+
+    <!-- PROGRESS ---------------------------------------------------------------------------- -->
+    <section id="screen-progress" class="screen scroll">
+      <div class="topbar"><button class="icon-btn" data-go="home">‹</button><h2>Progress</h2></div>
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="card"><h3>Recent scores</h3><canvas id="history-chart" height="180"></canvas></div>
+    </section>
+
+    <!-- SETTINGS ---------------------------------------------------------------------------- -->
+    <section id="screen-settings" class="screen scroll">
+      <div class="topbar"><button class="icon-btn" data-go="home">‹</button><h2>Settings</h2></div>
+      <div class="card form">
+        <h3>Display</h3>
+        <label class="check"><input type="checkbox" data-set="showStaff"> Sheet music</label>
+        <label class="check"><input type="checkbox" data-set="showFalling"> Falling notes</label>
+        <label>Note names on notes
+          <select data-set="showNames"><option value="auto">Auto (beginner levels)</option><option value="true">Always</option><option value="false">Never</option></select>
+        </label>
+        <label class="check"><input type="checkbox" data-set="showFingers"> Finger numbers</label>
+        <label class="check"><input type="checkbox" data-set="showHints"> Highlight keys to play</label>
+        <label>Look-ahead (falling notes) <span class="muted" id="set-look-val"></span>
+          <input type="range" data-set="lookaheadSec" min="1.5" max="6" step="0.5">
+        </label>
+        <h3>Sound &amp; flow</h3>
+        <label>Metronome
+          <select data-set="metronome"><option value="countin">Count-in only</option><option value="always">Always</option><option value="off">Off</option></select>
+        </label>
+        <label class="check"><input type="checkbox" data-set="autoAdvance"> Hands-free: continue to the next exercise automatically</label>
+        <h3>Listening</h3>
+        <label>Microphone sensitivity <span class="muted" id="set-sens-val"></span>
+          <input type="range" data-set="sensitivity" min="0.5" max="2" step="0.1">
+        </label>
+        <label>Timing offset <span class="muted" id="set-lat-val"></span>
+          <input type="range" data-set="latencyMs" min="-150" max="250" step="5">
+        </label>
+        <p class="fine">If Maestro consistently says you are late when you feel on time, raise the offset.</p>
+        <div class="row">
+          <button id="btn-recal" class="btn">Re-run microphone setup</button>
+          <button id="btn-reset" class="btn danger">Reset all progress</button>
+        </div>
+        <p class="fine" id="set-info"></p>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+    <div id="rotate-hint" class="rotate-hint">Turn your iPad sideways (landscape) for the best view.</div>
+  </div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
