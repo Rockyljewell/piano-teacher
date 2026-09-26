@@ -54,7 +54,7 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 2. **Attacks.** Spectral flux is measured only on energy clearly above the noise floor.
 3. **Pitch.** An 8192-sample window goes through noise subtraction and whitening. Harmonic salience is computed for all 88 keys with a piano model (string inharmonicity, stretch tuning, nearly pure treble). Notes are then found by iterative cancellation (after Klapuri, 2006), so every note of a chord is found. The piano's own tuning is learned after a few notes.
 4. **Is it a piano?** A small fitted model scores each candidate note: is the tone steady, does the pitch hold (voices wobble), did it strike and then only decay (voices swell, claps vanish), and how loud is it compared with the room and your recent playing? Each note gets a 0–1 confidence. Doubtful candidates are watched for up to 0.3 s. Wrong notes only count against you when the listener is confident.
-5. **Lesson hints.** During lessons the listener knows which notes are due and the piece's range. Expected notes need less evidence, and stray sounds far outside the piece need more.
+5. **Lesson hints.** During lessons the listener knows which notes are due and the piece's range. Expected notes need less evidence, and stray sounds far outside the piece need more. It also knows the order they come due in: in an arpeggio or a scale, the next note is not reported at the attack of the one before it (whose octave, fifth or third it shares), and the lower note of a bass octave is heard by its odd partials, which the upper note lacks.
 
 **False notes per minute**, measured with `npm run eval:noise` on simulated and real recordings:
 
@@ -84,11 +84,11 @@ Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Note
 
 | In a lesson | Before | Now |
 | --- | --- | --- |
-| Note reported after the attack, C3 and up (median / p90) | 86 / 149 ms | 22 / 40 ms |
-| Same, below C3 (median) | 124 ms | 43 ms |
+| Note reported after the attack, C3 and up (median / p90) | 86 / 149 ms | 22 / 42 ms |
+| Same, below C3 (median) | 124 ms | 44 ms |
 | Chords heard complete | 74.5% | 96.4% |
-| Lesson pieces, levels 1–20 (F1) | 91.2% | 97.7% |
-| Octaves heard complete | 48.9% | 85.2% |
+| Lesson pieces, levels 1–20 (F1) | 91.2% | 98.6% |
+| Octaves heard complete | 48.9% | 92.0% |
 
 A fast path decides each note from short windows starting at the attack (21–85 ms, depending on the register), so the ringing of earlier notes cancels out. It only trusts notes the lesson did not ask for once the piano has clearly been heard, so room noise stays as rare as before. In the browser, worker hops add about 5–15 ms.
 

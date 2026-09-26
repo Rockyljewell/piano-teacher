@@ -4,13 +4,13 @@ How well the market's leading apps hear an acoustic piano through the device mic
 
 Approximate numbers (marked ≈) come from public reviews and vendor help pages, not from our own measurements. They describe different pianos, rooms and devices, so read them as orientation, not as a like-for-like comparison.
 
-| | Simply Piano / Yousician / flowkey (published) | Maestro before (baseline) | Maestro after (maestro-dsp 3.0) |
+| | Simply Piano / Yousician / flowkey (published) | Maestro before (baseline) | Maestro after (maestro-dsp 3.1) |
 | --- | --- | --- | --- |
-| Reaction time, attack → note on screen (median) | ≈ 47 ms | 99 ms in lessons, 297 ms in free play (in-browser, headless Chromium) · 86 ms / 148 ms offline (notes ≥ C3) | 31 ms in lessons (p90 41), 95 ms in free play (in-browser) · 22 ms / 64 ms offline (notes ≥ C3) |
+| Reaction time, attack → note on screen (median) | ≈ 47 ms | 99 ms in lessons, 297 ms in free play (in-browser, headless Chromium) · 86 ms / 148 ms offline (notes ≥ C3) | 31 ms in lessons (p90 43), 79 ms in free play (in-browser) · 22 ms / 64 ms offline (notes ≥ C3) |
 | Single notes, acoustic piano, mic | ≈ 85–90% recognised | 77% recall / 81% precision in free play · 91% / 90% in lessons | 83% recall / 78% precision in free play · 95% / 94% in lessons |
 | Chords | weak ("the same chord played identically would sometimes register incorrectly") | 75% of chords complete in lessons · triads 83% / 80% in free play | 96% of chords complete in lessons (triads 99%) · triads 83% / 77% in free play |
-| Octaves | weak | 49% of octaves complete in lessons · 19% in free play | 85% of octaves complete in lessons (octave dyads 100%, bass octave melodies 73%) · 26% in free play |
-| Fast passages | weak | 65% recall in lessons · 16th scales 46% in free play | 81% recall in lessons · 16th scales 77% in free play |
+| Octaves | weak | 49% of octaves complete in lessons · 19% in free play | 92% of octaves complete in lessons (octave dyads 100%, bass octave melodies 85%) · 26% in free play |
+| Fast passages | weak | 65% recall in lessons · 16th scales 46% in free play | 83% recall in lessons (arpeggios 93% / 92% precision) · 16th scales 77% in free play |
 
 Maestro's numbers are measured on the held-out pianos (Upright KW, YDP grand) in the `stand` condition: an iPad on the music stand, with room reverb and room tone. Free play means the app gives the listener no hints; in lessons it knows which notes are due.
 
