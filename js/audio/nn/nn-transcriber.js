@@ -56,6 +56,8 @@ export async function loadWeights(url = WEIGHTS_URL) {
 // NN_WEIGHTS=/path/to/file.bin (Node only) loads another weights file (training experiments).
 export const ready = isNode ? Promise.resolve(await loadWeights(process.env.NN_WEIGHTS ? (await import('node:url')).pathToFileURL((await import('node:path')).resolve(process.env.NN_WEIGHTS)) : WEIGHTS_URL)) : loadWeights();
 
+// intervals (semitones) at which a struck note's partials can pass for another note
+const GHOST_IV = [12, 19, 24, 28, 31, 36];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // registers for per-register thresholds: A0-B1, C2-B2, C3-B3, C4-B4, C5-B5, C6-C8
 export const REGISTERS = [21, 36, 48, 60, 72, 84, 109];
@@ -81,6 +83,8 @@ const DEC = {
   expectedBonus: 1, // logit added to the confidence of expected notes (as the DSP does)
   refine: 0.02, // s: attack refinement window (+-)
   confirm: 1, // frames an unexpected note must stay above its threshold before it is reported
+  ghostP: 0, // unexpected notes at a partial of a note struck together need p >= ghostP (0: off)
+  minGap: 0.07, // s: two reports of one key need attacks at least this far apart
   gateRise: 0, // unexpected notes need a high-band energy jump of this ratio within +-20 ms (0: off)
 };
 
@@ -130,6 +134,7 @@ export class Transcriber {
     this.rs = new Resampler(this.sr);
     this.armed = new Uint8Array(88).fill(1);
     this.lastFire = new Int32Array(88).fill(-1000);
+    this.lastT = new Float64Array(88).fill(-1e9); // attack time of the last report per key
     this.on = new Uint8Array(88);
     this.offCount = new Uint8Array(88);
     this.above = new Uint8Array(88); // consecutive frames above the threshold
@@ -295,6 +300,7 @@ export class Transcriber {
     this.frameAcc = 0;
     this.armed.fill(1);
     this.lastFire.fill(-1000);
+    this.lastT.fill(-1e9);
     this.offCount.fill(0);
   }
 
@@ -399,6 +405,14 @@ export class Transcriber {
     }
   }
 
+  _ghost(k, t) {
+    for (const iv of GHOST_IV) {
+      const j = k - iv;
+      if (j >= 0 && Math.abs(this.lastT[j] - t) <= 0.035) return true;
+    }
+    return false;
+  }
+
   _frame(f, end) {
     const out = this.model.step(f);
     this.frame++;
@@ -435,6 +449,20 @@ export class Transcriber {
           continue;
         }
         const t = this._time(s);
+        if (!expected && p < D.ghostP && this._ghost(k, t)) {
+          // a partial of a note struck at the same moment an octave / twelfth / ... below
+          this.armed[k] = 0;
+          this.lastFire[k] = this.frame;
+          this.stats.rejected++;
+          continue;
+        }
+        if (t - this.lastT[k] < D.minGap) {
+          // the same attack again (the probability dipped and rose inside its window)
+          this.armed[k] = 0;
+          this.lastFire[k] = this.frame;
+          continue;
+        }
+        this.lastT[k] = t;
         let conf = this._calib(p);
         if (expected) conf = sigmoid(Math.log(conf / Math.max(1e-6, 1 - conf)) + D.expectedBonus);
         const restrike = !!this.on[k];

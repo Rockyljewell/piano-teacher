@@ -179,11 +179,18 @@ for (const gateRise of [1.5, 2, 3, 4]) {
   console.log(`free gateRise ${gateRise}: ${fmt(s)}`);
   if (s.F1 - 0.002 * s.fpm > bestFree.s.F1 - 0.002 * bestFree.s.fpm) bestFree = { ...bestFree, gateRise, r, s };
 }
-console.log(`free choice: ${JSON.stringify({ thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0 })}`);
+// 1c. partial ("ghost") suppression for unexpected notes struck with a note an octave, twelfth ... below
+for (const ghostP of [0.8, 0.9, 0.95, 0.99]) {
+  const r = evaluate({ ...raw, thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, ghostP }, false);
+  const s = summary(r.reg, r.noiseMin);
+  console.log(`free ghostP ${ghostP}: ${fmt(s)}`);
+  if (s.F1 - 0.002 * s.fpm > bestFree.s.F1 - 0.002 * bestFree.s.fpm) bestFree = { ...bestFree, ghostP, r, s };
+}
+console.log(`free choice: ${JSON.stringify({ thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, ghostP: bestFree.ghostP || 0 })}`);
 
 // 2. lesson mode: per-register thresholds for expected notes
 const gridE = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
-const runsE = gridE.map((thrExp) => ({ thrExp, r: evaluate({ ...raw, thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, thrExp }, true) }));
+const runsE = gridE.map((thrExp) => ({ thrExp, r: evaluate({ ...raw, thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, ghostP: bestFree.ghostP || 0, thrExp }, true) }));
 for (const { thrExp, r } of runsE) console.log(`lesson thrExp ${thrExp}: ${fmt(summary(r.reg, r.noiseMin))}`);
 const thrExpReg = [];
 for (let g = 0; g < NR; g++) {
@@ -191,7 +198,7 @@ for (let g = 0; g < NR; g++) {
   for (const x of runsE) if (regScore(x.r.reg[g], x.r.noiseMin) > regScore(b.r.reg[g], b.r.noiseMin)) b = x;
   thrExpReg.push(b.thrExp);
 }
-const rl = evaluate({ ...raw, thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, thrExpReg }, true);
+const rl = evaluate({ ...raw, thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, ghostP: bestFree.ghostP || 0, thrExpReg }, true);
 console.log(`lesson per-register ${JSON.stringify(thrExpReg)}: ${fmt(summary(rl.reg, rl.noiseMin))}`);
 
 // 3. confidence: precision of unexpected notes as a function of p at firing (free play)
@@ -199,7 +206,7 @@ const calib = isotonic(bestFree.r.fired.filter((f) => !f[2]).map((f) => [f[0], f
 calib.unshift([0, 0]);
 calib.push([1, Math.max(calib[calib.length - 1][1], 0.99)]);
 console.log('calibration (p at firing -> precision):', JSON.stringify(calib));
-const dec = { thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, thrExpReg, calib, thr: median(bestFree.thrReg), thrExp: median(thrExpReg) };
+const dec = { thrReg: bestFree.thrReg, confirm: bestFree.confirm, gateRise: bestFree.gateRise || 0, ghostP: bestFree.ghostP || 0, thrExpReg, calib, thr: median(bestFree.thrReg), thrExp: median(thrExpReg) };
 console.log('decoder:', JSON.stringify(dec));
 for (const lesson of [false, true]) {
   const r = evaluate({ ...dec, thrStrict: 0 }, lesson);
