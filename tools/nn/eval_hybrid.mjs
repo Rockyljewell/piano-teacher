@@ -69,23 +69,34 @@ function run(Cls, x, notes, lesson, opts = {}) {
   return ev.filter((e) => e.t >= 0.45);
 }
 
-// the hybrid's rules (js/audio/nn/hybrid-transcriber.js) replayed on recorded streams
-function hybrid(nnEv, dspEv, { mode, trustP, rescueConf = 0.7, wait }) {
+// the hybrid's rules (js/audio/nn/hybrid-transcriber.js) replayed on the recorded streams
+function hybrid(nnEv, dspEv, { trustP, octP, wait = 0.06 }) {
+  const all = [...nnEv.map((e) => ({ ...e, src: 'nn' })), ...dspEv.map((e) => ({ ...e, src: 'dsp' }))].sort((a, b) => a.at - b.at);
   const out = [];
-  for (const e of nnEv) {
-    if (mode === 'none' || e.exp || e.p >= trustP) {
+  let held = [];
+  const has = (m, t) => out.some((e) => e.midi === m && Math.abs(e.t - t) <= 0.08);
+  const partner = (m, t) => out.some((e) => e.src === 'dsp' && Math.abs(e.t - t) <= 0.04 && (e.midi === m - 12 || e.midi === m + 12 || e.midi === m - 24));
+  const check = (now) => {
+    const keep = [];
+    for (const h of held) {
+      if (has(h.midi, h.t)) continue;
+      if (partner(h.midi, h.t)) out.push({ ...h, at: Math.max(h.at, now) });
+      else if (now < h.at + wait) keep.push(h);
+    }
+    held = keep;
+  };
+  for (const e of all) {
+    check(e.at);
+    if (e.src === 'dsp') {
+      if (!e.restrike && out.some((x) => x.src === 'nn' && x.midi === e.midi && Math.abs(x.t - e.t) <= 0.08)) continue;
       out.push(e);
-      continue;
+      check(e.at);
+    } else {
+      if (e.restrike || has(e.midi, e.t)) continue;
+      if (e.p >= trustP) out.push(e);
+      else if (e.p >= octP) held.push(e);
     }
-    const d = dspEv.find((x) => x.midi === e.midi && Math.abs(x.t - e.t) <= 0.08 && x.at <= e.at + wait);
-    if (d) out.push({ ...e, at: Math.max(e.at, d.at) });
   }
-  if (rescueConf < 1)
-    for (const d of dspEv) {
-      if (d.restrike || d.conf < rescueConf) continue;
-      if (out.some((e) => e.midi === d.midi && Math.abs(e.t - d.t) <= 0.08)) continue;
-      out.push(d);
-    }
   return out;
 }
 
@@ -114,19 +125,16 @@ for (const m of index) {
   const notes = m.notes.filter((n) => n.t >= 0.45 && n.t < x.length / SR - 0.1);
   const r = { noise: m.meta.kind === 'noise-only', sec: x.length / SR, notes };
   for (const lesson of [false, true]) {
-    r[lesson ? 'nnL' : 'nnF'] = run(NN, x, m.notes, lesson);
+    r[lesson ? 'nnLd' : 'nnFd'] = run(NN, x, m.notes, lesson); // the network alone (its own decoder)
+    r[lesson ? 'nnL' : 'nnF'] = run(NN, x, m.notes, lesson, { decoder: { ghostP: 0 } }); // as inside the hybrid
     r[lesson ? 'dspL' : 'dspF'] = run(DSP, x, m.notes, lesson);
   }
   rec.push(r);
 }
 console.log(`${rec.length} mixtures recorded in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 
-const configs = [
-  { name: 'nn', mode: 'none', rescueConf: 1.1 },
-  { name: 'dsp', dspOnly: true },
-  ...[0.9, 0.95, 0.97, 0.99, 1.01].map((trustP) => ({ name: `emit trust ${trustP}`, mode: 'emit', trustP, wait: 0.35 })),
-  { name: 'emit trust 0.97 no rescue', mode: 'emit', trustP: 0.97, wait: 0.35, rescueConf: 1.1 },
-];
+const configs = [{ name: 'nn', nnOnly: true }, { name: 'dsp', dspOnly: true }];
+for (const trustP of [0.9, 0.95, 0.97, 0.99, 1.01]) for (const octP of [0.5, 0.7, 0.9, 1.01]) configs.push({ name: `trust ${trustP} oct ${octP}`, trustP, octP });
 for (const lesson of [false, true]) {
   for (const c of configs) {
     const acc = { n: 0, hit: 0, ev: 0, lat: [] };
@@ -135,7 +143,7 @@ for (const lesson of [false, true]) {
     for (const r of rec) {
       const nn = r[lesson ? 'nnL' : 'nnF'],
         dsp = r[lesson ? 'dspL' : 'dspF'];
-      const ev = c.dspOnly ? dsp : hybrid(nn, dsp, c);
+      const ev = c.dspOnly ? dsp : c.nnOnly ? r[lesson ? 'nnLd' : 'nnFd'] : hybrid(nn, dsp, c);
       if (r.noise) {
         fp += ev.length;
         sec += r.sec;
