@@ -27,10 +27,12 @@ let WEIGHTS = null;
 let loadError = null;
 const isNode = typeof process !== 'undefined' && !!(process.versions && process.versions.node) && typeof window === 'undefined';
 
+// Install weights: a weights-file buffer, an already parsed file, or null (none).
 export function setWeights(buf) {
-  WEIGHTS = buf ? parseWeights(buf) : null;
+  WEIGHTS = buf ? (buf.header ? buf : parseWeights(buf)) : null;
   return WEIGHTS;
 }
+export const getWeights = () => WEIGHTS;
 export const weightsLoaded = () => !!WEIGHTS;
 export const weightsError = () => loadError;
 
