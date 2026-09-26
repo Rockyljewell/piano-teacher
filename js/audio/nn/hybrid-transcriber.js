@@ -27,6 +27,7 @@ export class Transcriber {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
+    this.reP = opts.reP ?? num(ENV.HYBRID_REP, 1.1); // lessons: a due note struck again (>1: never)
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
     this.stats = { emitted: 0, rejected: 0, restrikes: 0, nnAdded: 0, nnDropped: 0, dspDropped: 0 };
     // free play: the arbiter; its list of reported notes (the last ~1.5 s) serves lessons too
@@ -116,9 +117,10 @@ export class Transcriber {
 
   _nnNote(midi, t, vel, info = {}) {
     if (!this.lesson) return this.arb.nn(midi, t, vel, info, this.at);
-    if (info.restrike || this._has(midi, t)) return;
+    if (this._has(midi, t)) return;
     // lessons: the DSP is excellent; the network only adds due notes it is fairly sure of
-    if (info.expected && (info.p ?? 0) >= this.expP) {
+    // (a due key struck again while it still sounds - repeated notes, trills - needs more)
+    if (info.expected && (info.p ?? 0) >= (info.restrike ? this.reP : this.expP)) {
       this.stats.nnAdded++;
       return this._report(midi, t, vel, info, 'nn');
     }
