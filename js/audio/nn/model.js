@@ -153,29 +153,52 @@ export class Model {
     const c = header.cfg;
     this.cfg = c;
     this.T = T;
-    this.C1 = c.c1;
-    this.C2 = c.c2;
-    this.NK = 88;
-    this.NP = 264;
+    const C1 = (this.C1 = c.c1);
+    const C2 = (this.C2 = c.c2);
+    const NK = (this.NK = 88);
+    const NP = (this.NP = 264);
     this.NB = header.frontend.nb;
     this.H = c.shifts.length;
-    this.CIN = 2 * this.H;
+    this.diff = c.diff || 0; // extra input: short-window rise over `diff` frames
+    this.NF = this.diff ? 3 : 2; // feature maps: long, short (, short rise)
+    this.CIN = this.NF * this.H;
     this.KO = 2 + c.k_onset;
+    // per-tap weight vectors (contiguous over channels) for the depthwise convolutions
+    this.bTap = Array.from({ length: 9 }, (_, q) => Float32Array.from({ length: C1 }, (_, ch) => T.b_w[ch * 9 + q]));
+    // key layer: reorder the input columns from (channel, position) to (position, channel) so
+    // the B output [264][C1] can be read directly as [88][3 * C1]
+    this.kW = new Float32Array(C2 * 3 * C1);
+    for (let o = 0; o < C2; o++) for (let ch = 0; ch < C1; ch++) for (let j = 0; j < 3; j++) this.kW[o * 3 * C1 + j * C1 + ch] = T.k_w[o * 3 * C1 + ch * 3 + j];
+    const xoff = [0, ...c.xoff];
     this.blocks = c.blocks.map((b, i) => {
       const kind = b[0] === 't' ? 't' : 'x';
       const d = kind === 't' ? Number(b.slice(1)) : 0;
-      return { kind, d, i, hist: kind === 't' ? Array.from({ length: 2 * d + 1 }, () => new Float32Array(this.NK * this.C2)) : null, h: 0 };
+      const p = `blk${i}_`;
+      const dw = T[p + 'dw'];
+      const nt = kind === 't' ? 3 : xoff.length;
+      const taps = Array.from({ length: nt }, (_, q) => Float32Array.from({ length: C2 }, (_, ch) => dw[ch * nt + q]));
+      return {
+        kind,
+        d,
+        taps,
+        off: kind === 'x' ? xoff : null,
+        pw_w: T[p + 'pw_w'],
+        pw_b: T[p + 'pw_b'],
+        g_w: T[p + 'g_w'],
+        g_b: T[p + 'g_b'],
+        s: T[p + 's'],
+        t: T[p + 't'],
+        hist: kind === 't' ? Array.from({ length: 2 * d + 1 }, () => new Float32Array(NK * C2)) : null,
+        h: 0,
+      };
     });
-    const NP = this.NP,
-      NK = this.NK,
-      C1 = this.C1,
-      C2 = this.C2;
-    this.xn = new Float32Array(2 * this.NB);
+    this.xn = new Float32Array(3 * this.NB);
+    this.sHist = Array.from({ length: Math.max(1, this.diff) }, () => new Float32Array(this.NB)); // normalised short spectra, t-1 .. t-diff
+    this.sIdx = 0;
     this.S = new Float32Array(NP * this.CIN);
     this.A = [0, 1, 2].map(() => new Float32Array(NP * C1)); // ring: A at t, t-1, t-2
     this.aIdx = 0;
     this.Bo = new Float32Array(NP * C1);
-    this.Kin = new Float32Array(NK * C1 * 3);
     this.X = new Float32Array(NK * C2);
     this.Y = new Float32Array(NK * C2);
     this.Z = new Float32Array(NK * C2);
@@ -193,6 +216,7 @@ export class Model {
   }
 
   reset() {
+    for (const h of this.sHist) h.fill(0);
     for (const a of this.A) a.fill(0);
     for (const b of this.blocks) if (b.hist) for (const h of b.hist) h.fill(0);
     this.frames = 0;
@@ -211,18 +235,29 @@ export class Model {
     const xn = this.xn;
     for (let w = 0; w < 2; w++) {
       const mu = T.mu[w],
-        sd = T.sd[w];
-      for (let k = 0; k < NB; k++) xn[w * NB + k] = (f[w * NB + k] - mu) / sd;
+        isd = 1 / T.sd[w];
+      for (let k = 0; k < NB; k++) xn[w * NB + k] = (f[w * NB + k] - mu) * isd;
     }
-    // harmonic stack [P][2*H]
+    if (this.diff) {
+      // rise of the short-window spectrum since `diff` frames ago (zeros before the start)
+      const old = this.sHist[this.sIdx];
+      for (let k = 0; k < NB; k++) {
+        const v = xn[NB + k];
+        xn[2 * NB + k] = v - old[k];
+        old[k] = v;
+      }
+      this.sIdx = (this.sIdx + 1) % this.diff;
+    }
+    // harmonic stack [P][NF*H]
     const S = this.S,
-      sidx = this.sidx;
+      sidx = this.sidx,
+      NF = this.NF;
     for (let p = 0; p < NP; p++) {
       const o = p * CIN;
       for (let h = 0; h < H; h++) {
         const b = sidx[p * H + h];
-        S[o + h] = b >= 0 ? xn[b] : 0;
-        S[o + H + h] = b >= 0 ? xn[NB + b] : 0;
+        if (b < 0) for (let c = 0; c < NF; c++) S[o + c * H + h] = 0;
+        else for (let c = 0; c < NF; c++) S[o + c * H + h] = xn[c * NB + b];
       }
     }
     // A: 1x1 conv + BN + ReLU
@@ -232,32 +267,34 @@ export class Model {
       A2 = this.A[(this.aIdx + 1) % 3]; // t, t-1, t-2
     matmul(S, NP, CIN, T.a_w, C1, T.a_b, A0, true);
     // B: depthwise 3 (time) x 3 (freq), causal; residual; BN; ReLU
-    const WB = T.b_w,
-      sB = T.b_s,
-      tB = T.b_t,
-      Bo = this.Bo;
+    const Bo = this.Bo;
+    Bo.set(A0);
     const Ar = [A2, A1, A0]; // kernel time index 0 -> t-2
+    for (let i = 0; i < 3; i++) {
+      const Ai = Ar[i],
+        w0 = this.bTap[i * 3],
+        w1 = this.bTap[i * 3 + 1],
+        w2 = this.bTap[i * 3 + 2];
+      for (let c = 0; c < C1; c++) Bo[c] += w1[c] * Ai[c] + w2[c] * Ai[C1 + c];
+      for (let p = 1; p < NP - 1; p++) {
+        const q = p * C1;
+        for (let c = 0; c < C1; c++) Bo[q + c] += w0[c] * Ai[q - C1 + c] + w1[c] * Ai[q + c] + w2[c] * Ai[q + C1 + c];
+      }
+      const q = (NP - 1) * C1;
+      for (let c = 0; c < C1; c++) Bo[q + c] += w0[c] * Ai[q - C1 + c] + w1[c] * Ai[q + c];
+    }
+    const sB = T.b_s,
+      tB = T.b_t;
     for (let p = 0; p < NP; p++) {
+      const q = p * C1;
       for (let c = 0; c < C1; c++) {
-        let y = A0[p * C1 + c];
-        for (let i = 0; i < 3; i++) {
-          const Ai = Ar[i];
-          const w = c * 9 + i * 3;
-          if (p > 0) y += WB[w] * Ai[(p - 1) * C1 + c];
-          y += WB[w + 1] * Ai[p * C1 + c];
-          if (p < NP - 1) y += WB[w + 2] * Ai[(p + 1) * C1 + c];
-        }
-        const v = sB[c] * y + tB[c];
-        Bo[p * C1 + c] = v > 0 ? v : 0;
+        const v = sB[c] * Bo[q + c] + tB[c];
+        Bo[q + c] = v > 0 ? v : 0;
       }
     }
-    // keys: 3 positions x C1 -> C2 (+ per-key bias), ReLU
-    const Kin = this.Kin;
-    for (let k = 0; k < NK; k++)
-      for (let c = 0; c < C1; c++)
-        for (let j = 0; j < 3; j++) Kin[k * C1 * 3 + c * 3 + j] = Bo[(3 * k + j) * C1 + c];
+    // keys: the 3 positions x C1 of each key -> C2 (+ per-key bias), ReLU
     let X = this.X;
-    matmul(Kin, NK, C1 * 3, T.k_w, C2, T.k_b, X, false);
+    matmul(Bo, NK, C1 * 3, this.kW, C2, T.k_b, X, false);
     const emb = T.kemb;
     for (let k = 0; k < NK; k++)
       for (let o = 0; o < C2; o++) {
@@ -265,12 +302,10 @@ export class Model {
         X[k * C2 + o] = v > 0 ? v : 0;
       }
     // residual blocks
-    const XOFF = this.cfg.xoff;
     for (const bl of this.blocks) {
-      const p = `blk${bl.i}_`;
       const Y = this.Y;
       if (bl.kind === 't') {
-        // history ring of the block input: hist[h] = x at t, older ones behind
+        // history ring of the block input
         bl.h = (bl.h + 1) % bl.hist.length;
         const cur = bl.hist[bl.h];
         cur.set(X);
@@ -278,55 +313,68 @@ export class Model {
           d = bl.d;
         const xm1 = bl.hist[(bl.h - d + L) % L],
           xm2 = bl.hist[(bl.h - 2 * d + L) % L];
-        const dw = T[p + 'dw'];
-        for (let k = 0; k < NK; k++)
-          for (let c = 0; c < C2; c++) {
-            const q = k * C2 + c;
-            Y[q] = dw[c * 3] * xm2[q] + dw[c * 3 + 1] * xm1[q] + dw[c * 3 + 2] * cur[q];
-          }
+        const [w0, w1, w2] = bl.taps;
+        for (let k = 0; k < NK; k++) {
+          const q = k * C2;
+          for (let c = 0; c < C2; c++) Y[q + c] = w0[c] * xm2[q + c] + w1[c] * xm1[q + c] + w2[c] * cur[q + c];
+        }
       } else {
-        const dw = T[p + 'dw']; // [C2][1 + len(XOFF)]
-        const nO = XOFF.length + 1;
-        for (let k = 0; k < NK; k++)
-          for (let c = 0; c < C2; c++) {
-            let y = dw[c * nO] * X[k * C2 + c];
-            for (let j = 0; j < XOFF.length; j++) {
-              const kk = k + XOFF[j];
-              if (kk >= 0 && kk < NK) y += dw[c * nO + j + 1] * X[kk * C2 + c];
-            }
-            Y[k * C2 + c] = y;
+        // depthwise across keys at fixed offsets (octaves, twelfths, neighbours)
+        const off = bl.off,
+          taps = bl.taps;
+        const w = taps[0];
+        for (let k = 0; k < NK; k++) {
+          const q = k * C2;
+          for (let c = 0; c < C2; c++) Y[q + c] = w[c] * X[q + c];
+        }
+        for (let j = 1; j < off.length; j++) {
+          const o = off[j],
+            wj = taps[j];
+          const k0 = Math.max(0, -o),
+            k1 = Math.min(NK, NK - o);
+          for (let k = k0; k < k1; k++) {
+            const q = k * C2,
+              r = (k + o) * C2;
+            for (let c = 0; c < C2; c++) Y[q + c] += wj[c] * X[r + c];
           }
+        }
       }
       const Z = this.Z;
-      matmul(Y, NK, C2, T[p + 'pw_w'], C2, T[p + 'pw_b'], Z, false);
+      matmul(Y, NK, C2, bl.pw_w, C2, bl.pw_b, Z, false);
       if (bl.kind === 'x') {
         // global context: mean and max over keys -> linear -> added to every key
         const g = this.g;
         for (let c = 0; c < C2; c++) {
-          let s = 0,
-            m = -Infinity;
-          for (let k = 0; k < NK; k++) {
-            const v = X[k * C2 + c];
-            s += v;
-            if (v > m) m = v;
+          g[c] = 0;
+          g[C2 + c] = -Infinity;
+        }
+        for (let k = 0; k < NK; k++) {
+          const q = k * C2;
+          for (let c = 0; c < C2; c++) {
+            const v = X[q + c];
+            g[c] += v;
+            if (v > g[C2 + c]) g[C2 + c] = v;
           }
-          g[c] = s / NK;
-          g[C2 + c] = m;
         }
-        matmul(g, 1, 2 * C2, T[p + 'g_w'], C2, T[p + 'g_b'], this.gb, false);
+        for (let c = 0; c < C2; c++) g[c] /= NK;
+        matmul(g, 1, 2 * C2, bl.g_w, C2, bl.g_b, this.gb, false);
         const gb = this.gb;
-        for (let k = 0; k < NK; k++) for (let c = 0; c < C2; c++) Z[k * C2 + c] += gb[c];
-      }
-      const s = T[p + 's'],
-        t = T[p + 't'];
-      const Xn = this.Y; // reuse
-      for (let k = 0; k < NK; k++)
-        for (let c = 0; c < C2; c++) {
-          const q = k * C2 + c;
-          const v = s[c] * (X[q] + Z[q]) + t[c];
-          Xn[q] = v > 0 ? v : 0;
+        for (let k = 0; k < NK; k++) {
+          const q = k * C2;
+          for (let c = 0; c < C2; c++) Z[q + c] += gb[c];
         }
-      // swap X <-> Y buffers
+      }
+      const s = bl.s,
+        t = bl.t;
+      const Xn = this.Y; // reuse
+      for (let k = 0; k < NK; k++) {
+        const q = k * C2;
+        for (let c = 0; c < C2; c++) {
+          const v = s[c] * (X[q + c] + Z[q + c]) + t[c];
+          Xn[q + c] = v > 0 ? v : 0;
+        }
+      }
+      // swap buffers
       this.Y = X;
       this.X = Xn;
       X = Xn;
