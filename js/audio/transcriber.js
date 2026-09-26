@@ -124,6 +124,7 @@ function evalModel(M, x) {
 
 export class Transcriber {
   constructor(sampleRate, opts = {}) {
+    if (typeof process !== 'undefined' && process.env && process.env.TR_OPTS) opts = { ...opts, ...JSON.parse(process.env.TR_OPTS) }; // TEMP-EXPERIMENT
     this.sr = sampleRate;
     this.win = sampleRate > 60000 ? 16384 : 8192;
     this.nfft = this.win * 2;
@@ -221,6 +222,15 @@ export class Transcriber {
     this.rejected = new Map(); // midi -> attack time already rejected
     this.emittedAt = new Map(); // midi -> attack time of the last emitted note-on
     this.expected = new Set();
+    this.expEntry = new Map(); // midi -> when it joined the expected notes (s)
+    this.struckEntry = new Map(); // midi -> { at: attack time it was last struck, entry: when it had joined the expected notes }
+    // Lesson hints (fitted on the Salamander grand and the synth only):
+    this.dueGap = opts.dueGap ?? 0.04; // s: notes that joined the expected ones this far apart are due one after the other (_dueLater)
+    this.dueRise = opts.dueRise ?? 4; // a due note may start at a flux peak with 4x less rise (_attackFor)...
+    this.dueLook = opts.dueLook ?? true; // ... that the fast path then examines too
+    // an octave's lower note (_octaveLow): its odd partials vs its even ones and vs the gaps
+    // between partials
+    this.octLow = { odd: 0.2, gap: 1.5, ...opts.octLow };
     this.range = null;
     this.calibrating = null;
     this.frameRms = 0;
@@ -258,8 +268,44 @@ export class Transcriber {
   // (MIDI) of the piece: unexpected notes far outside it need more evidence.
   setExpected(midis, range) {
     this.expected = new Set(midis);
+    // when each note joined the expected notes: the app adds them as they come within reach,
+    // so this gives the order they are due in (the notes of a chord join together)
+    const now = Math.max(0, this.pos) / this.sr;
+    const entry = new Map();
+    for (const m of this.expected) entry.set(m, this.expEntry.get(m) ?? now);
+    this.expEntry = entry;
     if (this.expected.size) this.lessonT = Math.max(0, this.pos) / this.sr;
     if (range !== undefined) this.range = range;
+  }
+
+  // A due note that joined the expected notes clearly after another one that was struck at
+  // the attack at time `at` is a later note of the passage (arpeggio, broken chord, scale), not
+  // part of this attack: the partials it shares with the note just struck (octave, fifth,
+  // third...) are no evidence that it was struck too. (The struck note may have left the
+  // expected notes since: what counts is when it had joined them.)
+  _dueLater(m, at) {
+    const e = this.expEntry.get(m);
+    if (e == null) return false;
+    for (const [n, r] of this.struckEntry) if (n !== m && r.at === at && r.entry < e - this.dueGap) return true;
+    return false;
+  }
+
+  // ... or than a due note for which `pred` holds (at the fast path's windows).
+  _dueAfter(m, pred) {
+    const e = this.expEntry.get(m);
+    if (e == null) return false;
+    for (const [n, en] of this.expEntry) if (n !== m && en < e - this.dueGap && pred(n)) return true;
+    return false;
+  }
+
+  // Has the due note `n` been heard since it joined the expected notes?
+  _heard(n) {
+    const e = this.expEntry.get(n);
+    if (e == null) return false;
+    const at = this.emittedAt.get(n);
+    if (at != null && at >= e) return true;
+    const st = this.active.get(n);
+    return !!st && st.lastStrike >= e;
   }
 
   // A piece is being played: the app gave its range, or notes were due in the last 3 s.
@@ -1214,6 +1260,8 @@ export class Transcriber {
       if (this.pianoAll.length > 32) this.pianoAll.shift();
     }
     if (this.emitPath === 'fast' && !restrike) this.fastAt.set(midi, t);
+    if (this.expEntry.has(midi)) this.struckEntry.set(midi, { at: t, entry: this.expEntry.get(midi) });
+    else this.struckEntry.delete(midi);
     if (!restrike) {
       this.active.set(midi, { on: t, missing: 0, sal, lastStrike: t, conf, fresh: true });
       this.emittedAt.set(midi, t);
@@ -1301,7 +1349,10 @@ export class Transcriber {
   _decide(p, t, final = false) {
     const nf = p.feats.length;
     if (nf < 2) return;
-    const expected = this.expected.has(p.midi);
+    let expected = this.expected.has(p.midi);
+    // due later than a note struck at this attack: not due yet (see _dueLater)
+    const notYet = expected && this._inLesson() && this._dueLater(p.midi, p.attack.t);
+    if (notYet) expected = false;
     const age = t - p.attack.t;
     const env = this._envelope(p.midi, p.attack.t, t);
     let conf = this._confidence(p, env, expected);
@@ -1324,7 +1375,7 @@ export class Transcriber {
     // During a piece, an unexpected note the fast path examined at this attack - in a register
     // its windows resolve - and found unlikely is a ghost of the notes that are due (their
     // octaves, twelfths, neighbours), not a wrong key.
-    if (decision === 'emit' && !expected && this._inLesson() && this._lookVeto(p.midi, p.attack)) decision = 'reject';
+    if (decision === 'emit' && !expected && this._inLesson() && (notYet || this._lookVeto(p.midi, p.attack))) decision = 'reject';
     // In free play only a clear "no" from the fast path counts (it may miss soft notes).
     else if (decision === 'emit' && !expected && !this._inLesson() && this.vetoFree && this._lookVeto(p.midi, p.attack, this.vetoFree)) decision = 'reject';
     if (this.collect && this.onCandidate) this.onCandidate({ midi: p.midi, t, attackT: p.attack.t, age, nf, conf, decision: decision || 'observe', expected, x: { ...p.x }, raw: { ...p.raw } });
@@ -1424,7 +1475,7 @@ export class Transcriber {
       }
       // during a piece, only the notes that are due are struck again (a sounding bass note
       // whose high partial a new note shares is not)
-      if (this._inLesson()) hits = hits.filter((c) => this.expected.has(c.midi));
+      if (this._inLesson()) hits = hits.filter((c) => this.expected.has(c.midi) && !this._dueLater(c.midi, ot));
       // Which partials rose? All of them: the note was struck again. Only the even ones: the
       // octave above was struck (a new note hiding in this one's spectrum); only every third:
       // the twelfth above.
@@ -1522,16 +1573,23 @@ export class Transcriber {
     if (best) return best;
     // deep bass notes take longer to emerge from under the previous one
     const wspan = midi < 40 ? 0.45 : span;
+    // a due note not heard yet may start at a softer flux peak (a bass melody's hammer is soft
+    // and its partials rise out of the previous note's, a semitone or two away)
+    const due = this.expected.has(midi) && this._inLesson() && !this._heard(midi);
+    const need = (o) => (o.medium ? 2.5 : 8) / (due ? this.dueRise : 1);
     for (let i = this.weakPeaks.length - 1; i >= 0; i--) {
       const o = this.weakPeaks[i];
       if (o.t > t - 0.03) continue;
       if (o.t < t - wspan) break;
       const r = this._riseAfter(midi, o.t, t);
-      if (r >= (o.medium ? 2.5 : 8) && r > bestR * 2) {
+      if (r >= need(o) && r > bestR * 2) {
         best = o;
         bestR = r;
       }
     }
+    // the fast path did not look at that soft attack: let it (it resolves the bass, and an
+    // octave's lower note, better than the long window)
+    if (best && due && !best.look && this.fast && !this.calibrating && this.dueLook) this._lookStart(best);
     return best;
   }
 
@@ -1692,7 +1750,7 @@ export class Transcriber {
     for (const m of this.expected) extra(m);
     for (const m of this.active.keys()) extra(m);
     const salY = new Float64Array(130).fill(-1);
-    const x = { l, L, li, F, A, B, NP, D, Y, maxK, fmin, binHz, cands, found, byMidi, flat, salY, defer, blk: bestBlk / (best + 1e-9) };
+    const x = { l, L, li, F, A, B, NP, D, Y, maxK, fmin, binHz, cands, found, byMidi, all, flat, salY, defer, blk: bestBlk / (best + 1e-9) };
     this._lookRelate(x);
     l.fminDone = fmin;
     // new notes first: a sounding note is not "struck again" by a new note whose partials it shares
@@ -1792,6 +1850,41 @@ export class Transcriber {
       }
     }
     return found;
+  }
+
+  // What the attack added at a note's odd partials, at its even partials and halfway between
+  // partials (rms of the peak magnitudes, partials 1-10 above 60 Hz). A note an octave above
+  // puts energy only at the even ones: odd partials standing out of the gaps are the note's own.
+  _oddEven(c, D, maxK, binHz) {
+    const P = c.partials;
+    let so = 0,
+      no = 0,
+      se = 0,
+      ne = 0,
+      sg = 0,
+      ng = 0;
+    for (let i = 0; i < P.length && P[i].h <= 10; i++) {
+      const p = P[i];
+      if (p.hi > maxK) break;
+      if (p.f < 60) continue;
+      let m = 0;
+      for (let k = p.lo; k <= p.hi; k++) if (D[k] > m) m = D[k];
+      if (p.h % 2) {
+        so += m * m;
+        no++;
+      } else {
+        se += m * m;
+        ne++;
+      }
+      const nx = P[i + 1];
+      if (!nx) continue;
+      const k = Math.round((p.f + nx.f) / 2 / binHz);
+      if (k + 1 > maxK) continue;
+      const g = Math.max(D[k - 1], D[k], D[k + 1]);
+      sg += g * g;
+      ng++;
+    }
+    return { odd: no ? Math.sqrt(so / no) : 0, even: ne ? Math.sqrt(se / ne) : 0, gap: ng ? Math.sqrt(sg / ng) : 0 };
   }
 
   // Amplitudes (difference spectrum) of a note's first partials; 0 where out of range.
@@ -2071,6 +2164,21 @@ export class Transcriber {
     };
   }
 
+  // The lower note of a due octave whose upper note was struck at this attack: every partial of
+  // the upper note is an even partial of this one, so the model cannot tell - its odd partials
+  // can (the upper note puts nothing there). Needs a window that resolves the partials.
+  _octaveLow(m, c, x) {
+    const K = this.octLow;
+    if (x.li < 3 || !this._inLesson()) return false;
+    const up = m + 12;
+    if (!this.expected.has(up)) return false;
+    const r = this.struckEntry.get(up);
+    const f = x.byMidi.get(up);
+    if (!(x.l.emitted.includes(up) || (r && r.at === x.l.o.t) || (f && f.found))) return false;
+    const o = this._oddEven(c, x.D, x.maxK, this.sr / x.F);
+    return o.odd >= K.odd * o.even && o.odd >= K.gap * o.gap;
+  }
+
   _lookDecide(f, x) {
     const { l, L, F, A, B, NP, Y, maxK, fmin, cands } = x;
     const m = f.midi;
@@ -2120,6 +2228,13 @@ export class Transcriber {
       l.done.add(m);
       return;
     }
+    if (exp && this._inLesson()) {
+      // due later than a note struck at this attack: not due yet, leave it to the long window
+      if (this._dueLater(m, l.o.t)) return;
+      // ... or than a note not heard yet that this window finds strongest or cannot resolve
+      // yet (a bass note): wait for a longer window
+      if (this._dueAfter(m, (n) => !this._heard(n) && (cands[n - MIDI_MIN].f0 < fmin || x.all.some((g) => g.midi === n && g.score >= 1 && g.rank === 0)))) return;
+    }
     let need;
     if (exp) need = this.expNeed ?? 0.85 + 0.15 * s;
     else {
@@ -2132,7 +2247,7 @@ export class Transcriber {
       need = this.freeNeed + 0.15 * s;
       if (this.range && (m < this.range[0] - 5 || m > this.range[1] + 5)) need = Math.min(0.99, need + 0.05);
     }
-    if (p < need / sens) return;
+    if (p < need / sens && !(exp && this._octaveLow(m, c, x))) return;
     l.done.add(m);
     this.stats.fast = (this.stats.fast || 0) + 1;
     l.emitted.push(m);

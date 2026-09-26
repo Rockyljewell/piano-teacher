@@ -138,3 +138,62 @@ test('the fast path never reports an unexpected note before it knows how loud th
   assert.ok(!tr.stats.fast, 'first note decided by the long window');
   assert.ok(events[0].at - 1 >= 0.06, `reported after ${((events[0].at - 1) * 1000).toFixed(0)} ms`);
 });
+
+// Broken chords (arpeggios, 16ths at 120 bpm) with lesson hints: several notes of the same chord
+// are due at every attack, and each shares partials with the note just struck (its octave, fifth,
+// third). The notes due later must not be reported at the first one's attack.
+test('lesson hints: an arpeggio reports each note at its own attack, not the notes due after it', () => {
+  let hit = 0,
+    extra = 0,
+    n = 0;
+  for (const seed of [41, 43]) {
+    const r = rng(seed);
+    const notes = [];
+    let t = 0.8;
+    for (const [root, minor] of [[48, 0], [57, 1], [53, 0], [43, 1]]) {
+      const tri = [0, minor ? 3 : 4, 7];
+      const up = [];
+      for (let o = 0; o < 2; o++) for (const x of tri) up.push(root + 12 * o + x);
+      up.push(root + 24);
+      for (const m of [...up, ...up.slice(0, -1).reverse()]) {
+        notes.push({ midi: m, t: t + (r() * 2 - 1) * 0.008, dur: 0.13, vel: 0.5 + r() * 0.2 });
+        t += 0.125;
+      }
+      t += 1;
+    }
+    const s = score(notes, listen(renderPiano(notes, { sr, seed }), notes, { lesson: true }).events);
+    hit += s.recall * notes.length;
+    extra += s.extras.length;
+    n += notes.length;
+  }
+  assert.ok(hit / n >= 0.95, `recall ${(hit / n).toFixed(3)}`);
+  assert.ok(hit / (hit + extra) >= 0.93, `precision ${(hit / (hit + extra)).toFixed(3)} (${extra} extra notes)`);
+});
+
+// A bass melody doubled in octaves (E2-B2 region), quarter notes: the soft bass attacks rise out
+// of the previous pair's partials, and every partial of the upper note is an even partial of the
+// lower one. With lesson hints both notes of each octave are heard.
+test('lesson hints: both notes of a bass melody in octaves are heard', () => {
+  let complete = 0,
+    pairs = 0,
+    extra = 0;
+  for (const seed of [41, 43]) {
+    const r = rng(seed);
+    const notes = [];
+    let t = 0.8,
+      m = 40 + Math.floor(r() * 5);
+    for (let g = 0; g < 16; g++) {
+      for (const x of [m, m + 12]) notes.push({ midi: x, t: t + (r() - 0.5) * 0.012, dur: 0.42, vel: 0.55 + r() * 0.2, g });
+      m = Math.max(29, Math.min(47, m + [-2, -1, 1, 2, 2, 3, -3][Math.floor(r() * 7)]));
+      t += 0.45;
+    }
+    const { events } = listen(renderPiano(notes, { sr, seed }), notes, { lesson: true });
+    const found = (x) => events.some((e) => e.midi === x.midi && Math.abs(e.t - x.t) <= 0.08);
+    for (let g = 0; g < 16; g++) if (notes.filter((x) => x.g === g).every(found)) complete++;
+    pairs += 16;
+    extra += score(notes, events).extras.length;
+  }
+  console.log("OCT", complete, pairs, extra);
+  assert.ok(complete / pairs >= 0.8, `${complete}/${pairs} octaves complete`);
+  assert.ok(extra <= 6, `${extra} extra notes`);
+});
