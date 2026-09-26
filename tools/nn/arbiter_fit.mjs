@@ -471,6 +471,9 @@ function objective(E, ref) {
     v = E.valmix['all|all'];
   const fp = E.noise['noise|realistic'].fpm + E.noise['noise|pause'].fpm + E.valmix['noise|all'].fpm * 0.25;
   const fpRef = ref ? ref.fp : fp;
+  // ... and no kind of noise worse: the student pausing while the room goes on (TV, talk)
+  const pause = E.noise['noise|pause'].fpm;
+  const pauseRef = ref ? ref.pause : pause;
   // octave completeness on the octave materials: no worse than the fixed rules, on either set
   const os = E.sal['all|octs'].oct,
     ob = E.inst['all|octs'].oct;
@@ -479,8 +482,8 @@ function objective(E, ref) {
   const lat = (s.up[1] + b.up[1]) / 2,
     lo = (s.lo[0] + b.lo[0]) / 2;
   const F = (0.5 * Fb(s) + Fb(b)) / 1.5;
-  const J = F + 0.5 * v.F + 0.2 * oct - 2 * octPen - 0.01 * Math.max(0, fp - fpRef) - 0.0005 * Math.max(0, lat - 120) - 0.0003 * Math.max(0, lo - 100);
-  return { J, fp, oct, os, ob, salF: s.F, salR: s.R, salP: s.P, instR: b.R, instP: b.P, instF: b.F, valF: v.F, lat: [(s.up[0] + b.up[0]) / 2, lat], lo: [lo] };
+  const J = F + 0.5 * v.F + 0.2 * oct - 2 * octPen - 0.01 * Math.max(0, fp - fpRef) - 0.03 * Math.max(0, pause - pauseRef) - 0.0005 * Math.max(0, lat - 120) - 0.0003 * Math.max(0, lo - 100);
+  return { J, fp, pause, oct, os, ob, salF: s.F, salR: s.R, salP: s.P, instR: b.R, instP: b.P, instF: b.F, valF: v.F, lat: [(s.up[0] + b.up[0]) / 2, lat], lo: [lo] };
 }
 
 function evalAll(data, model) {
@@ -489,7 +492,7 @@ function evalAll(data, model) {
   return E;
 }
 
-const fmtO = (o) => `J ${o.J.toFixed(4)} sal R ${f1(o.salR)} P ${f1(o.salP)} inst R ${f1(o.instR)} P ${f1(o.instP)} val F ${f1(o.valF)} oct ${f1(o.os)}/${f1(o.ob)} noise ${o.fp.toFixed(1)}/min lat ${Math.round(o.lat[0])}/${Math.round(o.lat[1])} lo ${Math.round(o.lo[0])}`;
+const fmtO = (o) => `J ${o.J.toFixed(4)} sal R ${f1(o.salR)} P ${f1(o.salP)} inst R ${f1(o.instR)} P ${f1(o.instP)} val F ${f1(o.valF)} oct ${f1(o.os)}/${f1(o.ob)} noise ${o.fp.toFixed(1)}/min (pause ${o.pause.toFixed(1)}) lat ${Math.round(o.lat[0])}/${Math.round(o.lat[1])} lo ${Math.round(o.lo[0])}`;
 
 // evaluation pool: every worker holds the fitting sets and scores models sent to it
 function pool(n) {
@@ -527,7 +530,7 @@ async function searchThr(P, model, ref) {
   console.log(`  start: ${fmtO(best)}`);
   const grid = { dsp: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], nn: [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.96, 0.98], nnOct: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] };
   for (let round = 0; round < 2; round++)
-    for (const kind of ['dsp', 'nn', 'nnOct'])
+    for (const kind of ['dsp', 'nn', 'nnOct'].filter((k) => !(process.env.FIXED || '').split(',').includes(k)))
       for (let r = 0; r < (kind === 'nnOct' ? 1 : 3); r++) {
         const set1 = (v) => (kind === 'nnOct' ? v : model.thr[kind].map((x, i) => (i === r ? v : x)));
         const cur = kind === 'nnOct' ? model.thr.nnOct : model.thr[kind][r];
@@ -624,10 +627,11 @@ async function fit(write) {
 
 function writeModule(model) {
   const r = (x) => (Array.isArray(x) ? x.map(r) : typeof x === 'number' ? Math.round(x * 1e4) / 1e4 : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, r(v)])) : x);
-  const src = `// Fitted by tools/nn/arbiter_fit.mjs on recordings of the TRAINING pianos (Salamander with the
-// benchmark's material generator at other seeds, the network's validation mixtures of Salamander,
-// MuseScore, FluidR3, GeneralUser, Iowa and the synth, noise clips with other seeds). The
-// benchmark's held-out pianos were not used. Do not edit by hand.
+  const src = `// Fitted by tools/nn/arbiter_fit.mjs on recordings of the TRAINING pianos (the benchmark's
+// material generator at other seeds on Salamander, MuseScore, FluidR3, GeneralUser, Iowa and the
+// synth; the network's validation mixtures; noise clips with other seeds). The benchmark's
+// held-out pianos were not used to fit it; thr.nnOct (octave partners) was set by hand, see
+// docs/listening-model.md "Free-play arbiter". Regenerate, do not edit by hand.
 export const ARBITER_MODEL = ${JSON.stringify(r(model))};
 `;
   fs.writeFileSync(path.join(here, '../../js/audio/nn/arbiter-model.js'), src);

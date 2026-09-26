@@ -139,6 +139,7 @@ export class Transcriber {
     this.offCount = new Uint8Array(88);
     this.above = new Uint8Array(88); // consecutive frames above the threshold
     this.lastP = new Float32Array(88); // latest onset probability per key (for the hybrid)
+    this.lastPf = new Float32Array(88); // latest "sounding" probability per key (for the hybrid)
     this.frame = 0; // frames since the (re)start
     this.n16 = 0;
     // fine high-band energy envelope (2 ms blocks) for attack refinement
@@ -428,6 +429,7 @@ export class Transcriber {
       const p = sigmoid(out[k * KO]);
       this.lastP[k] = p;
       const pf = sigmoid(out[k * KO + 1]);
+      this.lastPf[k] = pf;
       const expected = this.expected.has(midi);
       const th = this._threshold(midi, expected);
       if (!this.armed[k] && p < th * D.rearm) this.armed[k] = 1;

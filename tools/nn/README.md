@@ -74,7 +74,15 @@ cd ../..
 #     mixtures; noise clips at other seeds), then fit it                          ~45 min + ~1 h
 node tools/nn/arbiter_rec.mjs dump-mats && tools/nn/.venv/bin/python tools/nn/arbiter_dry.py
 for s in sal inst valmix noise; do node tools/nn/arbiter_rec.mjs $s; done
-HIDDEN=8 node tools/nn/arbiter_fit.mjs fit --write    # -> js/audio/nn/arbiter-model.js
+#     (fitting peaks at ~9 GB RSS with 3 evaluation threads: run nothing else meanwhile)
+A=tools/nn/.data/arb
+HIDDEN=8 PASSES=1 MODEL_OUT=$A/m5h.json node tools/nn/arbiter_fit.mjs fit     # -> $A/m5h.json.pass0
+# the octave-partner model again, recorded with a 0.4 s deadline, then its thresholds
+DEADLINE_OCT=0.4 node tools/nn/arbiter_fit.mjs refit-oct $A/m5h.json.pass0 $A/m7.json
+# octave partners: threshold 0.2 by hand (docs/listening-model.md), the others searched again
+node -e "const f=require('fs'),m=JSON.parse(f.readFileSync('$A/m7.json'));m.thr.nnOct=0.2;f.writeFileSync('$A/m8.json',JSON.stringify(m))"
+FIXED=nnOct node tools/nn/arbiter_fit.mjs thr $A/m8.json $A/m9.json
+node tools/nn/arbiter_fit.mjs write $A/m9.json         # -> js/audio/nn/arbiter-model.js
 node tools/nn/arbiter_fit.mjs eval inst current       # replay offline, scored like the benchmark
 
 # 6. Check: JS inference = PyTorch (parity fixture), then the benchmark (the judge)

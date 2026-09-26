@@ -1283,7 +1283,8 @@ export class Transcriber {
       this.pianoLevelBase = sorted[Math.floor(sorted.length * 0.75)];
       this.pianoLevelT = this.pos / this.sr;
     }
-    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike });
+    // path: which analysis decided (the hybrid listener weighs them differently)
+    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike, path: this.emitPath || 'long' });
   }
 
   _track(detected, t, mag) {

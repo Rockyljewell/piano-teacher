@@ -92,7 +92,7 @@ Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Note
 
 A fast path decides each note from short windows starting at the attack (21–85 ms, depending on the register), so the ringing of earlier notes cancels out. It only trusts notes the lesson did not ask for once the piano has clearly been heard, so room noise stays as rare as before. In the browser, worker hops add about 5–15 ms.
 
-**Learned listener.** On top of that DSP engine runs a small causal neural network (12k parameters, 26 KB, plain JavaScript in the worker; see [docs/listening-model.md](docs/listening-model.md)). It adds the due notes the DSP missed in lessons, and in free play the notes it is very sure of and the octave partners the DSP cannot separate. Quick benchmark on the same held-out pianos ([docs/listening-bench-hybrid-quick.md](docs/listening-bench-hybrid-quick.md)): lesson chords 98%, lesson octaves 100%, free-play octaves 39% → 93%, free-play latency 69 → 45 ms median, room noise unchanged. It loads in the background (the DSP listens meanwhile), and a device too slow for both falls back to the DSP alone; `?engine=dsp` forces that.
+**Learned listener.** On top of that DSP engine runs a small causal neural network (12k parameters, 26 KB, plain JavaScript in the worker; see [docs/listening-model.md](docs/listening-model.md)). It adds the due notes the DSP missed in lessons. In free play a small fitted arbiter decides which of the two engines' notes to report (it drops the DSP's partial "ghosts" and reports the network's notes as soon as they are sure). Quick benchmark on the same held-out pianos ([docs/listening-bench-hybrid-quick.md](docs/listening-bench-hybrid-quick.md)), hybrid vs DSP alone: lesson chords 98% vs 96%, lesson octaves 100% vs 96%; free play single notes 85/83% vs 77/77% (recall/precision), triads 94/77% vs 82/79%, 16th scales 95% vs 63%, octaves 91% vs 39%, latency 38 vs 69 ms median (p90 132 vs 290 ms); room noise unchanged. It loads in the background (the DSP listens meanwhile), and a device too slow for both falls back to the DSP alone; `?engine=dsp` forces that.
 
 **Reliability.** The listener runs in a Web Worker: the capture AudioWorklet sends mic samples straight to it, so transcription never competes with the animation for the main thread. A health supervisor watches the audio engine and the microphone. It covers iOS stopping or "interrupting" the AudioContext, a clock that stops advancing, and a mic track that ends, mutes or goes silent. It recovers automatically where it can. When iOS needs a tap, the lesson pauses and asks for one, instead of freezing.
 
@@ -103,7 +103,7 @@ A fast path decides each note from short windows starting at the attack (21–85
 
 It can restart the microphone, run a note test, and save a 15-second recording plus a log to share when something goes wrong.
 
-Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Free play (no lesson hints) is slower and weaker on octaves, chords in both hands and fast pedalled passages, and the bottom octave (below C2) is often missed on upright pianos.
+Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Free play (no lesson hints) is less precise than lessons (about one false note in six), weaker on chords in both hands, and the bottom octave (below C2) is often missed on upright pianos.
 
 ## Development
 
