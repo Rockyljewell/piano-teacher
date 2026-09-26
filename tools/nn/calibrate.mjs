@@ -127,15 +127,18 @@ function isotonic(pts, bins = 12) {
 const fmt = (r) => `R ${(r.R * 100).toFixed(1)} P ${(r.P * 100).toFixed(1)} F1 ${(r.F1 * 100).toFixed(1)} lat ${r.lat50.toFixed(0)}/${r.lat90.toFixed(0)} ms err ${r.err.toFixed(1)} ms noise ${r.fpm.toFixed(1)}/min`;
 const raw = { calib: [[0, 0], [1, 1]], expectedBonus: 0 };
 console.log(`${mixes.length} mixtures, ${mixes.reduce((a, m) => a + m.notes.length, 0)} notes`);
+// objective: F1, minus a penalty for false notes in noise-only mixtures (per minute)
+const score = (r) => r.F1 - 0.002 * r.fpm;
 let best = null;
-for (const thr of [0.3, 0.4, 0.5, 0.6, 0.7]) {
-  const r = evaluate({ ...raw, thr, thrStrict: 0 }, false);
-  console.log(`free   thr ${thr}: ${fmt(r)}`);
-  if (!best || r.F1 > best.r.F1) best = { thr, r };
-}
+for (const confirm of [1, 2])
+  for (const thr of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]) {
+    const r = evaluate({ ...raw, thr, thrStrict: 0, confirm }, false);
+    console.log(`free   thr ${thr} confirm ${confirm}: ${fmt(r)}`);
+    if (!best || score(r) > score(best.r)) best = { thr, confirm, r };
+  }
 let bestE = null;
 for (const thrExp of [0.1, 0.15, 0.2, 0.3, 0.4]) {
-  const r = evaluate({ ...raw, thr: best.thr, thrStrict: 0, thrExp }, true);
+  const r = evaluate({ ...raw, thr: best.thr, confirm: best.confirm, thrStrict: 0, thrExp }, true);
   console.log(`lesson thrExp ${thrExp}: ${fmt(r)}`);
   if (!bestE || r.F1 > bestE.r.F1) bestE = { thrExp, r };
 }
@@ -143,6 +146,6 @@ const calib = isotonic(best.r.fired.filter((f) => !f[2]).map((f) => [f[0], f[1]]
 calib.unshift([0, 0]);
 calib.push([1, Math.max(calib[calib.length - 1][1], 0.99)]);
 console.log('calibration (p at firing -> precision):', JSON.stringify(calib));
-const dec = { thr: best.thr, thrExp: bestE.thrExp, calib };
+const dec = { thr: best.thr, confirm: best.confirm, thrExp: bestE.thrExp, calib };
 console.log('decoder:', JSON.stringify(dec));
 if (outFile) fs.writeFileSync(outFile, JSON.stringify(dec, null, 1));

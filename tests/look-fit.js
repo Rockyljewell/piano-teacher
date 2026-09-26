@@ -32,7 +32,7 @@ import { roomTone, mixInto } from './noise-sim.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TR_PATH = process.env.TRANSCRIBER ? path.resolve(process.env.TRANSCRIBER) : path.join(here, '../js/audio/transcriber.js');
 const SR = 48000;
-export const LOOK_KEYS = ['look', 'found', 'sc', 'rank', 'relSal', 'rise', 'riseLow', 'harm', 'snr', 'rel', 'relKnown', 'sub', 'uniqN', 'uniqFrac', 'under', 'excess', 'share', 'active', 'prev', 'ampRatio', 'onset', 'f0', 'nsig', 'tonal', 'flat', 'dev', 'ddev', 'ctr1', 'ctr2', 'expNbr'];
+export const LOOK_KEYS = ['look', 'found', 'sc', 'rank', 'relSal', 'rise', 'riseLow', 'harm', 'snr', 'rel', 'relKnown', 'sub', 'uniqN', 'uniqFrac', 'under', 'excess', 'share', 'active', 'prev', 'ampRatio', 'onset', 'f0', 'nsig', 'tonal', 'flat', 'dev', 'ddev', 'ctr1', 'ctr2', 'expNbr', 'resid', 'residSc', 'blk', 'weak'];
 const NEVER = { bias: -50 };
 
 function renderInst(inst, mat) {
@@ -73,7 +73,7 @@ async function collect(job, model) {
       lookCollect: (c) => {
         let label = 0;
         for (const n of notes) if (n.midi === c.midi && n.t >= c.attackT - 0.03 && n.t <= c.attackT + 0.04) label = 1;
-        rows.push({ x: LOOK_KEYS.map((k) => c.x[k]), label, exp: c.exp ? 1 : 0, active: c.active ? 1 : 0, look: c.look, n: c.n, key: `${job.id}|${mode}|${c.attackT.toFixed(4)}|${c.midi}`, src: `${job.src}|${mode}`, noise: job.kind === 'noise' || job.kind === 'pause' ? 1 : 0 });
+        rows.push({ x: LOOK_KEYS.map((k) => c.x[k]), label, exp: c.exp ? 1 : 0, active: c.active ? 1 : 0, look: c.look, n: c.n, defer: c.defer ? 1 : 0, key: `${job.id}|${mode}|${c.attackT.toFixed(4)}|${c.midi}`, src: `${job.src}|${mode}`, noise: job.kind === 'noise' || job.kind === 'pause' ? 1 : 0 });
       },
     });
     tr.startCalibration();
@@ -256,11 +256,12 @@ function logit(M, x) {
 // note fires at p >= 0.55, an unexpected one at p >= 0.875 once seen in two windows and when
 // the piano's level is known; a sounding note is re-struck at 0.6 (expected) / 0.85.
 // Emission rule of _lookDecide at strictness 0.5: expected new notes at p >= 0.925, sounding
-// notes struck again at 0.6 (expected) / 0.85; unexpected new notes only in free play, once
+// notes struck again at 0.85 (unexpected ones only in free play); unexpected new notes only in free play, once
 // seen in two windows, when the piano's level is known, at p >= 0.875.
 export function fires(r, p) {
   const relKnown = r.x[LOOK_KEYS.indexOf('relKnown')];
-  if (r.active) return p >= (r.exp ? 0.6 : 0.85);
+  if (r.defer) return false;
+  if (r.active) return r.exp ? p >= 0.85 : !r.src.endsWith('|lesson') && p >= 0.85;
   if (r.exp) return p >= 0.925;
   return !r.src.endsWith('|lesson') && relKnown && r.n >= 2 && p >= 0.875;
 }

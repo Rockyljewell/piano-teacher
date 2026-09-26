@@ -43,7 +43,7 @@ def one_clip(rng):
     names = [k for k in INST_W if k in I]
     p = np.array([INST_W[k] for k in names])
     iname = names[rng.choice(len(names), p=p / p.sum())]
-    inst = I[iname]
+    inst = I[iname] if iname != 'synth' else synth.AdditivePiano(seed=int(rng.integers(1 << 30)))
     kind, notes, pedal = content.sample(rng, CLIP_SEC)
     detune = rng.uniform(-30, 30) if rng.random() < 0.8 else 0.0
     audio, labels = synth.render(inst, notes, CLIP_SEC, rng, pedal=pedal, detune=detune)
@@ -88,8 +88,12 @@ if __name__ == '__main__':
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--per-shard', type=int, default=100)
+    ap.add_argument('--inst-weights', default='', help='e.g. synth=0.5,iowa=0.5 (default: INST_W)')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
+    if a.inst_weights:
+        INST_W.clear()
+        INST_W.update({k: float(v) for k, v in (x.split('=') for x in a.inst_weights.split(','))})
     n = int(np.ceil(a.hours * 3600 / CLIP_SEC / a.per_shard))
     jobs = [(a.split, i, a.per_shard, a.seed) for i in range(n)]
     t0 = time.time()

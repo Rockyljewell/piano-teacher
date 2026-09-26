@@ -148,12 +148,24 @@ class Instrument:
 
 
 class AdditivePiano:
-    """tests/synth-piano.js, vectorised (per note, per partial)."""
+    """tests/synth-piano.js, vectorised and widened into a family of pianos: every instance
+    (seed) is a different instrument - string stiffness from a concert grand to a small
+    upright (inharmonicity x0.6..x6, more in the bass), 1-3 slightly detuned strings per key
+    (beating, double decay), its own spectral tilt, decay times and hammer noise."""
     name = 'synth'
     layers = 1
 
     def __init__(self, seed=7):
         self.seed = seed
+        r = np.random.default_rng(seed)
+        self.bscale = float(np.exp(r.uniform(np.log(0.6), np.log(4.0))))
+        self.bbass = float(np.exp(r.uniform(0, np.log(2.0))))  # extra stiffness of short bass strings
+        self.tilt = float(r.uniform(0.6, 1.5))
+        self.decay = float(r.uniform(0.5, 1.6))
+        self.hammer = float(r.uniform(0.1, 0.8))
+        self.thump = float(r.uniform(0.0, 1.0))
+        self.detune_c = float(r.uniform(0.3, 2.5))  # unison detuning (cents)
+        self.fund = float(r.uniform(0.1, 0.6))  # fundamental strength in the bass
 
     @staticmethod
     def B(midi):
@@ -162,34 +174,46 @@ class AdditivePiano:
     def note(self, midi, vel, dur, rng, *, detune=0.0, damped=True, vel_exp=1.0, attack_ramp=0.0, max_sec=6.0, bscale=None):
         kr = np.random.default_rng(self.seed * 131 + midi * 7919)
         f0 = 440 * 2 ** ((midi - 69 + detune / 100) / 12)
-        b = self.B(midi) * (bscale if bscale is not None else 1.0) * (0.7 + kr.random() * 0.8)
-        tau0 = max(0.5, 4.5 * 2 ** (-(midi - 36) / 18))
-        p = 0.8 + kr.random() * 0.7
+        bs = self.bscale * (bscale if bscale is not None else 1.0) * (self.bbass ** ((48 - midi) / 27) if midi < 48 else 1.0)
+        b = self.B(midi) * bs * (0.7 + kr.random() * 0.8)
+        tau0 = max(0.4, 4.5 * self.decay * 2 ** (-(midi - 36) / 18))
+        p = self.tilt * (0.8 + kr.random() * 0.5)
         damped = damped and midi < 89
         length = min(max_sec, dur + 0.25) if damped else min(max_sec, 5 * tau0)
         n = int(length * SR)
         t = np.arange(n, dtype=np.float32) / SR
         y = np.zeros(n, dtype=np.float32)
+        strings = 1 if midi < 30 else 2 if midi < 42 else 3
+        dets = [0.0] + list(kr.normal(0, self.detune_c, strings - 1))
         for h in range(1, 40):
             fh = h * f0 * np.sqrt(1 + b * h * h)
-            if fh > SR * 0.45:
+            if fh > SR * 0.47:
                 break
             a = h ** (-p) * 10 ** ((kr.random() - 0.5) * 0.6 + (rng.random() - 0.5) * 0.1)
             if midi < 45 and h == 1:
-                a *= 0.15 + kr.random() * 0.3
+                a *= self.fund * (0.5 + kr.random())
             if midi < 40 and h == 2:
-                a *= 0.5
+                a *= 0.5 + 0.5 * kr.random()
             a *= vel ** (0.3 + 0.05 * h)
+            if a < 1e-4:
+                continue
             tau = tau0 / (1 + 0.25 * h)
-            env = 0.75 * np.exp(-t / tau) + 0.25 * np.exp(-t / (tau * 5))
-            y += (a * env * np.sin(2 * np.pi * fh * t + rng.random() * 6.283)).astype(np.float32)
-        att = np.minimum(1, t / 0.003)
+            ns = strings if h <= 8 else 1
+            for j in range(ns):
+                fj = fh * 2 ** (dets[j] / 1200)
+                # prompt sound (fast decay) and aftersound (slow): the unison strings drift apart
+                env = (0.75 * np.exp(-t / tau) + 0.25 * np.exp(-t / (tau * (3 + 4 * kr.random())))) / ns
+                y += (a * env * np.sin(2 * np.pi * fj * t + rng.random() * 6.283)).astype(np.float32)
+        att = np.minimum(1, t / 0.002)
         y *= 0.25 * vel * att
         if damped:
-            y *= np.exp(-np.maximum(t - dur, 0) / 0.03).astype(np.float32)
-        hl = int(0.015 * SR)
+            y *= np.exp(-np.maximum(t - dur, 0) / (0.03 + (0.1 if midi < 48 else 0) * kr.random())).astype(np.float32)
+        hl = int(0.02 * SR)
         noise = lfilter([0.3], [1, -0.7], rng.uniform(-1, 1, hl)).astype(np.float32)
-        y[:hl] += 0.25 * 0.25 * vel * noise * np.exp(-np.arange(hl) / (0.004 * SR))
+        y[:hl] += self.hammer * 0.25 * vel * noise * np.exp(-np.arange(hl) / (0.004 * SR))
+        if self.thump > 0 and midi < 60:  # the low "thunk" of a hammer / key bed
+            k = np.arange(int(0.06 * SR))
+            y[: len(k)] += (self.thump * 0.1 * vel * np.exp(-k / (0.012 * SR)) * np.sin(2 * np.pi * rng.uniform(60, 140) * k / SR)).astype(np.float32)[: n]
         if attack_ramp > 0:
             y *= (1 - np.exp(-t / attack_ramp)).astype(np.float32)
         sounding = min(length, dur + 0.06) if damped else length

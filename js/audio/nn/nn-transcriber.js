@@ -73,6 +73,7 @@ const DEC = {
   calib: [[0, 0], [0.3, 0.3], [0.5, 0.55], [0.7, 0.75], [0.9, 0.92], [1, 1]], // p -> P(real note)
   expectedBonus: 1, // logit added to the confidence of expected notes (as the DSP does)
   refine: 0.02, // s: attack refinement window (+-)
+  confirm: 1, // frames an unexpected note must stay above its threshold before it is reported
 };
 
 export class Transcriber {
@@ -120,6 +121,7 @@ export class Transcriber {
     this.lastFire = new Int32Array(88).fill(-1000);
     this.on = new Uint8Array(88);
     this.offCount = new Uint8Array(88);
+    this.above = new Uint8Array(88); // consecutive frames above the threshold
     this.frame = 0; // frames since the (re)start
     this.n16 = 0;
     // fine high-band energy envelope (2 ms blocks) for attack refinement
@@ -141,6 +143,9 @@ export class Transcriber {
     this.pianoLevelT = 0;
     this.calibrating = null;
     this.lastOnsetT = -1;
+    this.autoTune = this.opts.autoTune ?? true;
+    this.tunePending = []; // [{midi, frame}] notes to measure once the long window sees them
+    this.tuneSamples = [];
   }
 
   // ---- settings (same as the DSP transcriber) ----------------------------------------------------
@@ -339,9 +344,52 @@ export class Transcriber {
     return best >= 0 ? best * blk : est;
   }
 
+  // Follow the piano's overall tuning (old pianos are often flat; the network was trained for
+  // +-30 cents): ~110 ms after a confident mid-range note, find its low partials in the long
+  // window, and once 8 notes agree, re-centre the log-frequency bins on the piano.
+  _measureTuning() {
+    const mag = this.fe.mags[0]; // long-window magnitudes of the frame just computed
+    const binHz = NSR / 2048;
+    for (const q of this.tunePending) {
+      if (q.frame !== this.frame) continue;
+      const f0 = 440 * Math.pow(2, (q.midi - 69 + this.tuningCents / 100) / 12);
+      let best = null;
+      for (let h = 1; h <= 3; h++) {
+        const fh = h * f0;
+        if (fh < 180 || fh > 2500) continue;
+        const c = fh / binHz;
+        const lo = Math.max(2, Math.floor(c * 0.97)),
+          hi = Math.min(mag.length - 3, Math.ceil(c * 1.03));
+        let k = lo;
+        for (let j = lo; j <= hi; j++) if (mag[j] > mag[k]) k = j;
+        if (k === lo || k === hi || mag[k] < mag[k - 1] || mag[k] < mag[k + 1]) continue;
+        const a = Math.log(mag[k - 1] + 1e-12),
+          b = Math.log(mag[k] + 1e-12),
+          g = Math.log(mag[k + 1] + 1e-12);
+        const den = a - 2 * b + g;
+        const off = den < 0 ? clamp((0.5 * (a - g)) / den, -0.5, 0.5) : 0;
+        const cents = 1200 * Math.log2(((k + off) * binHz) / fh);
+        if (!best || mag[k] > best.m) best = { m: mag[k], cents };
+      }
+      if (best && Math.abs(best.cents) < 60) this.tuneSamples.push(best.cents);
+    }
+    this.tunePending = this.tunePending.filter((q) => q.frame > this.frame);
+    if (this.tuneSamples.length >= 8) {
+      const s = [...this.tuneSamples].sort((x, y) => x - y);
+      this.tuneSamples = [];
+      const med = s[s.length >> 1],
+        spread = s[6] - s[1];
+      if (Math.abs(med) > 10 && spread < 20) {
+        this.tuningCents = clamp(this.tuningCents + 0.8 * med, -80, 80);
+        this.fe.setTuning(this.tuningCents);
+      }
+    }
+  }
+
   _frame(f, end) {
     const out = this.model.step(f);
     this.frame++;
+    if (this.tunePending.length) this._measureTuning();
     if (this.frame < this.dec.warm) return;
     const KO = this.KO,
       K = this.K,
@@ -354,7 +402,8 @@ export class Transcriber {
       const expected = this.expected.has(midi);
       const th = this._threshold(midi, expected);
       if (!this.armed[k] && p < th * D.rearm) this.armed[k] = 1;
-      if (this.armed[k] && p >= th && this.frame - this.lastFire[k] >= D.refractory) {
+      this.above[k] = p >= th ? Math.min(255, this.above[k] + 1) : 0;
+      if (this.armed[k] && this.above[k] >= (expected ? 1 : D.confirm) && this.frame - this.lastFire[k] >= D.refractory) {
         // which of the last K frames the attack was in
         let a = 0,
           am = -Infinity;
@@ -388,6 +437,7 @@ export class Transcriber {
           this.pianoLevelT = tNow;
         }
         const vel = clamp((level + 60) / 45, 0.05, 1);
+        if (this.autoTune && conf >= 0.8 && midi >= 45 && midi <= 84 && this.tunePending.length < 16) this.tunePending.push({ midi, frame: this.frame + 11 });
         this.onNoteOn(midi, t, vel, { confidence: conf, restrike, p, expected });
       } else if (this.armed[k] && p >= th * 0.6 && p < th && this.frame - this.lastFire[k] >= D.refractory) {
         // a near miss (counted once per attack window)
