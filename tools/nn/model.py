@@ -68,10 +68,13 @@ class Model(nn.Module):
         with torch.no_grad():  # start at the priors: ~0.3 % onset frames, ~7 % sounding frames
             self.head.bias[0] = -5.0
             self.head.bias[1] = -2.5
-        sel = torch.zeros(len(XOFF) + 1, 53)
+        # shift matrices for the cross-key blocks: (x @ shift[j])[k] = x[k + offset_j]
+        sh = torch.zeros(len(XOFF) + 1, NKEY, NKEY)
         for j, o in enumerate([0] + XOFF):
-            sel[j, 24 + o] = 1
-        self.register_buffer('xsel', sel)
+            for k in range(NKEY):
+                if 0 <= k + o < NKEY:
+                    sh[j, k + o, k] = 1
+        self.register_buffer('xshift', sh)
 
     def rf(self):
         return 2 + sum(2 * m.d for m in self.blocks if m.kind == 't')
@@ -105,9 +108,11 @@ class Model(nn.Module):
             if m.kind == 't':
                 y = m.dw(F.pad(x, (0, 0, 2 * m.d, 0)))
             else:
-                # depthwise across keys at the offsets 0, XOFF: one masked 1x53 kernel
-                w = (m.dw @ self.xsel).view(-1, 1, 1, 53)
-                y = F.conv2d(F.pad(x, (24, 28)), w, groups=w.shape[0])
+                # depthwise across keys at the offsets 0, XOFF: one banded key x key matrix per
+                # channel (a batched matmul is much faster to train than a sparse conv)
+                B_, C_, T_, K_ = x.shape
+                M = torch.einsum('cj,jik->cik', m.dw, self.xshift)
+                y = torch.bmm(x.permute(1, 0, 2, 3).reshape(C_, B_ * T_, K_), M).reshape(C_, B_, T_, K_).permute(1, 0, 2, 3)
             y = m.pw(y)
             if m.kind == 'x':
                 gctx = torch.cat([x.mean(dim=3), x.amax(dim=3)], dim=1).transpose(1, 2)  # [B, T, 2C]
