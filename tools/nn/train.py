@@ -289,11 +289,13 @@ def init_from(model, path, wins):
     classes: shared weights are copied, the new input channels start at zero (so the network
     starts out computing exactly what it did), new age outputs keep their fresh init."""
     from model import HARM
-    ck = torch.load(path, map_location='cpu')
+    ck = torch.load(path, map_location='cpu', weights_only=False)
     old, ocfg = ck['model'], ck['cfg']
     owins = list(ocfg.get('wins') or [2048, 512])
     wins = list(wins)
-    H = len(HARM)
+    oharm = list(ocfg.get('harm') or HARM)
+    harm = model.harm
+    H, OH = len(harm), len(oharm)
     sd = model.state_dict()
     for k, v in old.items():
         if k not in sd:
@@ -305,20 +307,24 @@ def init_from(model, path, wins):
                 if W in wins:
                     sd[k][wins.index(W)] = v[i]
         elif k == 'a.weight':
+            # input channel = map * H + harmonic; copy the (map, harmonic) pairs both models have
             new = torch.zeros_like(sd[k])
-            for i, W in enumerate(owins):
-                if W in wins:
-                    j = wins.index(W)
-                    new[:, j * H:(j + 1) * H] = v[:, i * H:(i + 1) * H]
-            if ocfg.get('diff'):
-                new[:, len(wins) * H:] = v[:, len(owins) * H:]
+            maps_old = owins + (['rise'] if ocfg.get('diff') else [])
+            maps_new = wins + (['rise'] if model.diff else [])
+            for i, mo in enumerate(maps_old):
+                if mo not in maps_new:
+                    continue
+                j = maps_new.index(mo)
+                for hi, h in enumerate(oharm):
+                    if h in harm:
+                        new[:, j * H + harm.index(h)] = v[:, i * OH + hi]
             sd[k] = new
         elif k.startswith('head.'):
             new = sd[k].clone()
             new[: v.shape[0]] = v
             sd[k] = new
     model.load_state_dict(sd)
-    print(f'warm start from {path} (step {ck.get("step")}, windows {owins} -> {wins})', flush=True)
+    print(f'warm start from {path} (step {ck.get("step")}, windows {owins} -> {wins}, harmonics {len(oharm)} -> {H})', flush=True)
 
 
 def main():
@@ -337,6 +343,7 @@ def main():
     ap.add_argument('--wins', default='2048,512', help='STFT windows, longest first')
     ap.add_argument('--k-onset', type=int, default=4, help='onset window (frames): the most the model may take to decide')
     ap.add_argument('--k-bass', type=int, default=0, help='onset window (frames) below C3 (0: same as above)')
+    ap.add_argument('--harm-ext', type=int, default=0, help='1: also stack partials 10, 12, 14, 16 (bass)')
     ap.add_argument('--pos-weight', type=float, default=4.0, help='weight of positive onset frames')
     ap.add_argument('--init-from', default='', help='warm start from a checkpoint of a smaller configuration')
     a = ap.parse_args()
@@ -352,7 +359,8 @@ def main():
     train, val = Clips('train'), Clips('val')
     noise = NoiseBank()
     fe = TorchFrontend(wins)
-    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','), wins=wins, k_bass=a.k_bass or None, k_onset=a.k_onset)
+    from model import HARM, HARM_EXT
+    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','), wins=wins, k_bass=a.k_bass or None, k_onset=a.k_onset, harm=HARM_EXT if a.harm_ext else HARM)
     # fixed input normalisation from a few batches
     with torch.no_grad():
         fs = torch.cat([batch(rng, train, noise, fe, 8, 200)[0] for _ in range(4)])

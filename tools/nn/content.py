@@ -286,11 +286,33 @@ def extremes(rng, length):
     return notes, []
 
 
+def bass(rng, length):
+    """The bottom of the keyboard: single notes, octaves, fifths and tenths from A0 to E3, runs,
+    sometimes with a chord or melody note above (the benchmark-like "left hand" situations)."""
+    h = human(rng)
+    notes = []
+    t = rng.uniform(0.2, 0.6)
+    while t < length - 0.2:
+        m = int(rng.integers(21, 53))
+        shape = [[0], [0], [0, 12], [0, 7], [0, 7, 12], [0, 16], [0, 12, 19]][rng.integers(7)]
+        ms = [m + x for x in shape if m + x <= HI]
+        if rng.random() < 0.3:  # right hand above
+            top = int(rng.integers(55, 84))
+            ms += [top + x for x in [[0], [0, 4, 7], [0, 3, 7], [0, 12]][rng.integers(4)] if top + x <= HI]
+        v = vel_of(rng, h)
+        dur = rng.uniform(0.1, 1.5)
+        for x in sorted(set(ms)):
+            notes.append(dict(midi=x, t=t + rng.uniform(-1, 1) * h['spread'], dur=dur, vel=float(np.clip(v + rng.normal(0, 0.06), 0.08, 1))))
+        t += rng.uniform(0.12, 1.0)
+    pedal = bar_pedal(rng, rng.uniform(1.0, 3.0), 0.0, length) if rng.random() < 0.25 else []
+    return notes, pedal
+
+
 def silence(rng, length):
     return [], []
 
 
-GENERATORS = dict(app=from_app, chords=block_chords, runs=runs, pedal=pedal_texture, soup=soup, extremes=extremes, silence=silence)
+GENERATORS = dict(app=from_app, chords=block_chords, runs=runs, pedal=pedal_texture, soup=soup, extremes=extremes, bass=bass, silence=silence)
 WEIGHTS = dict(app=0.34, chords=0.2, runs=0.14, pedal=0.08, soup=0.14, extremes=0.04, silence=0.06)
 
 

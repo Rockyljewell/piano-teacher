@@ -26,7 +26,16 @@ import torch.nn.functional as F
 from frontend import NB, BPS
 
 HARM = [1 / 3, 1 / 2, 1, 3 / 2, 2, 5 / 2, 3, 4, 5, 6, 7, 8]
-SHIFTS = [int(round(12 * BPS * __import__('math').log2(h))) for h in HARM]
+# the bass is identified by its high partials (its fundamentals are weak and the 128 ms window
+# cannot separate them): the extended stack adds partials 10, 12, 14 and 16
+HARM_EXT = HARM + [10, 12, 14, 16]
+
+
+def shifts_of(harm):
+    return [int(round(12 * BPS * __import__('math').log2(h))) for h in harm]
+
+
+SHIFTS = shifts_of(HARM)
 NKEY = 88
 POS0 = 2  # first position: bin of key 21 (3 * (21 - 20)) minus one
 NPOS = NKEY * 3
@@ -35,18 +44,21 @@ K_ONSET = 4
 
 
 class Model(nn.Module):
-    def __init__(self, c1=16, c2=24, blocks=('t1', 'x', 't2', 't4', 'x', 't8'), k_onset=K_ONSET, diff=3, wins=(2048, 512), k_bass=None):
+    def __init__(self, c1=16, c2=24, blocks=('t1', 'x', 't2', 't4', 'x', 't8'), k_onset=K_ONSET, diff=3, wins=(2048, 512), k_bass=None, harm=None):
         super().__init__()
         # wins: the STFT windows, longest first; the short-window rise uses the last one.
         # k_bass: onset window (frames) for keys below C3, which need longer to resolve
-        self.cfg = dict(c1=c1, c2=c2, blocks=list(blocks), k_onset=k_onset, diff=diff, wins=list(wins), k_bass=k_bass)
+        harm = list(harm or HARM)
+        self.harm = harm
+        self.shifts = shifts_of(harm)
+        self.cfg = dict(c1=c1, c2=c2, blocks=list(blocks), k_onset=k_onset, diff=diff, wins=list(wins), k_bass=k_bass, harm=harm)
         self.diff = diff
         self.nspec = len(wins)
         self.register_buffer('mu', torch.zeros(self.nspec))
         self.register_buffer('sd', torch.ones(self.nspec))
-        idx = torch.tensor([[POS0 + p + s for p in range(NPOS)] for s in SHIFTS])  # [H, P]
+        idx = torch.tensor([[POS0 + p + s for p in range(NPOS)] for s in self.shifts])  # [H, P]
         self.register_buffer('hidx', idx)
-        cin = (self.nspec + (1 if diff else 0)) * len(HARM)
+        cin = (self.nspec + (1 if diff else 0)) * len(harm)
         self.a = nn.Conv2d(cin, c1, 1)
         self.a_bn = nn.BatchNorm2d(c1)
         self.b = nn.Conv2d(c1, c1, (3, 3), groups=c1, bias=False)
@@ -85,13 +97,14 @@ class Model(nn.Module):
     def stack(self, x):
         """[B, 2, T, NB] normalised -> [B, 2*H, T, NPOS]"""
         B, C, T, _ = x.shape
-        pad = 60  # C: long, short (, short rise)
-        xp = F.pad(x, (pad, 200))
+        pad = 60  # C: spectra (, short rise)
+        xp = F.pad(x, (pad, 300))
         g = xp[:, :, :, (self.hidx + pad).reshape(-1)]  # [B, 2, T, H*P]
         # zero where the harmonic falls outside the spectrum
         valid = ((self.hidx >= 0) & (self.hidx < NB)).reshape(-1).to(x.dtype)
         g = g * valid
-        return g.reshape(B, C, T, len(SHIFTS), NPOS).permute(0, 1, 3, 2, 4).reshape(B, C * len(SHIFTS), T, NPOS)
+        H = len(self.shifts)
+        return g.reshape(B, C, T, H, NPOS).permute(0, 1, 3, 2, 4).reshape(B, C * H, T, NPOS)
 
     def forward(self, feats):
         x = (feats - self.mu.view(1, -1, 1, 1)) / self.sd.view(1, -1, 1, 1)
@@ -127,7 +140,7 @@ class Model(nn.Module):
 def macs(model):
     c = model.cfg
     c1, c2 = c['c1'], c['c2']
-    n = (len(c.get('wins', (2048, 512))) + (1 if c.get('diff') else 0)) * len(HARM) * c1 * NPOS + 9 * c1 * NPOS + 3 * c1 * c2 * NKEY
+    n = (len(c.get('wins', (2048, 512))) + (1 if c.get('diff') else 0)) * len(c.get('harm') or HARM) * c1 * NPOS + 9 * c1 * NPOS + 3 * c1 * c2 * NKEY
     for m in model.blocks:
         n += (3 * c2 if m.kind == 't' else (len(XOFF) + 1) * c2 + 2 * c2 * c2 / NKEY) * NKEY + c2 * c2 * NKEY
     n += c2 * (2 + max(c['k_onset'], c.get('k_bass') or 0)) * NKEY

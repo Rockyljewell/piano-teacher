@@ -89,11 +89,15 @@ if __name__ == '__main__':
     ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--per-shard', type=int, default=100)
     ap.add_argument('--inst-weights', default='', help='e.g. synth=0.5,iowa=0.5 (default: INST_W)')
+    ap.add_argument('--content-weights', default='', help='e.g. bass=0.5,extremes=0.5 (default: content.WEIGHTS)')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     if a.inst_weights:
         INST_W.clear()
         INST_W.update({k: float(v) for k, v in (x.split('=') for x in a.inst_weights.split(','))})
+    if a.content_weights:
+        content.WEIGHTS.clear()
+        content.WEIGHTS.update({k: float(v) for k, v in (x.split('=') for x in a.content_weights.split(','))})
     n = int(np.ceil(a.hours * 3600 / CLIP_SEC / a.per_shard))
     jobs = [(a.split, i, a.per_shard, a.seed) for i in range(n)]
     t0 = time.time()

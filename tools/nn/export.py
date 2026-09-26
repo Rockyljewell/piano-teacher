@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 import frontend as FE
-from model import HARM, POS0, SHIFTS, XOFF, Model
+from model import POS0, XOFF, Model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -68,7 +68,7 @@ def write(path, m, decoder=None, f16=True):
         meta[k] = dict(shape=list(v.shape), dtype=dt, offset=off)
         blobs.append(b + b'\0' * pad)
         off += len(b) + pad
-    cfg = dict(m.cfg, harm=HARM, shifts=SHIFTS, xoff=XOFF, pos0=POS0)
+    cfg = dict(m.cfg, harm=m.harm, shifts=m.shifts, xoff=XOFF, pos0=POS0)
     wins = list(m.cfg.get('wins') or FE.WINS)
     header = dict(version=1, cfg=cfg, frontend=dict(sr=FE.SR, hop=FE.HOP, wins=wins, nb=FE.NB, midi0=FE.MIDI0, bps=FE.BPS, eps=FE.EPS),
                   tensors=meta, decoder=decoder or {})
