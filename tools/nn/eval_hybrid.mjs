@@ -48,7 +48,7 @@ function up3(x) {
 function run(Cls, x, notes, lesson, opts = {}) {
   const ev = [];
   let tr;
-  tr = new Cls(SR, { ...opts, onNoteOn: (midi, t, vel, info = {}) => ev.push({ midi, t, at: tr.pos / SR, p: info.p ?? info.confidence, conf: info.confidence ?? 1, exp: !!info.expected, restrike: !!info.restrike }) });
+  tr = new Cls(SR, { ...opts, onNoteOn: (midi, t, vel, info = {}) => ev.push({ midi, t, at: tr.pos / SR, p: info.p ?? info.confidence, conf: info.confidence ?? 1, exp: !!info.expected, restrike: !!info.restrike, traj: [] }) });
   tr.startCalibration();
   const lo = Math.min(...notes.map((n) => n.midi), 60),
     hi = Math.max(...notes.map((n) => n.midi), 60);
@@ -65,41 +65,52 @@ function run(Cls, x, notes, lesson, opts = {}) {
       }
     }
     tr.push(x.subarray(i, i + 512), i);
+    // network notes: how their probability develops over the next 0.3 s (the hybrid watches it)
+    if (tr.lastP) {
+      const now = tr.pos / SR;
+      for (let j = ev.length - 1; j >= 0 && now - ev[j].at < 0.3; j--) ev[j].traj.push([now, tr.lastP[ev[j].midi - 21]]);
+    }
   }
   return ev.filter((e) => e.t >= 0.45);
 }
 
 // the hybrid's rules (js/audio/nn/hybrid-transcriber.js) replayed on the recorded streams
-function hybrid(nnEv, dspEv, { trustP, octP, expP = 0.5, wait = 0.06 }, lesson) {
-  const all = [...nnEv.map((e) => ({ ...e, src: 'nn' })), ...dspEv.map((e) => ({ ...e, src: 'dsp' }))].sort((a, b) => a.at - b.at);
+function hybrid(nnEv, dspEv, { trustP, octP, expP = 0.5, wait = 0.25 }, lesson) {
+  // timeline: DSP notes, network notes, and the network notes' probability updates
+  const tl = [];
+  for (const e of dspEv) tl.push({ at: e.at, kind: 'dsp', e });
+  nnEv.forEach((e) => {
+    tl.push({ at: e.at, kind: 'nn', e });
+    for (const [at, p] of e.traj) if (at > e.at && at <= e.at + wait) tl.push({ at, kind: 'p', e, p });
+  });
+  tl.sort((a, b) => a.at - b.at);
   const out = [];
-  let held = [];
-  const has = (m, t) => out.some((e) => e.midi === m && Math.abs(e.t - t) <= 0.08);
-  const partner = (m, t) => out.some((e) => e.src === 'dsp' && Math.abs(e.t - t) <= 0.04 && (e.midi === m - 12 || e.midi === m + 12 || e.midi === m - 24));
+  const held = new Map(); // nn event -> {pmax, until}
+  const has = (m, t) => out.some((x) => x.midi === m && Math.abs(x.t - t) <= 0.08);
+  const partner = (m, t) => out.some((x) => Math.abs(x.t - t) <= 0.04 && (x.midi === m - 12 || x.midi === m + 12 || x.midi === m - 24));
   const check = (now) => {
-    const keep = [];
-    for (const h of held) {
-      if (has(h.midi, h.t)) continue;
-      if (partner(h.midi, h.t)) out.push({ ...h, at: Math.max(h.at, now) });
-      else if (now < h.at + wait) keep.push(h);
+    for (const [e, h] of held) {
+      if (has(e.midi, e.t)) held.delete(e);
+      else if (h.pmax >= trustP || (h.pmax >= octP && partner(e.midi, e.t))) {
+        out.push({ ...e, at: now, src: 'nn' });
+        held.delete(e);
+      } else if (now > h.until) held.delete(e);
     }
-    held = keep;
   };
-  for (const e of all) {
-    check(e.at);
-    if (e.src === 'dsp') {
-      if (!e.restrike && out.some((x) => x.src === 'nn' && x.midi === e.midi && Math.abs(x.t - e.t) <= 0.08)) continue;
-      out.push(e);
-      check(e.at);
-    } else {
+  for (const x of tl) {
+    const e = x.e;
+    if (x.kind === 'dsp') {
+      if (!e.restrike && out.some((o) => o.src === 'nn' && o.midi === e.midi && Math.abs(o.t - e.t) <= 0.08)) continue;
+      out.push({ ...e, src: 'dsp' });
+    } else if (x.kind === 'nn') {
       if (e.restrike || has(e.midi, e.t)) continue;
       if (lesson) {
-        if (e.exp && e.p >= expP) out.push(e);
+        if (e.exp && e.p >= expP) out.push({ ...e, src: 'nn' });
         continue;
       }
-      if (e.p >= trustP) out.push(e);
-      else if (e.p >= octP) held.push(e);
-    }
+      held.set(e, { pmax: e.p, until: e.at + wait });
+    } else if (held.has(e)) held.get(e).pmax = Math.max(held.get(e).pmax, x.p);
+    check(x.at);
   }
   return out;
 }
@@ -122,24 +133,25 @@ function score(notes, ev, acc) {
 }
 
 const t0 = Date.now();
-const rec = [];
-for (const m of index) {
+const REC = path.join(here, '.data', 'hybrid-rec.json');
+const rec = process.env.REUSE && fs.existsSync(REC) ? JSON.parse(fs.readFileSync(REC, 'utf8')) : [];
+for (const m of rec.length ? [] : index) {
   const b = fs.readFileSync(path.join(VAL, m.file));
   const x = up3(new Float32Array(b.buffer, b.byteOffset, b.length / 4));
   const notes = m.notes.filter((n) => n.t >= 0.45 && n.t < x.length / SR - 0.1);
   const r = { noise: m.meta.kind === 'noise-only', sec: x.length / SR, notes };
   for (const lesson of [false, true]) {
     r[lesson ? 'nnLd' : 'nnFd'] = run(NN, x, m.notes, lesson); // the network alone (its own decoder)
-    r[lesson ? 'nnL' : 'nnF'] = run(NN, x, m.notes, lesson, { decoder: { ghostP: 0 } }); // as inside the hybrid
+    r[lesson ? 'nnL' : 'nnF'] = run(NN, x, m.notes, lesson, { decoder: { ghostP: 0, thrReg: null, thr: 0.3, confirm: 1 } }); // as inside the hybrid
     r[lesson ? 'dspL' : 'dspF'] = run(DSP, x, m.notes, lesson);
   }
   rec.push(r);
 }
-fs.writeFileSync(path.join(here, '.data', 'hybrid-rec.json'), JSON.stringify(rec));
+if (!process.env.REUSE) fs.writeFileSync(REC, JSON.stringify(rec));
 console.log(`${rec.length} mixtures recorded in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 
 const configs = [{ name: 'nn', nnOnly: true }, { name: 'dsp', dspOnly: true }];
-for (const trustP of [0.9, 0.95, 0.97, 0.99, 1.01]) for (const octP of [0.5, 0.7, 0.9, 1.01]) configs.push({ name: `trust ${trustP} oct ${octP}`, trustP, octP, expP: 0.5 });
+for (const trustP of [0.9, 0.95, 0.97, 0.99, 0.995, 1.01]) for (const octP of [0.5, 0.7, 0.8, 0.9, 0.95, 1.01]) configs.push({ name: `trust ${trustP} oct ${octP}`, trustP, octP, expP: 0.5 });
 for (const expP of [0.2, 0.3, 0.5, 0.7, 0.9, 1.01]) configs.push({ name: `lesson expP ${expP}`, trustP: 0.97, octP: 0.5, expP });
 for (const lesson of [false, true]) {
   for (const c of configs) {

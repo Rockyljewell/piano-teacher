@@ -9,7 +9,7 @@
 //   - In free play, a network note the DSP does not have is added when
 //       * the network is very sure (p >= trustP, calibrated precision >= ~90 %), reported at the
 //         network's latency - fast passages, free-play notes the DSP only confirms late; or
-//       * it is the octave (or double octave) partner of a note the DSP reported for the same
+//       * it is the octave (or double octave) partner of a note already reported for the same
 //         attack (+-40 ms) and p >= octP - the DSP's weakest case: a note hidden in the partials
 //         of the note an octave below.
 //     Other network notes wait up to `wait` for such evidence, then are dropped.
@@ -27,7 +27,7 @@ export class Transcriber {
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.97);
     this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.5);
-    this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.06);
+    this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.25); // s a network note may wait for evidence (the DSP needs ~150 ms in free play)
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
     this.reported = []; // [{midi, t, src}] of the last ~1.5 s
@@ -41,7 +41,8 @@ export class Transcriber {
       ...opts,
       // octave partners are exactly what the network is here for: no partial ("ghost")
       // suppression inside it; the octave rule above decides
-      decoder: { ghostP: 0, ...(opts.nnDecoder || {}) },
+      // (and a low firing threshold: the rules here decide, on the probability's peak)
+      decoder: { ghostP: 0, thrReg: null, thr: 0.3, confirm: 1, ...(opts.nnDecoder || {}) },
       onNoteOn: (midi, t, vel, info) => this._nnNote(midi, t, vel, info),
       onNoteOff: () => {},
       onOnset: () => {},
@@ -81,28 +82,28 @@ export class Transcriber {
       this.stats.nnDropped++;
       return;
     }
-    if (p >= this.trustP) {
-      this.stats.nnAdded++;
-      return this._report(midi, t, vel, info, 'nn');
-    }
-    if (p >= this.octP) this.held.push({ midi, t, vel, info, until: this._now() + this.wait });
-    else this.stats.nnDropped++;
+    // free play: watch the note's probability for up to `wait`; keep it if it gets very sure,
+    // or if it is the octave partner of a DSP note
+    this.held.push({ midi, t, vel, info, pmax: p, until: this._now() + this.wait });
     this._checkHeld();
   }
 
   _partner(midi, t) {
-    return this.reported.some((e) => e.src === 'dsp' && Math.abs(e.t - t) <= 0.04 && (e.midi === midi - 12 || e.midi === midi + 12 || e.midi === midi - 24));
+    // any note already reported for the same attack (by the DSP, or by the network when sure)
+    return this.reported.some((e) => Math.abs(e.t - t) <= 0.04 && (e.midi === midi - 12 || e.midi === midi + 12 || e.midi === midi - 24));
   }
 
   _checkHeld() {
     if (!this.held.length) return;
     const now = this._now();
     const keep = [];
+    const lp = this.nn.lastP;
     for (const h of this.held) {
       if (this._has(h.midi, h.t)) continue; // the DSP heard it itself
-      if (this._partner(h.midi, h.t)) {
+      if (lp) h.pmax = Math.max(h.pmax, lp[h.midi - 21] || 0);
+      if (h.pmax >= this.trustP || (h.pmax >= this.octP && this._partner(h.midi, h.t))) {
         this.stats.nnAdded++;
-        this._report(h.midi, h.t, h.vel, h.info, 'nn');
+        this._report(h.midi, h.t, h.vel, { ...h.info, p: h.pmax }, 'nn');
       } else if (now < h.until) keep.push(h);
       else this.stats.nnDropped++;
     }

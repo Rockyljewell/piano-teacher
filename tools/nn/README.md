@@ -27,25 +27,52 @@ tools/nn/.venv/bin/python tools/nn/fetch_data.py
 #    room-noise simulations of tests/noise-sim.js                                        ~20 s
 node tools/nn/dump_content.mjs
 
-# 3. Render the clips (piano content -> sampler -> room): 30 h train, 1.7 h validation  ~25 min
+# 3. Render the clips (piano content -> sampler -> room)                              ~50 min
 cd tools/nn
-../../tools/nn/.venv/bin/python make_data.py --hours 1.5 --split val --seed 999 --workers 2
-../../tools/nn/.venv/bin/python make_data.py --hours 30 --split train --seed 1 --workers 2
+PY=.venv/bin/python
+$PY make_data.py --hours 1.5 --split val --seed 999 --workers 2        # 1.7 h validation
+$PY make_data.py --hours 30 --split train --seed 1 --workers 2         # 30 h
+$PY make_data.py --hours 8 --split train-b --seed 2 --workers 1 \
+    --inst-weights synth=0.35,iowa=0.2,salamander=0.15,musescore=0.1,fluid=0.1,gu=0.1
+$PY make_data.py --hours 6 --split train-c --seed 3 --workers 1 \
+    --content-weights bass=0.45,extremes=0.2,chords=0.15,app=0.1,soup=0.1
 
-# 4. Train (noise, microphone EQ, level and clipping are mixed in on the fly)          ~4-5 h
-../../tools/nn/.venv/bin/python train.py --steps 2000 --batch 16 --frames 400 --out .data/runs/main
+# 4. Train (noise, microphone EQ, level and clipping are mixed in on the fly).       ~6.5 h
+#    The shipped model grew in stages (each a warm start: new weights start at zero, so a stage
+#    begins exactly where the last one ended). Each run below was stopped at the checkpoint
+#    named, i.e. part-way through its one-cycle learning-rate schedule; the schedule length
+#    (--steps) is part of the recipe. train.py reads every train*-shard present at start:
+#    stage 1 saw train (30 h), stage 2 train + train-b (38 h), stages 3-4 all 44 h.
+#  stage 1: 2 windows, 12 partials, 40 ms decision window        stop after the step-500 eval
+$PY train.py --steps 2000 --out .data/runs/main
+cp .data/runs/main/best.pt .data/v1-s500.pt
+#  stage 2: + 64 ms window, 60 ms decision window (90 ms below C3)  stop after step 400
+$PY train.py --steps 1600 --lr 2e-3 --eval-every 200 --wins 2048,1024,512 --k-onset 6 --k-bass 9 \
+    --pos-weight 2 --init-from .data/v1-s500.pt --out .data/runs/v2
+cp .data/runs/v2/last.pt .data/v2-s400.pt
+#  stage 3: + partials 10, 12, 14, 16 (the bass)                   stop after step 200
+$PY train.py --steps 1200 --lr 2e-3 --eval-every 200 --wins 2048,1024,512 --k-onset 6 --k-bass 9 \
+    --pos-weight 2 --harm-ext 1 --init-from .data/v2-s400.pt --out .data/runs/v3
+cp .data/runs/v3/last.pt .data/v3-s200.pt
+#  stage 4: same model, resumed on a shorter schedule (to step 800)  runs to the end
+$PY train.py --steps 800 --lr 2e-3 --eval-every 200 --wins 2048,1024,512 --k-onset 6 --k-bass 9 \
+    --pos-weight 2 --harm-ext 1 --resume .data/v3-s200.pt --out .data/runs/v3b
+cp .data/runs/v3b/best.pt .data/final.pt
 
-# 5. Export, then tune the decoder (thresholds, confidence calibration) on validation
-#    mixtures of the TRAINING pianos, and export again with the decoder settings        ~10 min
-../../tools/nn/.venv/bin/python export.py .data/runs/main/best.pt .data/main.bin
-../../tools/nn/.venv/bin/python dump_val.py
-node calibrate.mjs .data/main.bin --write .data/decoder.json
-../../tools/nn/.venv/bin/python export.py .data/runs/main/best.pt ../../assets/models/piano-nn.bin .data/decoder.json
+# 5. Export, tune the decoder (thresholds, confidence calibration) on validation mixtures
+#    of the TRAINING pianos, export again with it; choose the hybrid's rules the same way ~1 h
+$PY export.py .data/final.pt .data/final.bin
+$PY dump_val.py
+node calibrate.mjs .data/final.bin --write .data/decoder.json
+$PY export.py .data/final.pt ../../assets/models/piano-nn.bin .data/decoder.json
+node eval_hybrid.mjs ../../assets/models/piano-nn.bin
 cd ../..
 
 # 6. Check: JS inference = PyTorch (parity fixture), then the benchmark (the judge)
 node --test tests/nn-*.test.js
 TRANSCRIBER=js/audio/nn/nn-transcriber.js node tests/bench-listen.js
+TRANSCRIBER=js/audio/nn/hybrid-transcriber.js node tests/bench-listen.js
+node tools/nn/compare.mjs dsp=a.json nn=b.json hybrid=c.json   # side by side
 ```
 
 `NN_WEIGHTS=/path/to/file.bin` makes `nn-transcriber.js` load another weights file (Node only), so
@@ -67,5 +94,7 @@ a checkpoint can be benchmarked without replacing the shipped one:
 | `train.py` | on-the-fly mixing (noise, EQ, level, clipping, metronome ticks), targets, loss, validation |
 | `export.py` | batch-norm folding, float16 weights file, parity fixture |
 | `dump_val.py`, `calibrate.mjs` | decoder thresholds and confidence calibration on validation mixtures |
+| `eval_hybrid.mjs` | records both engines on the validation mixtures and replays the hybrid's rules to choose them |
+| `compare.mjs` | benchmark reports side by side |
 
 The held-out benchmark pianos (Upright KW, YDP grand) are never read by anything here.
