@@ -65,6 +65,9 @@ class Model(nn.Module):
             m.bn = nn.BatchNorm2d(c2)
             self.blocks.append(m)
         self.head = nn.Conv2d(c2, 2 + k_onset, 1)
+        with torch.no_grad():  # start at the priors: ~0.3 % onset frames, ~7 % sounding frames
+            self.head.bias[0] = -5.0
+            self.head.bias[1] = -2.5
         sel = torch.zeros(len(XOFF) + 1, 53)
         for j, o in enumerate([0] + XOFF):
             sel[j, 24 + o] = 1
