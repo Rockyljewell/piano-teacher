@@ -2,3 +2,5 @@ node_modules/
 e2e-out/
 _site/
 tests/.cache/
+tools/nn/.data/
+tools/nn/.venv/
