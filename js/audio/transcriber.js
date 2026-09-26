@@ -21,27 +21,34 @@
 //     fire at p >= ~0.93; unexpected ones only in free play, only once the piano's level is
 //     known (never on noise alone), after two windows, at p >= ~0.88. Everything else is left
 //     to the long-window path.
+//  4. Lesson hints beyond "which notes are due": the order they are due in (when each joined
+//     the expected notes - a chord's notes join together, an arpeggio's one after the other). A
+//     due note that joined clearly after a note struck at this attack is the next note of the
+//     passage, not part of this attack, however well the struck note's partials (its octave,
+//     fifth, third) fit it; it also waits while an earlier due bass note is still unresolved.
+//     The lower note of a due octave is told from the upper one's partials by its odd partials.
+//     A soft due bass attack (a flux peak too weak to count on its own) is examined too.
 //
 // Long-window path (as before; it also decides the bass, soft and doubtful notes):
-//  4. Noise floor: per-bin minimum statistics over ~2.5 s (frozen under sounding notes), so fans,
+//  5. Noise floor: per-bin minimum statistics over ~2.5 s (frozen under sounding notes), so fans,
 //     hum and traffic are tracked continuously - start-up calibration is only the first guess.
-//  5. Pitch analysis: 8192-sample Hann window (zero padded x2) every `hop` samples.
+//  6. Pitch analysis: 8192-sample Hann window (zero padded x2) every `hop` samples.
 //     Noise-floor subtraction -> spectral whitening -> harmonic salience for all 88 keys using a
 //     piano model (string inharmonicity, stretch tuning, register-dependent spectral envelope)
 //     -> iterative "pick the strongest note, cancel its partials using spectral smoothness"
 //     (after Klapuri 2006) to find every sounding note.
-//  6. Note hypotheses: a candidate note must be explained by an attack and is then watched for a
+//  7. Note hypotheses: a candidate note must be explained by an attack and is then watched for a
 //     few frames. Evidence that it is a piano string and not the room is combined into a
 //     confidence (0..1, CONF_MODEL). Clearly piano-like notes are reported at once; doubtful
 //     ones only after ~0.2 s of evidence, or never. During a piece, an unexpected note that the
 //     fast path examined at the same attack and found unlikely is a ghost of the notes that are
 //     due (octave, twelfth, neighbour) and is dropped.
-//  7. Note tracking: notes switch off with hysteresis; each new note is back-dated to its attack.
+//  8. Note tracking: notes switch off with hysteresis; each new note is back-dated to its attack.
 //     Re-struck notes are found by checking which sounding notes gained harmonic (not broadband)
 //     energy right after an attack and kept it.
 import { FFT, hann } from './fft.js';
 
-export const ENGINE = { name: 'maestro-dsp', version: '3.0' };
+export const ENGINE = { name: 'maestro-dsp', version: '3.1' };
 
 export const MIDI_MIN = 21; // A0
 export const MIDI_MAX = 108; // C8
@@ -124,7 +131,6 @@ function evalModel(M, x) {
 
 export class Transcriber {
   constructor(sampleRate, opts = {}) {
-    if (typeof process !== 'undefined' && process.env && process.env.TR_OPTS) opts = { ...opts, ...JSON.parse(process.env.TR_OPTS) }; // TEMP-EXPERIMENT
     this.sr = sampleRate;
     this.win = sampleRate > 60000 ? 16384 : 8192;
     this.nfft = this.win * 2;
@@ -226,7 +232,7 @@ export class Transcriber {
     this.struckEntry = new Map(); // midi -> { at: attack time it was last struck, entry: when it had joined the expected notes }
     // Lesson hints (fitted on the Salamander grand and the synth only):
     this.dueGap = opts.dueGap ?? 0.04; // s: notes that joined the expected ones this far apart are due one after the other (_dueLater)
-    this.dueRise = opts.dueRise ?? 4; // a due note may start at a flux peak with 4x less rise (_attackFor)...
+    this.dueRise = opts.dueRise ?? 2; // a due note may start at a soft flux peak its partials rose 2x after (_attackFor)...
     this.dueLook = opts.dueLook ?? true; // ... that the fast path then examines too
     // an octave's lower note (_octaveLow): its odd partials vs its even ones and vs the gaps
     // between partials
@@ -1576,7 +1582,7 @@ export class Transcriber {
     // a due note not heard yet may start at a softer flux peak (a bass melody's hammer is soft
     // and its partials rise out of the previous note's, a semitone or two away)
     const due = this.expected.has(midi) && this._inLesson() && !this._heard(midi);
-    const need = (o) => (o.medium ? 2.5 : 8) / (due ? this.dueRise : 1);
+    const need = (o) => (due ? Math.min(this.dueRise, o.medium ? 2.5 : 8) : o.medium ? 2.5 : 8);
     for (let i = this.weakPeaks.length - 1; i >= 0; i--) {
       const o = this.weakPeaks[i];
       if (o.t > t - 0.03) continue;
@@ -1654,6 +1660,8 @@ export class Transcriber {
     // an attack ends the examination windows of the previous ones (a weak peak does not)
     if (!o.weak) for (const l of this.looks) if (l.end > s0) l.end = s0;
     const l = { o, s0, k: 0, end: Infinity, notes: new Map(), done: new Set(), fminDone: 0, emitted: [] };
+    // (a soft attack examined after the fact: its windows end at the next attack)
+    for (const n of this.onsets) if (n.t > o.t) l.end = Math.min(l.end, Math.round(n.t * this.sr) - Math.round(0.002 * this.sr));
     o.look = l;
     this.looks.push(l);
   }
@@ -2233,7 +2241,7 @@ export class Transcriber {
       if (this._dueLater(m, l.o.t)) return;
       // ... or than a note not heard yet that this window finds strongest or cannot resolve
       // yet (a bass note): wait for a longer window
-      if (this._dueAfter(m, (n) => !this._heard(n) && (cands[n - MIDI_MIN].f0 < fmin || x.all.some((g) => g.midi === n && g.score >= 1 && g.rank === 0)))) return;
+      if (this._dueAfter(m, (n) => n >= MIDI_MIN && n <= MIDI_MAX && !this._heard(n) && (cands[n - MIDI_MIN].f0 < fmin || x.all.some((g) => g.midi === n && g.score >= 1 && g.rank === 0)))) return;
     }
     let need;
     if (exp) need = this.expNeed ?? 0.85 + 0.15 * s;
@@ -2267,6 +2275,7 @@ export class Transcriber {
     this.pending.clear();
     this.rejected.clear();
     this.emittedAt.clear();
+    this.struckEntry.clear();
     this.pendingRestrike = [];
     this.onsets = [];
     this.weakPeaks = [];
