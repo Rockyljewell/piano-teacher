@@ -50,12 +50,12 @@ def hann(W):
     return (0.5 - 0.5 * np.cos(2 * np.pi * np.arange(W) / W)).astype(np.float32)
 
 
-def features_np(x):
-    """Reference implementation, frame by frame: [T, 2, NB] float32."""
+def features_np(x, wins=WINS):
+    """Reference implementation, frame by frame: [T, len(wins), NB] float32."""
     x = np.asarray(x, dtype=np.float32)
     T = len(x) // HOP
-    out = np.zeros((T, len(WINS), NB), dtype=np.float32)
-    for wi, W in enumerate(WINS):
+    out = np.zeros((T, len(wins), NB), dtype=np.float32)
+    for wi, W in enumerate(wins):
         M = filterbank(W)
         w = hann(W)
         xp = np.concatenate([np.zeros(W - HOP, dtype=np.float32), x])
@@ -67,20 +67,21 @@ def features_np(x):
 
 
 class TorchFrontend:
-    """Batch version for training: audio [B, N] -> features [B, 2, T, NB]."""
+    """Batch version for training: audio [B, N] -> features [B, len(wins), T, NB]."""
 
-    def __init__(self, device='cpu'):
+    def __init__(self, wins=WINS):
         import torch
         self.torch = torch
-        self.M = [torch.from_numpy(filterbank(W)) for W in WINS]
-        self.w = [torch.from_numpy(hann(W)) for W in WINS]
+        self.wins = tuple(wins)
+        self.M = [torch.from_numpy(filterbank(W)) for W in self.wins]
+        self.w = [torch.from_numpy(hann(W)) for W in self.wins]
 
     def __call__(self, x):
         torch = self.torch
         B, N = x.shape
         T = N // HOP
         outs = []
-        for W, M, w in zip(WINS, self.M, self.w):
+        for W, M, w in zip(self.wins, self.M, self.w):
             xp = torch.nn.functional.pad(x[:, : T * HOP], (W - HOP, 0))
             S = torch.stft(xp, n_fft=W, hop_length=HOP, win_length=W, window=w, center=False, return_complex=True)
             mag = S.abs().transpose(1, 2)[:, :T] * (4.0 / W)  # [B, T, F]

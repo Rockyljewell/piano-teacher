@@ -35,15 +35,18 @@ K_ONSET = 4
 
 
 class Model(nn.Module):
-    def __init__(self, c1=16, c2=24, blocks=('t1', 'x', 't2', 't4', 'x', 't8'), k_onset=K_ONSET, diff=3):
+    def __init__(self, c1=16, c2=24, blocks=('t1', 'x', 't2', 't4', 'x', 't8'), k_onset=K_ONSET, diff=3, wins=(2048, 512), k_bass=None):
         super().__init__()
-        self.cfg = dict(c1=c1, c2=c2, blocks=list(blocks), k_onset=k_onset, diff=diff)
+        # wins: the STFT windows, longest first; the short-window rise uses the last one.
+        # k_bass: onset window (frames) for keys below C3, which need longer to resolve
+        self.cfg = dict(c1=c1, c2=c2, blocks=list(blocks), k_onset=k_onset, diff=diff, wins=list(wins), k_bass=k_bass)
         self.diff = diff
-        self.register_buffer('mu', torch.zeros(2))
-        self.register_buffer('sd', torch.ones(2))
+        self.nspec = len(wins)
+        self.register_buffer('mu', torch.zeros(self.nspec))
+        self.register_buffer('sd', torch.ones(self.nspec))
         idx = torch.tensor([[POS0 + p + s for p in range(NPOS)] for s in SHIFTS])  # [H, P]
         self.register_buffer('hidx', idx)
-        cin = (3 if diff else 2) * len(HARM)
+        cin = (self.nspec + (1 if diff else 0)) * len(HARM)
         self.a = nn.Conv2d(cin, c1, 1)
         self.a_bn = nn.BatchNorm2d(c1)
         self.b = nn.Conv2d(c1, c1, (3, 3), groups=c1, bias=False)
@@ -64,7 +67,7 @@ class Model(nn.Module):
             m.pw = nn.Conv2d(c2, c2, 1)
             m.bn = nn.BatchNorm2d(c2)
             self.blocks.append(m)
-        self.head = nn.Conv2d(c2, 2 + k_onset, 1)
+        self.head = nn.Conv2d(c2, 2 + max(k_onset, k_bass or 0), 1)
         with torch.no_grad():  # start at the priors: ~0.3 % onset frames, ~7 % sounding frames
             self.head.bias[0] = -5.0
             self.head.bias[1] = -2.5
@@ -91,10 +94,10 @@ class Model(nn.Module):
         return g.reshape(B, C, T, len(SHIFTS), NPOS).permute(0, 1, 3, 2, 4).reshape(B, C * len(SHIFTS), T, NPOS)
 
     def forward(self, feats):
-        x = (feats - self.mu.view(1, 2, 1, 1)) / self.sd.view(1, 2, 1, 1)
+        x = (feats - self.mu.view(1, -1, 1, 1)) / self.sd.view(1, -1, 1, 1)
         if self.diff:
             # short-window rise over the last `diff` frames: attacks, directly at every partial
-            s = x[:, 1:2]
+            s = x[:, -1:]
             d = s - F.pad(s, (0, 0, self.diff, 0))[:, :, : s.shape[2]]
             x = torch.cat([x, d], dim=1)
         x = self.stack(x)
@@ -124,8 +127,8 @@ class Model(nn.Module):
 def macs(model):
     c = model.cfg
     c1, c2 = c['c1'], c['c2']
-    n = (3 if c.get('diff') else 2) * len(HARM) * c1 * NPOS + 9 * c1 * NPOS + 3 * c1 * c2 * NKEY
+    n = (len(c.get('wins', (2048, 512))) + (1 if c.get('diff') else 0)) * len(HARM) * c1 * NPOS + 9 * c1 * NPOS + 3 * c1 * c2 * NKEY
     for m in model.blocks:
         n += (3 * c2 if m.kind == 't' else (len(XOFF) + 1) * c2 + 2 * c2 * c2 / NKEY) * NKEY + c2 * c2 * NKEY
-    n += c2 * (2 + c['k_onset']) * NKEY
+    n += c2 * (2 + max(c['k_onset'], c.get('k_bass') or 0)) * NKEY
     return int(n)

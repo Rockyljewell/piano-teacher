@@ -81,6 +81,7 @@ const DEC = {
   expectedBonus: 1, // logit added to the confidence of expected notes (as the DSP does)
   refine: 0.02, // s: attack refinement window (+-)
   confirm: 1, // frames an unexpected note must stay above its threshold before it is reported
+  gateRise: 0, // unexpected notes need a high-band energy jump of this ratio within +-20 ms (0: off)
 };
 
 export class Transcriber {
@@ -340,7 +341,7 @@ export class Transcriber {
     const b0 = Math.floor(est / blk);
     const last = Math.min(this.envN - 1, Math.floor(end / blk) - 1);
     let best = -1,
-      bestR = 2.5;
+      bestR = 0;
     for (let b = Math.max(b0 - w, this.envN - 250, 3); b <= Math.min(b0 + w, last); b++) {
       const prev = (this.env[(b - 1) & 255] + this.env[(b - 2) & 255] + this.env[(b - 3) & 255]) / 3 + 1e-12;
       const r = this.env[b & 255] / prev;
@@ -349,7 +350,8 @@ export class Transcriber {
         best = b;
       }
     }
-    return best >= 0 ? best * blk : est;
+    this._rise = bestR; // how clearly the high band jumped: a struck string's hammer does
+    return best >= 0 && bestR > 2.5 ? best * blk : est;
   }
 
   // Follow the piano's overall tuning (old pianos are often flat; the network was trained for
@@ -422,6 +424,13 @@ export class Transcriber {
           }
         const est = end - a * HOP - HOP / 2;
         const s = this._refine(est, end);
+        if (!expected && D.gateRise > 0 && this._rise < D.gateRise) {
+          // no attack in the signal around the network's estimate: not a newly struck string
+          this.armed[k] = 0;
+          this.lastFire[k] = this.frame;
+          this.stats.rejected++;
+          continue;
+        }
         const t = this._time(s);
         let conf = this._calib(p);
         if (expected) conf = sigmoid(Math.log(conf / Math.max(1e-6, 1 - conf)) + D.expectedBonus);
