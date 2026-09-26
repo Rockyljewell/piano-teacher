@@ -34,6 +34,7 @@ import { materials, groupsOf } from './bench-material.js';
 import { render, hasInstrument, INSTRUMENTS, HELD_OUT, PIANO_REF_RMS } from './bench-sampler.js';
 import { reverb, roomTone, Biquad, gainDb, activeRms, speech as simSpeech, mixInto } from './noise-sim.js';
 import { corpusNoise } from './corpus-piano.js';
+import { AppHints } from './app-hints.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TR_PATH = process.env.TRANSCRIBER ? path.resolve(process.env.TRANSCRIBER) : path.join(here, '../js/audio/transcriber.js');
@@ -109,11 +110,17 @@ export async function engineInfo(file = TR_PATH) {
   return { name: E.name || path.basename(file, '.js'), version: E.version ? `${E.version} (${hash})` : hash, path: path.relative(path.join(here, '..'), file) };
 }
 
-function listen(Transcriber, audio, mat, mode, chunk) {
+export const HINTS = process.env.HINTS === 'app' ? 'app' : 'window';
+
+export function listen(Transcriber, audio, mat, mode, chunk, hintMode = HINTS) {
   const events = [];
   let at = 0; // end of the chunk being pushed: when a callback fires, this much audio exists
+  const app = mode === 'lesson' && hintMode === 'app' ? new AppHints(mat.notes) : null;
   const tr = new Transcriber(SR, {
-    onNoteOn: (midi, t, vel, info) => events.push({ midi, t, at: at / SR, conf: info && info.confidence != null ? info.confidence : 1, restrike: !!(info && info.restrike) }),
+    onNoteOn: (midi, t, vel, info) => {
+      events.push({ midi, t, at: at / SR, conf: info && info.confidence != null ? info.confidence : 1, restrike: !!(info && info.restrike) });
+      if (app) app.report(midi, t, at / SR);
+    },
   });
   const canCal = typeof tr.startCalibration === 'function' && typeof tr.finishCalibration === 'function';
   if (canCal) tr.startCalibration();
@@ -134,8 +141,12 @@ function listen(Transcriber, audio, mat, mode, chunk) {
     if (mode === 'lesson') {
       while (seg < mat.segs.length - 1 && t > mat.segs[seg].t1) seg++;
       while (lo < notes.length && notes[lo].tn < t - 0.6) lo++;
-      const due = [];
-      for (let k = lo; k < notes.length && notes[k].tn < t + 0.35; k++) if (notes[k].tn > t - 0.25 && !due.includes(notes[k].midi)) due.push(notes[k].midi);
+      let due;
+      if (app) due = app.due(t);
+      else {
+        due = [];
+        for (let k = lo; k < notes.length && notes[k].tn < t + 0.35; k++) if (notes[k].tn > t - 0.25 && !due.includes(notes[k].midi)) due.push(notes[k].midi);
+      }
       const range = mat.segs[seg].range;
       const k2 = due.join(',') + '|' + range.join(',');
       if (k2 !== key && typeof tr.setExpected === 'function') {
