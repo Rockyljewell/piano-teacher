@@ -68,6 +68,15 @@ $PY export.py .data/final.pt ../../assets/models/piano-nn.bin .data/decoder.json
 node eval_hybrid.mjs ../../assets/models/piano-nn.bin
 cd ../..
 
+# 5b. The hybrid's free-play arbiter (js/audio/nn/arbiter.js): record both engines on the
+#     training pianos (the benchmark's material generator at other seeds on Salamander and, via
+#     arbiter_dry.py, on MuseScore / FluidR3 / GeneralUser / Iowa / the synth; the validation
+#     mixtures; noise clips at other seeds), then fit it                          ~45 min + ~1 h
+node tools/nn/arbiter_rec.mjs dump-mats && tools/nn/.venv/bin/python tools/nn/arbiter_dry.py
+for s in sal inst valmix noise; do node tools/nn/arbiter_rec.mjs $s; done
+HIDDEN=8 node tools/nn/arbiter_fit.mjs fit --write    # -> js/audio/nn/arbiter-model.js
+node tools/nn/arbiter_fit.mjs eval inst current       # replay offline, scored like the benchmark
+
 # 6. Check: JS inference = PyTorch (parity fixture), then the benchmark (the judge)
 node --test tests/nn-*.test.js
 TRANSCRIBER=js/audio/nn/nn-transcriber.js node tests/bench-listen.js
@@ -94,7 +103,10 @@ a checkpoint can be benchmarked without replacing the shipped one:
 | `train.py` | on-the-fly mixing (noise, EQ, level, clipping, metronome ticks), targets, loss, validation |
 | `export.py` | batch-norm folding, float16 weights file, parity fixture |
 | `dump_val.py`, `calibrate.mjs` | decoder thresholds and confidence calibration on validation mixtures |
-| `eval_hybrid.mjs` | records both engines on the validation mixtures and replays the hybrid's rules to choose them |
+| `eval_hybrid.mjs` | records both engines on the validation mixtures and replays the hybrid's (earlier, fixed) rules to choose them |
+| `arbiter_rec.mjs`, `arbiter_dry.py` | record both engines' notes and the network's per-frame probabilities on the training pianos, for the arbiter |
+| `arbiter_fit.mjs` | fits the hybrid's free-play arbiter (logistic + small tanh layer, thresholds), replays it offline exactly as the app runs it |
 | `compare.mjs` | benchmark reports side by side |
 
-The held-out benchmark pianos (Upright KW, YDP grand) are never read by anything here.
+The held-out benchmark pianos (Upright KW, YDP grand) are never read by anything here, except
+`arbiter_rec.mjs heldout`, which records them for diagnosis only (nothing is fitted on it).
