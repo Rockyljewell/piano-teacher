@@ -78,7 +78,19 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 | Same piece, speech 10 dB below the piano | 69 / 56% | 91 / 94% |
 | Triads, with lesson hints | 88 / 84% | 97 / 99% |
 
-Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Notes are reported about 85 ms after the attack (median), timestamped at the attack.
+Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Notes are timestamped at the attack.
+
+**Speed and chords** (held-out upright and grand pianos never used for tuning, iPad on the music stand; full tables in [docs/listening-bench.md](docs/listening-bench.md)):
+
+| In a lesson | Before | Now |
+| --- | --- | --- |
+| Note reported after the attack, C3 and up (median / p90) | 86 / 149 ms | 22 / 40 ms |
+| Same, below C3 (median) | 124 ms | 43 ms |
+| Chords heard complete | 74.5% | 96.4% |
+| Lesson pieces, levels 1–20 (F1) | 91.2% | 97.7% |
+| Octaves heard complete | 48.9% | 85.2% |
+
+A fast path decides each note from short windows starting at the attack (21–85 ms, depending on the register), so the ringing of earlier notes cancels out. It only trusts notes the lesson did not ask for once the piano has clearly been heard, so room noise stays as rare as before. In the browser, worker hops add about 5–15 ms.
 
 **Reliability.** The listener runs in a Web Worker: the capture AudioWorklet sends mic samples straight to it, so transcription never competes with the animation for the main thread. A health supervisor watches the audio engine and the microphone. It covers iOS stopping or "interrupting" the AudioContext, a clock that stops advancing, and a mic track that ends, mutes or goes silent. It recovers automatically where it can. When iOS needs a tap, the lesson pauses and asks for one, instead of freezing.
 
@@ -89,7 +101,7 @@ Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Note
 
 It can restart the microphone, run a note test, and save a 15-second recording plus a log to share when something goes wrong.
 
-Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Fast pedalled passages and triads are weaker when played outside a lesson (free play).
+Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Free play (no lesson hints) is slower and weaker on octaves, chords in both hands and fast pedalled passages, and the bottom octave (below C2) is often missed on upright pianos.
 
 ## Development
 

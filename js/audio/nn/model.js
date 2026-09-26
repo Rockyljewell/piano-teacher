@@ -164,8 +164,16 @@ export class Model {
     this.NF = this.nspec + (this.diff ? 1 : 0); // feature maps: spectra (, rise of the shortest)
     this.CIN = this.NF * this.H;
     this.KO = 2 + Math.max(c.k_onset, c.k_bass || 0);
-    // per-tap weight vectors (contiguous over channels) for the depthwise convolutions
-    this.bTap = Array.from({ length: 9 }, (_, q) => Float32Array.from({ length: C1 }, (_, ch) => T.b_w[ch * 9 + q]));
+    // per-tap weight vectors, tiled over all positions ([P][C] like the activations) so the
+    // depthwise convolutions and scale/shift steps are flat loops
+    const tile = (v, n) => {
+      const out = new Float32Array(n * v.length);
+      for (let i = 0; i < n; i++) out.set(v, i * v.length);
+      return out;
+    };
+    this.bTap = Array.from({ length: 9 }, (_, q) => tile(Float32Array.from({ length: C1 }, (_, ch) => T.b_w[ch * 9 + q]), NP));
+    this.bS = tile(T.b_s, NP);
+    this.bT = tile(T.b_t, NP);
     // key layer: reorder the input columns from (channel, position) to (position, channel) so
     // the B output [264][C1] can be read directly as [88][3 * C1]
     this.kW = new Float32Array(C2 * 3 * C1);
@@ -177,7 +185,7 @@ export class Model {
       const p = `blk${i}_`;
       const dw = T[p + 'dw'];
       const nt = kind === 't' ? 3 : xoff.length;
-      const taps = Array.from({ length: nt }, (_, q) => Float32Array.from({ length: C2 }, (_, ch) => dw[ch * nt + q]));
+      const taps = Array.from({ length: nt }, (_, q) => tile(Float32Array.from({ length: C2 }, (_, ch) => dw[ch * nt + q]), NK));
       return {
         kind,
         d,
@@ -187,8 +195,8 @@ export class Model {
         pw_b: T[p + 'pw_b'],
         g_w: T[p + 'g_w'],
         g_b: T[p + 'g_b'],
-        s: T[p + 's'],
-        t: T[p + 't'],
+        s: tile(T[p + 's'], NK),
+        t: tile(T[p + 't'], NK),
         hist: kind === 't' ? Array.from({ length: 2 * d + 1 }, () => new Float32Array(NK * C2)) : null,
         h: 0,
       };
@@ -272,27 +280,22 @@ export class Model {
     const Bo = this.Bo;
     Bo.set(A0);
     const Ar = [A2, A1, A0]; // kernel time index 0 -> t-2
+    const NPC = NP * C1;
     for (let i = 0; i < 3; i++) {
       const Ai = Ar[i],
         w0 = this.bTap[i * 3],
         w1 = this.bTap[i * 3 + 1],
         w2 = this.bTap[i * 3 + 2];
-      for (let c = 0; c < C1; c++) Bo[c] += w1[c] * Ai[c] + w2[c] * Ai[C1 + c];
-      for (let p = 1; p < NP - 1; p++) {
-        const q = p * C1;
-        for (let c = 0; c < C1; c++) Bo[q + c] += w0[c] * Ai[q - C1 + c] + w1[c] * Ai[q + c] + w2[c] * Ai[q + C1 + c];
-      }
-      const q = (NP - 1) * C1;
-      for (let c = 0; c < C1; c++) Bo[q + c] += w0[c] * Ai[q - C1 + c] + w1[c] * Ai[q + c];
+      // centre tap everywhere, lower-bin tap from position 1 on, upper-bin tap up to NP - 2
+      for (let q = 0; q < NPC; q++) Bo[q] += w1[q] * Ai[q];
+      for (let q = C1; q < NPC; q++) Bo[q] += w0[q] * Ai[q - C1];
+      for (let q = 0; q < NPC - C1; q++) Bo[q] += w2[q] * Ai[q + C1];
     }
-    const sB = T.b_s,
-      tB = T.b_t;
-    for (let p = 0; p < NP; p++) {
-      const q = p * C1;
-      for (let c = 0; c < C1; c++) {
-        const v = sB[c] * Bo[q + c] + tB[c];
-        Bo[q + c] = v > 0 ? v : 0;
-      }
+    const bS = this.bS,
+      bT = this.bT;
+    for (let q = 0; q < NPC; q++) {
+      const v = bS[q] * Bo[q] + bT[q];
+      Bo[q] = v > 0 ? v : 0;
     }
     // keys: the 3 positions x C1 of each key -> C2 (+ per-key bias), ReLU
     let X = this.X;
@@ -316,29 +319,21 @@ export class Model {
         const xm1 = bl.hist[(bl.h - d + L) % L],
           xm2 = bl.hist[(bl.h - 2 * d + L) % L];
         const [w0, w1, w2] = bl.taps;
-        for (let k = 0; k < NK; k++) {
-          const q = k * C2;
-          for (let c = 0; c < C2; c++) Y[q + c] = w0[c] * xm2[q + c] + w1[c] * xm1[q + c] + w2[c] * cur[q + c];
-        }
+        const n = NK * C2;
+        for (let q = 0; q < n; q++) Y[q] = w0[q] * xm2[q] + w1[q] * xm1[q] + w2[q] * cur[q];
       } else {
         // depthwise across keys at fixed offsets (octaves, twelfths, neighbours)
         const off = bl.off,
           taps = bl.taps;
         const w = taps[0];
-        for (let k = 0; k < NK; k++) {
-          const q = k * C2;
-          for (let c = 0; c < C2; c++) Y[q + c] = w[c] * X[q + c];
-        }
+        const n = NK * C2;
+        for (let q = 0; q < n; q++) Y[q] = w[q] * X[q];
         for (let j = 1; j < off.length; j++) {
-          const o = off[j],
+          const d = off[j] * C2,
             wj = taps[j];
-          const k0 = Math.max(0, -o),
-            k1 = Math.min(NK, NK - o);
-          for (let k = k0; k < k1; k++) {
-            const q = k * C2,
-              r = (k + o) * C2;
-            for (let c = 0; c < C2; c++) Y[q + c] += wj[c] * X[r + c];
-          }
+          const q0 = Math.max(0, -d),
+            q1 = Math.min(n, n - d);
+          for (let q = q0; q < q1; q++) Y[q] += wj[q] * X[q + d];
         }
       }
       const Z = this.Z;
@@ -369,12 +364,10 @@ export class Model {
       const s = bl.s,
         t = bl.t;
       const Xn = this.Y; // reuse
-      for (let k = 0; k < NK; k++) {
-        const q = k * C2;
-        for (let c = 0; c < C2; c++) {
-          const v = s[c] * (X[q + c] + Z[q + c]) + t[c];
-          Xn[q + c] = v > 0 ? v : 0;
-        }
+      const n = NK * C2;
+      for (let q = 0; q < n; q++) {
+        const v = s[q] * (X[q] + Z[q]) + t[q];
+        Xn[q] = v > 0 ? v : 0;
       }
       // swap buffers
       this.Y = X;
