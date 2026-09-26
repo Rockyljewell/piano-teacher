@@ -127,6 +127,7 @@ export function enterPrep(piece, act, mode) {
       <button id="btn-prep-go" class="btn btn-primary btn-lg"><span class="prep-ring"></span>I'm ready</button>
       <div class="prep-or">${info.anyKey != null ? 'or tap any key to start' : 'or play the first note to start'}</div>
     </div>`;
+  clearTimeout(leaveTimer);
   card.classList.remove('hidden', 'leave');
   $('#btn-prep-go').addEventListener('click', () => {
     sfx('tap');
@@ -163,11 +164,19 @@ export function placePrep() {
   card.style.maxHeight = `${Math.max(120, Math.round(L.kb.y - 44 - top))}px`;
 }
 
+let leaveTimer = 0;
 function leaveUI() {
   clearTimeout(autoTimer);
   cancelAnimationFrame(autoRaf);
   const card = $('#prep');
-  if (card) card.classList.add('hidden');
+  if (!card || card.classList.contains('hidden')) return;
+  // fade down and out, then hide (unless a new get-ready step reopened it meanwhile)
+  card.classList.add('leave');
+  clearTimeout(leaveTimer);
+  leaveTimer = setTimeout(() => {
+    if (card.classList.contains('leave')) card.classList.add('hidden');
+    card.classList.remove('leave');
+  }, 180);
 }
 
 export function cancelPrep() {

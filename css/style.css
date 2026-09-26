@@ -466,9 +466,20 @@ small { color: var(--ink-3); }
 .bar-prog .bar { width: 90px; height: 10px; }
 .bar-prog .bar > i { transition: width .3s linear; }
 .screen.play.free .bar-prog, .screen.play.free .stat, .screen.play.free .stepper, .screen.play.free .seg-mode, .screen.play.free #btn-listen { display: none; }
-.countdown { position: absolute; left: 50%; top: 66%; transform: translate(-50%, -50%); font-family: var(--font-display); font-weight: 700; font-size: 120px; color: var(--brand); text-shadow: 0 6px 0 var(--brand-soft), 0 0 0 #fff; pointer-events: none; z-index: 4; line-height: 1; }
+/* Count-in: the number sits in a ring that closes over one beat (--beat); "Go!" bursts. */
+.countdown { position: absolute; left: 50%; top: 66%; width: 180px; height: 180px; margin: -90px 0 0 -90px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 104px; color: var(--brand); text-shadow: 0 6px 0 var(--brand-soft); pointer-events: none; z-index: 4; line-height: 1; }
 .countdown:empty { display: none; }
-.countdown.pulse { animation: count-pulse .3s var(--ease-spring); }
+.countdown::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.92) 0 58%, rgba(255,255,255,0) 72%); }
+.countdown::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; border: 7px solid var(--brand-hi); opacity: 0; }
+.countdown b { position: relative; font-weight: 700; }
+.countdown.pulse b { animation: count-num .32s var(--ease-spring) both; }
+.countdown.pulse::after { animation: count-ring var(--beat, .8s) linear both; }
+.countdown.go { color: var(--sun-ink); text-shadow: 0 6px 0 var(--sun-soft); font-size: 84px; }
+.countdown.go::after { border-color: var(--sun); animation: count-go .5s var(--ease-out) both; }
+@keyframes count-num { from { transform: scale(.55); opacity: .2; } }
+@keyframes count-ring { 0% { opacity: .9; transform: scale(1.18); } 100% { opacity: .15; transform: scale(.78); } }
+@keyframes count-go { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.6); } }
+@media (prefers-reduced-motion: reduce) { .countdown.pulse b, .countdown.pulse::after, .countdown.go::after { animation: none; } .countdown::after { opacity: .5; } }
 
 /* Listening lost: the lesson pauses until a tap brings the microphone back (iOS needs a tap). */
 .lost-dialog { max-width: 520px; text-align: center; }
@@ -498,6 +509,8 @@ small { color: var(--ink-3); }
 .prep-or { font-size: 14px; font-weight: 800; color: var(--ink-3); }
 .prep-ring { position: absolute; left: 0; bottom: 0; height: 5px; width: calc(var(--p, 0) * 100%); background: rgba(255,255,255,.55); border-radius: 0 3px 3px 0; display: none; }
 .prep-ring.on { display: block; }
+.prep.leave { animation: prep-out .18s var(--ease-in) both; pointer-events: none; }
+@keyframes prep-out { to { opacity: 0; transform: translate(-50%, 16px) scale(.97); } }
 @keyframes prep-in { from { opacity: 0; transform: translate(-50%, 14px) scale(.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
 @keyframes prep-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 60% { transform: translateX(5px); } }
 @media (max-width: 1100px) { .prep-pip { width: 72px; } .prep-pip svg { width: 72px; height: auto; } .prep-title { font-size: 22px; } .prep-text { font-size: 16px; } }
