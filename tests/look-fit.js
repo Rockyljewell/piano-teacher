@@ -1,5 +1,6 @@
 // Fits the listener's fast-path model (LOOK_MODEL in js/audio/transcriber.js): at each short
-// window after an attack, the probability that a candidate key was struck at that attack.
+// window after an attack, the probability that a candidate key was struck at that attack. Two
+// small MLPs: one for expected notes (lesson hints), one for the rest.
 //
 //   node tests/look-fit.js            collect, fit, print LOOK_MODEL (paste it into transcriber.js)
 //   node tests/look-fit.js eval       evaluate the current LOOK_MODEL on the same data
@@ -7,16 +8,24 @@
 // Honest by construction: the data is the Salamander grand (tests/corpus-fetch.js) and the
 // additive synth piano only - the benchmark's held-out pianos (upright, YDP) are never used -
 // with the benchmark's kinds of material but different seeds (materials({ seed })), in the
-// close / stand / stand+talk conditions, in lesson (score-informed) and free mode, plus
-// noise-only and "student pauses, room goes on" clips as negatives.
+// close / stand / stand+talk conditions and in loud rooms (speech, TV, knocks, dishes 10 dB
+// below the piano), in lesson (score-informed) and free mode, plus noise-only and "student
+// pauses, room goes on" clips as negatives.
 //
-// Candidates are collected on-policy: round 1 with a fast path that never fires (the long-window
-// path alone decides which notes are sounding), later rounds with the model of the previous
-// round firing, so "is this sounding note struck again?" is seen as it will be in use.
-// Label: a note of that key really started within -30..+40 ms of the attack.
+// Candidates are collected on-policy (DAgger): round 1 with a fast path that never fires (the
+// long-window path alone decides which notes are sounding), later rounds with the model of the
+// previous round firing, so "is this sounding note struck again?" is seen as it will be in use.
+// After each fit, candidates that would fire falsely (and real strikes that never fire) get
+// more weight and the model is refined. Label: a note of that key really started within
+// -30..+40 ms of the attack.
 //
 // Env: ROUNDS (default 2), THREADS, SEEDS (default "11,12"), H (hidden units, default 10),
-//      TRANSCRIBER=path (fit another engine), DUMP=file (save rows), ROWS=file (reuse rows).
+//      NOISEW (weight of noise negatives, default 4), MINE (hard-example rounds, default 2),
+//      TRANSCRIBER=path (fit another engine), DUMP=file (save rows, one per line),
+//      ROWS=file (start from saved rows), COLLECT=regex (later rounds: only matching jobs),
+//      MODEL_OUT=file (the model after every round, as JSON).
+// The shipped model: SEEDS=11,12 ROUNDS=2 on all material without the loud rooms, then
+// ROWS=<that dump> COLLECT='\+' ROUNDS=2 to add the loud-room material.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -301,6 +310,13 @@ function report(rows, M, title) {
   for (const [g, a] of Object.entries(agg).sort()) console.log(`  ${g.padEnd(28)} ${a.pos ? ((a.tp / a.pos) * 100).toFixed(1).padStart(5) : '    -'}% of ${String(a.pos).padStart(6)}   false ${String(a.fp).padStart(5)} of ${a.neg}`);
 }
 
+// DUMP files: one JSON row per line (older dumps: one JSON array)
+function readRows(file) {
+  const txt = fs.readFileSync(file, 'utf8');
+  if (txt[0] === '[') return JSON.parse(txt);
+  return txt.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
 async function main() {
   const mode = process.argv[2] || 'fit';
   const threads = Number(process.env.THREADS || os.cpus().length);
@@ -308,12 +324,12 @@ async function main() {
   const t0 = Date.now();
   const { LOOK_MODEL } = await import(pathToFileURL(TR_PATH).href);
   if (mode === 'eval') {
-    const rows = process.env.ROWS ? JSON.parse(fs.readFileSync(process.env.ROWS, 'utf8')) : await runAll(jobs, null, threads);
+    const rows = process.env.ROWS ? readRows(process.env.ROWS) : await runAll(jobs, null, threads);
     report(rows, LOOK_MODEL, 'current LOOK_MODEL');
     return;
   }
   let M = null;
-  let rows = process.env.ROWS ? JSON.parse(fs.readFileSync(process.env.ROWS, 'utf8')) : null;
+  let rows = process.env.ROWS ? readRows(process.env.ROWS) : null;
   const rounds = Number(process.env.ROUNDS || 2);
   const H = Number(process.env.H || 10);
   for (let round = 1; round <= rounds; round++) {
@@ -359,7 +375,12 @@ async function main() {
     report(val, M, `round ${round}, validation fold`);
     if (process.env.MODEL_OUT) fs.writeFileSync(process.env.MODEL_OUT, JSON.stringify(M));
   }
-  if (process.env.DUMP) fs.writeFileSync(process.env.DUMP, JSON.stringify(rows));
+  if (process.env.DUMP) {
+    // one row per line (a single JSON string of this many rows is too long for V8)
+    const fd = fs.openSync(process.env.DUMP, 'w');
+    for (const r of rows) fs.writeSync(fd, JSON.stringify(r) + '\n');
+    fs.closeSync(fd);
+  }
   report(rows, M, 'all data');
   console.log('\nexport const LOOK_MODEL = ' + JSON.stringify(M) + ';');
 }
