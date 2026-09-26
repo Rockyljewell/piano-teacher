@@ -1,5 +1,5 @@
 // Placement onboarding: "Have you played before?" -> adaptive both-hands tests -> level reveal.
-import { $, $$, S, app, coach, esc, screen, show, say, sfx } from './core.js';
+import { $, $$, S, app, coach, esc, screen, show, say, sfx, rise } from './core.js';
 import { EXPERIENCE } from '../placement.js';
 import { levelInfo, STAGES } from '../music/curriculum.js';
 import { bars, icon, confetti } from './brand.js';
@@ -22,6 +22,7 @@ screen('placement', {
         <span><b>${esc(e.label)}</b><small>${esc(e.detail)}</small></span>
         <span class="radio"></span></button>`,
     ).join('');
+    rise([$('#screen-placement .coach-col .bubble'), ...$$('#exp-options .exp-option')], { delay: 80, step: 60 });
     say('Welcome to Maestro! Have you played the piano before?');
   },
 });
@@ -34,10 +35,12 @@ $('#exp-options').addEventListener('click', (e) => {
   for (const x of $$('.exp-option')) {
     const on = x === b;
     x.classList.toggle('picked', on);
+    x.classList.toggle('just-on', on);
     x.setAttribute('aria-checked', String(on));
     x.querySelector('.radio').innerHTML = on ? icon('check', 18) : '';
   }
   $('#btn-exp-go').disabled = false;
+  setTimeout(() => b.classList.remove('just-on'), 300);
 });
 
 $('#btn-exp-go').addEventListener('click', () => {

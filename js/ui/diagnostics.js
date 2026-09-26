@@ -6,7 +6,7 @@
 //   micChip.addEventListener('click', () => app.openDiagnostics());
 //
 // Markup: #diag in index.html. Styles: "listening check" at the end of css/style.css.
-import { $, S, app, audio, coach, getVoice, toast } from './core.js';
+import { $, S, app, audio, coach, getVoice, toast, openOverlay, closeOverlay } from './core.js';
 import { icon, setPose } from './brand.js';
 import { noteName } from '../music/theory.js';
 import { encodeWav } from '../audio/wav.js';
@@ -59,7 +59,7 @@ export function openDiagnostics() {
   if (!root.dataset.ready) setup(root);
   audio.ensureContext().catch(() => {});
   if (typeof audio.logEvent === 'function') audio.logEvent('diagnostics', { event: 'open', screen: S.screen });
-  root.classList.remove('hidden');
+  openOverlay(root);
   isOpen = true;
   notesKey = '';
   lastRows = 0;
@@ -74,7 +74,7 @@ export function closeDiagnostics() {
   const root = $('#diag');
   if (!root || !isOpen) return;
   isOpen = false;
-  root.classList.add('hidden');
+  closeOverlay(root);
   cancelAnimationFrame(raf);
   endNoteTest();
 }

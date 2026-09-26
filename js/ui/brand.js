@@ -55,6 +55,7 @@ const WING = {
   chinR: `<path d="M168 136 C168 116 158 100 142 98 C134 98 131 106 136 111 C144 114 150 122 152 138 Z" fill="${C.body}"/>`,
   hugL: `<path d="M44 108 C34 124 42 142 62 146 C62 138 54 128 52 116 Z" fill="${C.body}"/>`,
   hugR: `<path d="M156 108 C166 124 158 142 138 146 C138 138 146 128 148 116 Z" fill="${C.body}"/>`,
+  pointR: `<path d="M150 102 C166 94 186 92 197 98 C203 102 201 111 193 113 C181 116 167 121 153 128 Z" fill="${C.body}"/>`,
 };
 
 const EXTRAS = {
@@ -68,6 +69,7 @@ const EXTRAS = {
   baton: `<path d="M178 66 L196 18" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M178 66 L196 18" stroke="#D9CFBB" stroke-width="1.2" stroke-linecap="round" opacity=".9"/><circle cx="178" cy="67" r="5" fill="#8E6A3E"/>`,
   zzz: `<g fill="${C.note}" font-family="Fredoka, Nunito, sans-serif" font-weight="700"><text x="148" y="44" font-size="22">z</text><text x="164" y="26" font-size="16">z</text></g>`,
   question: `<g fill="${C.note}" font-family="Fredoka, Nunito, sans-serif" font-weight="700"><text x="152" y="46" font-size="34">?</text></g>`,
+  dash: `<g class="pip-dash" fill="none" stroke="${C.spark}" stroke-width="4.5" stroke-linecap="round"><path d="M208 90 l9 -6"/><path d="M211 104 h11"/><path d="M208 118 l9 6"/></g>`,
 };
 
 export const POSES = {
@@ -78,6 +80,8 @@ export const POSES = {
   conduct: { eyes: 'wink', beak: 'smile', wings: ['downL', 'waveR'], extra: ['baton', 'notes'] },
   think: { eyes: 'up', beak: 'closed', wings: ['downL', 'chinR'], extra: ['question'] },
   sleep: { eyes: 'closed', beak: 'closed', wings: ['hugL', 'hugR'], extra: ['zzz'] },
+  // Points to the right with a flipper (mirror the slot with .pip-flip to point left).
+  point: { eyes: 'open', beak: 'smile', wings: ['downL', 'pointR'], extra: ['dash'] },
 };
 
 const TUFT = `<path d="M103 26 L103 6" stroke="${C.body}" stroke-width="6" stroke-linecap="round"/><path d="M103 4 C113 8 124 14 121 30 C118 22 111 18 103 17 Z" fill="${C.body}"/>`;
@@ -109,17 +113,24 @@ function body(p) {
     </g>`;
 }
 
+// Idle life (CSS in style.css): each Pip gets its own blink cycle (two blinks per cycle at
+// uneven spacing, so blinks land every ~3-6 s) and its own phase, so Pips never blink in unison.
+function idleVars() {
+  const cycle = 7 + Math.random() * 4;
+  return `--blink:${cycle.toFixed(2)}s;--blink-at:-${(Math.random() * cycle).toFixed(2)}s;--breathe-at:-${(Math.random() * 3).toFixed(2)}s`;
+}
+
 /** Pip in a pose. size in px; cls extra classes. */
 export function pip(pose = 'hello', size = 160, cls = '') {
   if (pose === 'face') return pipFace(size, null, cls);
   const p = POSES[pose] || POSES.hello;
-  return `<svg class="pip pip-${pose} ${cls}" aria-hidden="true" viewBox="0 0 200 200" width="${size}" height="${size}" overflow="visible">${body(p)}</svg>`;
+  return `<svg class="pip pip-${pose} ${cls}" style="${idleVars()}" aria-hidden="true" viewBox="0 0 200 200" width="${size}" height="${size}" overflow="visible">${body(p)}</svg>`;
 }
 
 /** Head-only Pip (avatar, app icon). bg: squircle colour or null. */
 export function pipFace(size = 48, bg = null, cls = '') {
   const back = bg ? `<rect x="0" y="0" width="200" height="200" rx="46" fill="${bg}"/>` : '';
-  return `<svg class="pip pip-face ${cls}" aria-hidden="true" viewBox="0 0 200 200" width="${size}" height="${size}">${back}
+  return `<svg class="pip pip-face ${cls}" style="${idleVars()}" aria-hidden="true" viewBox="0 0 200 200" width="${size}" height="${size}">${back}
     <g transform="translate(100 120) scale(1.42) translate(-100 -92)">
       <path d="M103 30 L103 12" stroke="${C.body}" stroke-width="6" stroke-linecap="round"/><path d="M103 10 C113 14 124 20 121 36 C118 28 111 24 103 23 Z" fill="${C.body}"/>
       <path d="M100 28 C140 28 162 58 162 100 C162 142 136 160 100 160 C64 160 38 142 38 100 C38 58 60 28 100 28 Z" fill="${C.body}"/>
@@ -139,6 +150,7 @@ export function setPose(el, pose) {
   const extra = [...svg.classList].filter((c) => c !== 'pip' && !c.startsWith('pip-')).join(' ');
   const tmp = document.createElement('div');
   tmp.innerHTML = pip(pose, size, `${extra} pip-swap`);
+  if (svg.getAttribute('style')) tmp.firstChild.setAttribute('style', svg.getAttribute('style'));
   svg.replaceWith(tmp.firstChild);
 }
 

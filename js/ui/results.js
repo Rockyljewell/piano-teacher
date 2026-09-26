@@ -1,7 +1,8 @@
-// Results: stars, score, timing feedback (tiles, early/late histogram), Pip's coaching line,
-// level progress, and what comes next (hands-free auto-advance). Choreographed per the motion
-// spec (title, stars, count-up, tiles, histogram, Pip, confetti); a tap skips to the end.
-import { $, S, app, audio, coach, esc, say, sfx, toast } from './core.js';
+// Results: a radial score gauge (the stars sit on the arc and pop as the fill passes 70/85/95),
+// timing feedback (tiles, early/late histogram), Pip's coaching line, level progress, and what
+// comes next (hands-free auto-advance). Choreographed per the motion spec: every block is laid
+// out from the first frame and only fades/rises into place; a tap anywhere skips to the end.
+import { $, $$, S, app, audio, coach, esc, say, sfx, toast } from './core.js';
 import { levelInfo } from '../music/curriculum.js';
 import { icon, pip, confetti, reducedMotion } from './brand.js';
 
@@ -12,23 +13,79 @@ function clearTimers() {
   while (timers.length) clearTimeout(timers.pop());
 }
 
-function countUp(el, to, ms = 900, delay = 0) {
-  if (reducedMotion()) {
-    el.textContent = String(to);
-    return;
-  }
-  el.textContent = '0';
+// ---- the gauge -------------------------------------------------------------------------------
+// A 270° arc (r 118 in a 300 box, open at the bottom). Its length is 118 * 1.5π.
+const ARC = 556.06;
+const THRESHOLDS = [70, 85, 95];
+const arcPoint = (pct) => {
+  const a = ((135 + 2.7 * pct) * Math.PI) / 180;
+  return { x: 150 + 118 * Math.cos(a), y: 150 + 118 * Math.sin(a) };
+};
+// Fredoka digits are proportional: each digit gets a fixed-width box so the number doesn't jiggle.
+const digits = (v) => String(v).split('').map((d) => `<i>${d}</i>`).join('');
+let skipGauge = () => {};
+
+function setGauge(v) {
+  const off = (ARC * (1 - Math.max(0, Math.min(100, v)) / 100)).toFixed(2);
+  $('#res-gauge-fill').setAttribute('stroke-dashoffset', off);
+  $('#res-gauge-edge').setAttribute('stroke-dashoffset', off);
+}
+
+function lightStar(i, sound) {
+  const el = $$('#res-stars .g-star')[i];
+  if (!el || el.classList.contains('lit')) return;
+  el.classList.add('lit');
+  el.innerHTML = icon('star', 40);
+  el.setAttribute('aria-label', `Star ${i + 1}: earned`);
+  if (sound) sfx(`star${i + 1}`);
+}
+
+// Fill 0 -> score (ease-out cubic) with the number counting along; a star pops (with its chime)
+// the moment the fill passes its threshold.
+function runGauge(score, stars, delay) {
+  const num = $('#res-score');
+  const res = $('#results');
+  const ms = 500 + score * 6;
+  let done = false;
+  const finish = (sound) => {
+    if (done) return;
+    done = true;
+    setGauge(score);
+    num.innerHTML = digits(score);
+    for (let i = 0; i < stars; i++) lightStar(i, sound);
+  };
+  skipGauge = () => finish(false);
+  num.parentElement.classList.toggle('wide', score >= 100);
+  if (reducedMotion()) return finish(true);
+  setGauge(0);
+  num.innerHTML = digits(0);
   later(() => {
+    if (done) return;
     const t0 = performance.now();
     const step = () => {
+      if (done || res.classList.contains('hidden')) return;
       const k = Math.min(1, (performance.now() - t0) / ms);
-      const e = 1 - Math.pow(1 - k, 3);
-      el.textContent = String(Math.round(to * e));
-      if (k < 1 && !$('#results').classList.contains('skip')) requestAnimationFrame(step);
-      else el.textContent = String(to);
+      const v = score * (1 - Math.pow(1 - k, 3));
+      setGauge(v);
+      num.innerHTML = digits(Math.round(v));
+      THRESHOLDS.forEach((th, i) => {
+        if (i < stars && v >= th - 0.01) lightStar(i, true);
+      });
+      if (k < 1) requestAnimationFrame(step);
+      else finish(true);
     };
     requestAnimationFrame(step);
   }, delay);
+}
+
+// Headlines vary with how it went (never negative).
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+function headline(score) {
+  if (score >= 95) return pick(['Perfect!', 'Brilliant!', 'Flawless!']);
+  if (score >= 85) return pick(['Great job!', 'So good!', 'Awesome!']);
+  if (score >= 70) return pick(['Nice work!', 'Well played!', 'Good job!']);
+  if (score >= 50) return pick(['Getting there!', 'Good effort!', 'Keep going!']);
+  return pick(['Good try!', 'Tricky one!', 'Keep at it!']);
 }
 
 function histogramHtml(result) {
@@ -61,7 +118,8 @@ function histogramHtml(result) {
 }
 
 function offsetInfo(result) {
-  if (result.mode !== 'tempo' || !result.hits) return { v: 'n/a', d: 'wait mode', cls: 'none' };
+  if (result.mode !== 'tempo') return { v: '–', d: 'wait mode', cls: 'none' };
+  if (!result.hits) return { v: '–', d: 'no notes to time', cls: 'none' };
   const m = result.medianErrMs;
   const p = result.profile;
   if (Math.abs(m) <= p.perfect / 2) return { v: `${m > 0 ? '+' : m < 0 ? '−' : '±'}${Math.abs(m)} ms`, d: 'right on the beat', cls: 'none' };
@@ -82,21 +140,30 @@ export function finishPiece(result) {
   clearTimers();
   stopConfetti();
   const out = coach.record(act, piece, result, seconds);
+  // A song's best score before this take (for the "New best!" tag).
+  const prevSong = act.kind === 'song' ? coach.songRecord(act.songId, act.arrangementId) : null;
+  const prevBest = prevSong ? prevSong.best : null;
   if (act.kind === 'song') coach.recordSong(act.songId, act.arrangementId, result);
   const res = $('#results');
   res.classList.remove('placement-card', 'skip', 'anim');
 
-  // Stars (the middle one sits higher) and the big score.
-  $('#res-stars').innerHTML = [0, 1, 2]
-    .map((i) => `<span class="s${i === 1 ? ' mid' : ''}${i < result.stars ? '' : ' off'}">${icon(i < result.stars ? 'star' : 'starOff', i === 1 ? 118 : 96)}</span>`)
-    .join('');
-  for (let i = 0; i < result.stars; i++) later(() => sfx(`star${i + 1}`), 350 + i * 260);
-  countUp($('#res-score'), result.score, 900, 600);
+  // The gauge: three stars sit on the arc at 70 / 85 / 95 and light up as the fill passes them.
+  $('#res-stars').innerHTML = THRESHOLDS.map((th, i) => {
+    const p = arcPoint(th);
+    return `<span class="g-star" style="left:${((100 * p.x) / 300).toFixed(2)}%;top:${((100 * p.y) / 282).toFixed(2)}%" aria-label="Star ${i + 1}: ${i < result.stars ? 'earned' : `needs ${th}%`}">${icon('starOff', 40)}</span>`;
+  }).join('');
+  $('#res-gauge').setAttribute('aria-label', `Accuracy ${result.score}%, ${result.stars} of 3 stars`);
+  runGauge(result.score, result.stars, 350);
+  const best = $('#res-best');
+  const newBest = prevBest != null && result.score > prevBest;
+  best.classList.toggle('hidden', !newBest);
+  best.innerHTML = newBest ? `${icon('trophy', 22)} New best!` : '';
+  if (newBest) later(() => sfx('success'), reducedMotion() ? 0 : 1500);
   $('#res-notes').textContent = `${result.hits}/${result.total}`;
   $('#res-extra').textContent = `${result.extras} wrong note${result.extras === 1 ? '' : 's'}`;
   const tempo = result.mode === 'tempo';
-  $('#res-timing').textContent = tempo ? `${Math.round(result.timing * 100)}%` : 'n/a';
-  $('#res-timing-d').textContent = tempo ? `${result.onTime} of ${result.hits} on the beat` : 'wait mode';
+  $('#res-timing').textContent = tempo && result.hits ? `${Math.round(result.timing * 100)}%` : '–';
+  $('#res-timing-d').textContent = !tempo ? 'wait mode' : result.hits ? `${result.onTime} of ${result.hits} on the beat` : 'no notes to time';
   const off = offsetInfo(result);
   $('#res-offset').textContent = off.v;
   $('#res-offset-d').textContent = off.d;
@@ -107,7 +174,7 @@ export function finishPiece(result) {
   // What to fix: the bar with most slips, notes missed most, the weaker hand, rushing or
   // dragging (coach.review). Up to three tips; Pip speaks one short line.
   const rv = coach.review(piece, result, act, out);
-  $('#res-tips').innerHTML = rv.tips.map((t) => `<li>${esc(t)}</li>`).join('');
+  $('#res-tips').innerHTML = rv.tips.map((t, i) => `<li style="--i:${i}">${esc(t)}</li>`).join('');
   $('#res-xp').innerHTML = out.xp ? `${icon('bolt', 20)} +${out.xp} XP${out.goalReached ? ' · daily goal!' : ''}` : '';
 
   // Microphone delay: corrected automatically (with an undo), or offered when auto is off.
@@ -134,7 +201,7 @@ export function finishPiece(result) {
 
   const lvlEl = $('#res-level');
   const lvNow = levelInfo(act.level ?? coach.level);
-  let title = result.stars === 3 ? 'Brilliant!' : result.stars === 2 ? 'Great job!' : result.stars === 1 ? 'Nice work!' : 'Good try!';
+  let title = headline(result.score);
   let subtitle = act.kind === 'song' ? `${piece.title} · ${piece.subtitle || ''}` : act.placement ? 'Placement test' : `${act.label || 'Exercise'} · Level ${lvNow.n}`;
   let nextAct = null;
   let nextLabel = 'Next';
@@ -169,7 +236,7 @@ export function finishPiece(result) {
     }
   } else if (act.kind === 'song' || act.kind === 'import') {
     const rec = act.kind === 'song' ? coach.songRecord(act.songId, act.arrangementId) : null;
-    lvlEl.innerHTML = rec ? `<div class="mastery">Best: <b>${rec.best}%</b> ${[0, 1, 2].map((i) => icon(i < rec.stars ? 'star' : 'starOff', 20)).join('')}</div>` : '';
+    lvlEl.innerHTML = rec ? `<div class="mastery">Best: <b>${rec.best}%</b> ${[0, 1, 2].map((i) => icon(i < rec.stars ? 'star' : 'starOff', 20)).join('')}${prevBest != null && result.score > prevBest ? `<span class="was">was ${prevBest}%</span>` : ''}</div>` : '';
     nextFn = () => {
       app.stopPlay();
       app.show('songs');
@@ -194,14 +261,17 @@ export function finishPiece(result) {
       lvlEl.innerHTML = `<div class="mastery">Let's strengthen the basics: back to <b>Level ${lv.n}: ${esc(lv.title)}</b></div>`;
       line = `Let's strengthen the basics with level ${lv.n}.`;
     } else {
-      lvlEl.innerHTML = `<div class="mastery">Level ${lv.n} mastery <b>${out.gain >= 0 ? '+' : ''}${out.gain}</b><span class="bar"><i style="width:${coach.mastery()}%"></i></span><span>${coach.mastery()}%</span></div>`;
+      // The bar grows from where it was to where it is now (transform only).
+      const now = coach.mastery();
+      const was = Math.max(0, Math.min(now, now - out.gain));
+      lvlEl.innerHTML = `<div class="mastery">Level ${lv.n} mastery <b>${out.gain >= 0 ? '+' : ''}${out.gain}</b><span class="bar grow"><i style="transform:scaleX(${Math.max(0.03, was / 100)})" data-to="${Math.max(0.03, now / 100)}"></i></span><span>${now}%</span></div>`;
       line = rv.speak;
     }
     nextAct = coach.nextActivity();
   }
   $('#res-title').textContent = title;
   $('#res-subtitle').textContent = subtitle;
-  $('#res-pip').innerHTML = pip(pose, 200);
+  $('#res-pip').innerHTML = pip(pose, 150);
   $('#res-line').textContent = line.replace(/\s+/g, ' ').trim();
   S.nextFn = nextFn || (() => app.runActivity(nextAct));
   $('#btn-next').onclick = () => {
@@ -220,6 +290,7 @@ export function finishPiece(result) {
   res.classList.remove('hidden');
   void res.offsetWidth;
   res.classList.add('anim');
+  for (const b of $$('#res-level .bar.grow > i')) requestAnimationFrame(() => requestAnimationFrame(() => (b.style.transform = `scaleX(${b.dataset.to})`)));
   if (!out.levelUp) sfx(result.score >= 70 ? 'complete' : 'tryAgain');
   if ((result.stars >= 2 || out.levelUp) && !act.placement) later(() => (stopConfetti = confetti($('#confetti'), { count: 110 })), reducedMotion() ? 0 : 2100);
 
@@ -250,6 +321,7 @@ app.finishPiece = finishPiece;
 
 $('#results').addEventListener('pointerdown', (e) => {
   $('#results').classList.add('skip');
+  skipGauge();
   if (e.target.closest('button')) return;
   clearTimeout(S.autoTimer);
   S.stayOnResults = true;

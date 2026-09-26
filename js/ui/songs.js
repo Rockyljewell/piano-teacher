@@ -1,9 +1,9 @@
 // Song library: free public-domain songs with graded arrangements, plus MIDI import. Covers draw
 // each song's opening melody as a little bar graph (time across, pitch up).
-import { $, $$, S, app, coach, esc, screen, sfx, toast } from './core.js';
+import { $, $$, S, app, coach, esc, screen, sfx, toast, rise, openOverlay, closeOverlay, fillRange } from './core.js';
 import { SONGS, CATEGORIES, FREE_SOURCES, songPiece, songsForLevel } from '../music/songs.js';
 import { midiToPiece } from '../music/midi.js';
-import { levelInfo } from '../music/curriculum.js';
+import { levelInfo, STAGES } from '../music/curriculum.js';
 import { icon, pip } from './brand.js';
 
 const F = { category: 'All', playable: false, query: '' };
@@ -90,12 +90,14 @@ function card(s, i, lvl) {
   </button>`;
 }
 
-function render() {
+// justOn: the chip that was just picked (it pops); animate: 'enter' | 'filter' | false.
+function render({ justOn = null, animate = false } = {}) {
   const lvl = coach.s.placed ? coach.level : 1;
   const count = (c) => (c === 'All' ? SONGS.length : SONGS.filter((s) => s.category === c).length);
+  const on = (key, cond) => (cond ? ` on${justOn === key ? ' just-on' : ''}` : '');
   $('#song-cats').innerHTML =
-    ['All', ...CATEGORIES].map((c) => `<button class="chip ${F.category === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)} <span class="count">${count(c)}</span></button>`).join('') +
-    `<button class="chip ${F.playable ? 'on' : ''}" data-playable="1">${icon('target', 18)} Near Level ${lvl}</button>`;
+    ['All', ...CATEGORIES].map((c) => `<button class="chip${on(c, F.category === c)}" data-cat="${esc(c)}" aria-pressed="${F.category === c}">${esc(c)} <span class="count">${count(c)}</span></button>`).join('') +
+    `<button class="chip${on('near', F.playable)}" data-playable="1" aria-pressed="${F.playable}">${icon('target', 18)} Near Level ${lvl}</button>`;
   const q = F.query.trim().toLowerCase();
   const list = SONGS.filter((s) => (F.category === 'All' || s.category === F.category) && (!F.playable || s.arrangements[0].level <= lvl + 1) && (!q || `${s.title} ${s.composer}`.toLowerCase().includes(q)));
   list.sort((a, b) => a.arrangements[0].level - b.arrangements[0].level || a.title.localeCompare(b.title));
@@ -117,13 +119,23 @@ function render() {
   $('#free-sources').innerHTML = FREE_SOURCES.map(
     (f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a> <small>${esc(f.description)}${f.midi ? ' · MIDI you can import' : ''}</small></li>`,
   ).join('');
+  // Entrance: header, chips and Pip's pick, then the first cards in reading order (the rest as
+  // a group). A filter change only fades the new cards up, quickly.
+  const cards = $$('#song-grid > *');
+  if (animate === 'enter') {
+    rise([$('#screen-songs .page-head'), $('#song-cats'), pick ? pickEl : null], { delay: 40, step: 50, y: 8 });
+    rise(cards, { delay: 160, step: 40, max: 8 });
+  } else if (animate === 'filter') rise(cards, { delay: 0, step: 25, max: 8, y: 8, dur: 260 });
 }
 
 screen('songs', {
   enter() {
     const txt = coach.s.placed ? `Level ${coach.level}` : 'Not placed yet';
     for (const el of $$('.rail-level')) el.textContent = txt;
-    render();
+    render({ animate: 'enter' });
+  },
+  leave() {
+    $('#song-sheet').classList.add('hidden');
   },
 });
 
@@ -133,7 +145,7 @@ $('#song-cats').addEventListener('click', (e) => {
   sfx('select');
   if (b.dataset.playable) F.playable = !F.playable;
   else F.category = b.dataset.cat;
-  render();
+  render({ justOn: b.dataset.playable ? 'near' : b.dataset.cat, animate: 'filter' });
 });
 $('#song-search').addEventListener('input', (e) => {
   F.query = e.target.value;
@@ -163,11 +175,15 @@ function openSong(id) {
   D.hands = 'both';
   D.tempo = coach.level <= 8 ? 0.8 : 1;
   renderSheet();
-  $('#song-sheet').classList.remove('hidden');
+  openOverlay($('#song-sheet'));
   sfx('tap');
 }
 
-function renderSheet() {
+const stageVars = (n) => {
+  const k = Math.max(0, STAGES.findIndex((st) => n >= st.from && n <= st.to)) + 1;
+  return `--sc:var(--stage-${k});--sce:var(--stage-${k}-edge)`;
+};
+function renderSheet(justOn = null) {
   const s = D.song;
   $('#sheet-cover').innerHTML = cover(s, 140, 90);
   $('#sheet-title').textContent = s.title;
@@ -177,14 +193,16 @@ function renderSheet() {
     .map((a) => {
       const r = coach.songRecord(s.id, a.id);
       const lv = levelInfo(a.level);
-      return `<button class="arr ${a === D.arr ? 'on' : ''}" data-arr="${esc(a.id)}"><b>${esc(a.name)}</b><small>Level ${a.level} · ${esc(lv.stage)} · ${esc(a.key.name)} · ${a.time}</small>${r ? starsHtml(r.stars, 20) : ''}</button>`;
+      const best = r ? `<span class="arr-best">${starsHtml(r.stars, 20)}<span>Best ${r.best}%</span></span>` : '';
+      return `<button class="arr${a === D.arr ? ` on${justOn === a.id ? ' just-on' : ''}` : ''}" data-arr="${esc(a.id)}" aria-pressed="${a === D.arr}"><span class="arr-lv" style="${stageVars(a.level)}">${a.level}</span><b>${esc(a.name)}</b><small>Level ${a.level} · ${esc(lv.stage)} · ${esc(a.key.name)} · ${a.time}</small>${best}</button>`;
     })
     .join('');
   const both = D.arr.hands === 'both';
   $('#sheet-hands').innerHTML = both
-    ? ['both', 'R', 'L'].map((h) => `<button class="chip ${D.hands === h ? 'on' : ''}" data-hands="${h}">${{ both: 'Both hands', R: 'Right hand', L: 'Left hand' }[h]}</button>`).join('')
+    ? ['both', 'R', 'L'].map((h) => `<button class="chip${D.hands === h ? ` on${justOn === h ? ' just-on' : ''}` : ''}" data-hands="${h}" aria-pressed="${D.hands === h}">${{ both: 'Both hands', R: 'Right hand', L: 'Left hand' }[h]}</button>`).join('')
     : '';
   $('#sheet-tempo').value = String(Math.round(D.tempo * 100));
+  fillRange($('#sheet-tempo'));
   $('#sheet-tempo-val').textContent = `${Math.round(D.arr.bpm * D.tempo)} bpm (${Math.round(D.tempo * 100)}%)`;
   $('#sheet-license').textContent = s.license || '';
   $('#sheet-play').innerHTML = `${icon('play', 22)} Play`;
@@ -200,14 +218,14 @@ $('#sheet-arrs').addEventListener('click', (e) => {
   D.arr = D.song.arrangements.find((a) => a.id === b.dataset.arr);
   if (D.arr.hands !== 'both') D.hands = 'both';
   sfx('select');
-  renderSheet();
+  renderSheet(D.arr.id);
 });
 $('#sheet-hands').addEventListener('click', (e) => {
   const b = e.target.closest('[data-hands]');
   if (!b) return;
   D.hands = b.dataset.hands;
   sfx('select');
-  renderSheet();
+  renderSheet(D.hands);
 });
 $('#sheet-tempo').addEventListener('input', (e) => {
   D.tempo = +e.target.value / 100;
@@ -215,13 +233,16 @@ $('#sheet-tempo').addEventListener('input', (e) => {
 });
 $('#sheet-close').addEventListener('click', () => {
   sfx('tap');
-  $('#song-sheet').classList.add('hidden');
+  closeOverlay($('#song-sheet'));
 });
 $('#song-sheet').addEventListener('click', (e) => {
-  if (e.target.id === 'song-sheet') $('#song-sheet').classList.add('hidden');
+  if (e.target.id === 'song-sheet') closeOverlay($('#song-sheet'));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.screen === 'songs') closeOverlay($('#song-sheet'));
 });
 function launch(s, a, hands, tempo, mode) {
-  $('#song-sheet').classList.add('hidden');
+  closeOverlay($('#song-sheet'));
   app.withListening(() => app.runActivity({ kind: 'song', songId: s.id, arrangementId: a.id, hands, tempoScale: tempo, level: a.level, mode, free: true, label: s.title }));
 }
 $('#sheet-play').addEventListener('click', () => launch(D.song, D.arr, D.hands, D.tempo, 'tempo'));
