@@ -25,8 +25,8 @@ export class Transcriber {
   constructor(sampleRate, opts = {}) {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
-    this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.97);
-    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.5);
+    this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.99);
+    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.7);
     this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.25); // s a network note may wait for evidence (the DSP needs ~150 ms in free play)
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
