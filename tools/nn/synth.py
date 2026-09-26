@@ -133,7 +133,7 @@ class Instrument:
             db = -np.minimum(sus, 100.0 * np.maximum(0.0, t - hold) / dec)
             env *= (10.0 ** (db / 20.0)).astype(np.float32)
         if damped:
-            env *= np.where(t < dur, 1.0, np.exp(-(t - dur) / tau)).astype(np.float32)
+            env *= np.exp(-np.maximum(t - dur, 0) / tau).astype(np.float32)
         if attack_ramp > 0:
             env *= (1 - np.exp(-t / attack_ramp)).astype(np.float32)
         y = y * env
@@ -186,7 +186,7 @@ class AdditivePiano:
         att = np.minimum(1, t / 0.003)
         y *= 0.25 * vel * att
         if damped:
-            y *= np.where(t < dur, 1.0, np.exp(-(t - dur) / 0.03)).astype(np.float32)
+            y *= np.exp(-np.maximum(t - dur, 0) / 0.03).astype(np.float32)
         hl = int(0.015 * SR)
         noise = lfilter([0.3], [1, -0.7], rng.uniform(-1, 1, hl)).astype(np.float32)
         y[:hl] += 0.25 * 0.25 * vel * noise * np.exp(-np.arange(hl) / (0.004 * SR))

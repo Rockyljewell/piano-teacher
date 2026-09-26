@@ -4,8 +4,8 @@ clipping are added later, at training time (train.py), so every epoch hears new 
     python tools/nn/make_data.py --hours 40 --workers 2           # training shards
     python tools/nn/make_data.py --hours 1.5 --split val --seed 999 # validation (same pianos,
                                                                     # other music and rooms)
-Output: .data/clips/<split>-NNN.npz with
-    audio  int16, all clips concatenated (16 kHz, peak-safe scale; train.py rescales)
+Output: .data/clips/<split>-NNN.audio.npy  int16, all clips concatenated (16 kHz, peak-safe
+        scale; train.py sets the level), and .data/clips/<split>-NNN.npz with
     clips  int64 [n, 2]  (offset, length)
     notes  float32 [m, 5] (clip, midi, onset s, sounding end s, velocity)
     meta   json: per clip {inst, kind, rt60}
@@ -74,7 +74,8 @@ def shard(args):
         for midi, on, end, vel in labels:
             notes.append((c, midi, on, end, vel))
         meta.append(m)
-    np.savez(path + '.tmp.npz', audio=np.concatenate(auds), clips=np.array(clips, dtype=np.int64),
+    np.save(path[:-4] + '.audio.npy', np.concatenate(auds))
+    np.savez(path + '.tmp.npz', clips=np.array(clips, dtype=np.int64),
              notes=np.array(notes, dtype=np.float32).reshape(-1, 5), meta=json.dumps(meta))
     os.replace(path + '.tmp.npz', path)
     return path, time.time() - t0
