@@ -28,7 +28,10 @@ export class Transcriber {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.995);
-    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.5);
+    // octave partners: 0.7 above middle C (what validation on the training pianos preferred),
+    // 0.5 below it, where the upper note hides best in the lower one's partials
+    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.7);
+    this.octPLow = opts.octPLow ?? num(ENV.HYBRID_OCT_LOW, 0.5);
     this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.25); // s a network note may wait for evidence (the DSP needs ~150 ms in free play)
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
@@ -134,7 +137,8 @@ export class Transcriber {
     for (const h of this.held) {
       if (this._has(h.midi, h.t)) continue; // the DSP heard it itself
       if (lp) h.pmax = Math.max(h.pmax, lp[h.midi - 21] || 0);
-      if (h.pmax >= this.trustP || (h.pmax >= this.octP && this._partner(h.midi, h.t))) {
+      const octP = h.midi < 60 ? this.octPLow : this.octP;
+      if (h.pmax >= this.trustP || (h.pmax >= octP && this._partner(h.midi, h.t))) {
         this.stats.nnAdded++;
         this._report(h.midi, h.t, h.vel, { ...h.info, p: h.pmax }, 'nn');
       } else if (now < h.until) keep.push(h);
