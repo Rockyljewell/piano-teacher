@@ -1,7 +1,7 @@
 // Getting the microphone ready: permission, a room-noise check and a "play middle C" test.
 // If the microphone delivers nothing (a dead track, an iOS interruption) the setup screen says
 // so and offers "Restart microphone"; the Listening check (diagnostics.js) is one tap away.
-import { $, S, app, audio, coach, show, screen, toast, say, showLine, sfx, unlockVoice } from './core.js';
+import { $, $$, S, app, audio, coach, show, screen, toast, say, showLine, sfx, unlockVoice, rise } from './core.js';
 import { noteName } from '../music/theory.js';
 import { openDiagnostics } from './diagnostics.js';
 
@@ -64,6 +64,7 @@ export function openSetup() {
   $('#setup-msg').textContent = '';
   $('#setup-room').textContent = '';
   showLine("I listen through the microphone. Let's make sure I can hear your piano!", { pop: false });
+  rise([$('#screen-setup .coach-col .bubble'), ...$$('#screen-setup .steps li'), $('#screen-setup .setup-card .row')], { delay: 80, step: 55 });
   const go = $('#btn-setup-go');
   go.textContent = 'Allow microphone';
   go.disabled = false;

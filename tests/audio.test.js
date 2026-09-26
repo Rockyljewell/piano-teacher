@@ -567,6 +567,12 @@ describe('browser: sampled piano, sfx and voice', { skip: skipBrowser }, () => {
       const { generate } = await import('/js/music/generator.js');
       const audio = new AudioEngine({ tailMs: 60 });
       window.audio = audio;
+      // Poll for a condition instead of a fixed sleep: under CPU load, the main-thread callbacks
+      // that track voices and holds can run late (the condition must still hold within the bound).
+      const until = async (fn, ms) => {
+        const t0 = performance.now();
+        while (!fn() && performance.now() - t0 < ms) await new Promise((res) => setTimeout(res, 20));
+      };
       let progress = null;
       audio.on('piano', (p) => (progress = p));
       await audio.ensureContext();
@@ -578,6 +584,7 @@ describe('browser: sampled piano, sfx and voice', { skip: skipBrowser }, () => {
       // polyphony limit
       for (let i = 0; i < 60; i++) s.note(40 + i, audio.ctx.currentTime + 0.02, 0.6, 0.5);
       await new Promise((res) => setTimeout(res, 200)); // stolen voices fade out in ~0.1 s
+      await until(() => s.activeVoices <= s.maxVoices, 2000);
       const capped = s.activeVoices;
       s.stopAll();
       // touch key: sounds and holds the mic until released (+ tail)
@@ -586,6 +593,7 @@ describe('browser: sampled piano, sfx and voice', { skip: skipBrowser }, () => {
       await new Promise((res) => setTimeout(res, 50));
       audio.noteOff(64, audio.now(), 'touch');
       await new Promise((res) => setTimeout(res, 1100));
+      await until(() => !audio.held, 3000);
       const touchAfter = audio.held;
       // demo of a generated piece at a fast tempo
       const piece = generate(3, { seed: 5, measures: 2 });

@@ -1829,8 +1829,14 @@ export class Synth {
     this.tickOut.connect(destination);
     const len = Math.floor(ctx.sampleRate * 0.05);
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+    // Seeded noise: every session gets the same tick, the one the tests prove the listener
+    // ignores (random noise occasionally leaked enough below the high-pass to look like an attack).
     const d = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    let seed = 0x2f6e2b1;
+    for (let i = 0; i < len; i++) {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      d[i] = (seed / 4294967296) * 2 - 1;
+    }
   }
 
   setVolume(v) {

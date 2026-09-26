@@ -103,6 +103,11 @@ export class Stage {
     this.particles = [];
     this.chips = [];
     this.rings = [];
+    this.landed = new Map(); // note id -> time it was hit (white flash on the falling block)
+    this._pulse = 0; // 1 on the beat, decaying to 0 before the next one
+    this._downbeat = false;
+    this._heat = 0; // 0..1 with the streak
+    this.reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   // Override any of COLORS (brand theme).
@@ -115,6 +120,44 @@ export class Stage {
     this.particles = [];
     this.chips = [];
     this.rings = [];
+    this.landed.clear();
+  }
+
+  // A note was played right: its falling block flashes and a bright capsule bursts along the
+  // hit line at its key.
+  land(note, color = COLORS.hit, opts = {}) {
+    const k = this.keys && this.keys.get(note.midi);
+    if (!k || !this.L) return;
+    const now = performance.now();
+    this.landed.set(note.id, now);
+    if (this.landed.size > 64) this.landed.delete(this.landed.keys().next().value);
+    const col = this.opts.noteColors ? noteColor(note.midi, this.piece && this.piece.key) : color;
+    this.particles.push({ land: true, x: k.x + k.w / 2, y: this.L.kb.y - 1, w: k.w, t0: now, life: opts.grade === 'perfect' ? 340 : 280, color: col, gold: opts.grade === 'perfect' });
+  }
+
+  // A note went by unplayed: a small coral puff at its key (gentle: beginners miss a lot).
+  miss(midi) {
+    const k = this.keys && this.keys.get(midi);
+    if (!k || !this.L) return;
+    this.particles.push({ puff: true, x: k.x + k.w / 2, y: this.L.kb.y - 4, w: k.w, t0: performance.now(), life: 420, color: COLORS.coral });
+  }
+
+  // A band of light that sweeps across the keys (streak milestones).
+  sweep(color = COLORS.sun) {
+    if (!this.L || this.reduced) return;
+    this.particles.push({ sweep: true, t0: performance.now(), life: 650, color });
+  }
+
+  // The piece is over: the keys light up left to right.
+  finale() {
+    if (!this.L || !this.keys) return;
+    const now = performance.now();
+    const whites = [...this.keys].filter(([, k]) => !k.black);
+    const span = this.reduced ? 0 : 420;
+    whites.forEach(([m, k], i) => {
+      this.particles.push({ keyGlow: true, x: k.x, w: k.w, t0: now + (span * i) / Math.max(1, whites.length - 1), life: 520, color: this.opts.noteColors ? noteColor(m) : COLORS.brandHi || '#9B82FF' });
+    });
+    this.sweep(COLORS.sun);
   }
 
   // Hit feedback at a key: a soft glow (sun for Perfect) and a few sparks in the note's colour.
@@ -143,8 +186,10 @@ export class Stage {
   chip(midi, text, color = COLORS.hit, opts = {}) {
     if (!this.L) return;
     const now = performance.now();
+    // One chip per chord: the other notes of the same event don't add their own.
+    if (opts.eventId != null && this.chips.some((x) => x.eventId === opts.eventId && now - x.t0 < 400)) return;
     const parts = String(text).split(' · ');
-    const c = { midi, main: parts[0], detail: parts.slice(1).join(' · '), color, grade: opts.grade || 'great', errMs: opts.errMs || 0, t0: now, life: 1300 };
+    const c = { midi, main: parts[0], detail: parts.slice(1).join(' · '), color, grade: opts.grade || 'great', errMs: opts.errMs || 0, t0: now, life: 1300, eventId: opts.eventId };
     const k = this.keys && this.keys.get(midi);
     let anchored = false;
     if (opts.eventId != null && this.piece && this.opts.showStaff && this.L.staff.h > 0) {
@@ -189,6 +234,64 @@ export class Stage {
     this.particles = this.particles.filter((p) => now - p.t0 < p.life);
     for (const p of this.particles) {
       const k = (now - p.t0) / p.life;
+      if (k < 0) continue; // scheduled for later (finale cascade)
+      if (p.land) {
+        // capsule that widens along the hit line, white-hot core, then fades
+        const e = 1 - (1 - k) * (1 - k);
+        const w = p.w * (0.9 + 1.5 * e);
+        const h = 12 * (1 - k) + 3;
+        ctx.globalAlpha = (1 - k) * 0.9;
+        ctx.fillStyle = p.gold ? COLORS.sun : p.color;
+        roundRect(ctx, p.x - w / 2, p.y - h / 2, w, h, h / 2);
+        ctx.fill();
+        ctx.globalAlpha = (1 - k) * (1 - k);
+        ctx.fillStyle = '#fff';
+        roundRect(ctx, p.x - w * 0.3, p.y - h * 0.22, w * 0.6, h * 0.44, h * 0.22);
+        ctx.fill();
+        // upward light column
+        const g = ctx.createLinearGradient(0, p.y - 60, 0, p.y);
+        g.addColorStop(0, hexA(p.gold ? COLORS.sun : p.color, 0));
+        g.addColorStop(1, hexA(p.gold ? COLORS.sun : p.color, 0.35 * (1 - k)));
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = g;
+        ctx.fillRect(p.x - p.w * 0.45, p.y - 60, p.w * 0.9, 60);
+        continue;
+      }
+      if (p.puff) {
+        ctx.globalAlpha = 0.55 * (1 - k);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        const d = 6 + 10 * k;
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.w * 0.25, p.y - d);
+        ctx.lineTo(p.x + p.w * 0.25, p.y - d);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      if (p.sweep) {
+        const { x: fx, w: fw } = this.L.fall;
+        const bx = fx - 120 + (fw + 240) * k;
+        const top = this.L.kb.y - 70;
+        const g = ctx.createLinearGradient(bx - 90, 0, bx + 90, 0);
+        g.addColorStop(0, hexA(p.color, 0));
+        g.addColorStop(0.5, hexA(p.color, 0.38 * Math.sin(Math.PI * k)));
+        g.addColorStop(1, hexA(p.color, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(bx - 90, top, 180, this.L.kb.h + 70);
+        continue;
+      }
+      if (p.keyGlow) {
+        const y = this.L.kb.y;
+        ctx.globalAlpha = 0.5 * Math.sin(Math.PI * k);
+        ctx.fillStyle = p.color;
+        roundRect(ctx, p.x + 2, y + 6, p.w - 4, this.L.kb.h - 12, [0, 0, 8, 8]);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
       if (p.glow) {
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * (1 + k * 0.4));
         g.addColorStop(0, hexA(p.color, 0.55 * (1 - k)));
@@ -699,6 +802,22 @@ export class Stage {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, this.w, this.h);
     this._now = state.nowBeat;
+    // Beat pulse (1 on each beat, decaying) for the playhead and the hit line; stronger on beat 1.
+    const p = this.piece;
+    if (p && state.nowBeat != null && !state.prep) {
+      const unit = p.ts && p.ts.compound ? 1.5 : 1;
+      const b = state.nowBeat / unit;
+      const bi = Math.floor(b);
+      const per = Math.max(1, Math.round(p.beatsPer / unit));
+      this._pulse = Math.exp(-(b - bi) * 7) * (this.reduced ? 0.5 : 1);
+      this._downbeat = ((bi % per) + per) % per === 0;
+      // Wait mode has no beat while it waits for you: breathe gently instead ("your turn").
+      if (state.waitMode && state.nowBeat >= 0) {
+        this._pulse = this.reduced ? 0.3 : 0.3 + 0.3 * Math.sin((performance.now() / 1000) * 3.2);
+        this._downbeat = true;
+      }
+    } else this._pulse = 0;
+    this._heat += (Math.min(1, (state.streak || 0) / 20) - this._heat) * 0.08;
     if (this.piece && this.opts.showStaff && this.L.staff.h > 0) {
       const c = this.L.staff;
       // paper card with a 3D bottom edge
@@ -790,9 +909,10 @@ export class Stage {
       }
     }
 
-    // playhead band
-    ctx.fillStyle = 'rgba(111,75,242,0.10)';
-    ctx.fillRect(this.playheadX - sp * 1.2, 0, sp * 2.4, h);
+    // playhead band (brightens on each beat)
+    const pul = this._pulse * (this._downbeat ? 1 : 0.6);
+    ctx.fillStyle = `rgba(111,75,242,${(0.1 + 0.1 * pul).toFixed(3)})`;
+    ctx.fillRect(this.playheadX - sp * (1.2 + 0.25 * pul), 0, sp * (2.4 + 0.5 * pul), h);
 
     // events
     const visLo = now - (this.playheadX - this.headerW) / this.pxPerBeat - 1;
@@ -900,7 +1020,7 @@ export class Stage {
       phBot = Math.min(h - sp * 0.5, botY + sp * 1.6);
     ctx.globalAlpha = 0.9;
     ctx.strokeStyle = COLORS.playhead;
-    ctx.lineWidth = 3.5;
+    ctx.lineWidth = 3.5 + 2 * pul;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(this.playheadX, phTop);
@@ -909,9 +1029,10 @@ export class Stage {
     ctx.lineCap = 'butt';
     ctx.globalAlpha = 1;
     ctx.fillStyle = COLORS.playhead;
+    const tri = 8 + 3 * pul;
     ctx.beginPath();
-    ctx.moveTo(this.playheadX - 8, phTop - 8);
-    ctx.lineTo(this.playheadX + 8, phTop - 8);
+    ctx.moveTo(this.playheadX - tri, phTop - tri);
+    ctx.lineTo(this.playheadX + tri, phTop - tri);
     ctx.lineTo(this.playheadX, phTop + 1);
     ctx.closePath();
     ctx.fill();
@@ -1212,12 +1333,35 @@ export class Stage {
       if (p.rhythmOnly) [col, edge] = [COLORS.rh, COLORS.rhEdge];
       else if (this.opts.noteColors) [col, edge] = [noteColor(n.midi, key), noteEdge(n.midi, key)];
       else [col, edge] = n.hand === 'L' ? [COLORS.lh, COLORS.lhEdge] : [COLORS.rh, COLORS.rhEdge];
-      if (st && st.s === 'miss') [col, edge] = [COLORS.coral, COLORS.coralEdge];
+      const hit = st && st.s === 'hit';
+      if (st && st.s === 'miss') [col, edge] = ['#D9CFBF', '#BFB29D'];
       const top = Math.max(fy - 20, y0 + 2),
         bot = Math.min(bottom, y1 - 2);
       if (bot <= top) continue;
-      ctx.globalAlpha = st && st.s === 'hit' ? 0.35 : st && st.s === 'miss' ? 0.6 : 1;
+      // About to land: a soft halo that grows as the note reaches the line ("now!").
+      const ahead = (n.beat - now) / Math.max(0.25, p.bpm / 120);
+      if (!st && ahead < 1 && ahead > -0.2 && bot - top > 4) {
+        const a = Math.max(0, Math.min(1, 1 - ahead));
+        const pad = k.black ? 1 : Math.max(2, k.w * 0.1);
+        ctx.globalAlpha = 0.25 + 0.45 * a;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2 + 4 * a;
+        roundRect(ctx, k.x + pad - 3, top - 3, k.w - pad * 2 + 6, bot - top + 6, r + 3);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.globalAlpha = hit ? 0.8 : st && st.s === 'miss' ? 0.7 : 1;
       this._noteBlock(k, top, bot - top, col, edge, r);
+      if (hit) {
+        // played: lit from inside while it sounds, with a white flash right after the hit
+        const pad = k.black ? 1 : Math.max(2, k.w * 0.1);
+        const t = this.landed.get(n.id);
+        const flash = t ? Math.max(0, 1 - (performance.now() - t) / 180) : 0;
+        ctx.globalAlpha = 0.28 + 0.6 * flash;
+        ctx.fillStyle = '#fff';
+        roundRect(ctx, k.x + pad, top, k.w - pad * 2, Math.max(2, bot - top - 1), Math.min(r, (bot - top) / 2));
+        ctx.fill();
+      }
       // left-hand notes in colour mode get a small dark stripe
       if (this.opts.noteColors && n.hand === 'L' && !p.rhythmOnly && bot - top > 12) {
         ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -1270,15 +1414,30 @@ export class Stage {
     }
   }
 
+  // The line where notes land. It pulses on the beat and warms from violet to gold with the
+  // streak.
   _hitLine(y) {
     const ctx = this.ctx;
     const { x, w } = this.L.fall;
+    const pul = this._pulse * (this._downbeat ? 1 : 0.55);
+    const heat = this._heat;
+    const mix = (a, b, t) => Math.round(a + (b - a) * t);
+    const [r, g0, b] = [mix(111, 255, heat), mix(75, 176, heat), mix(242, 40, heat)];
+    if (pul > 0.02 || heat > 0.05) {
+      const glowH = 26 + 18 * pul;
+      const gl = ctx.createLinearGradient(0, y - glowH, 0, y);
+      gl.addColorStop(0, `rgba(${r},${g0},${b},0)`);
+      gl.addColorStop(1, `rgba(${r},${g0},${b},${(0.1 + 0.22 * pul + 0.12 * heat).toFixed(3)})`);
+      ctx.fillStyle = gl;
+      ctx.fillRect(x, y - glowH, w, glowH);
+    }
     const g = ctx.createLinearGradient(x, 0, x + w, 0);
-    g.addColorStop(0, 'rgba(111,75,242,0.35)');
-    g.addColorStop(0.5, 'rgba(111,75,242,0.75)');
-    g.addColorStop(1, 'rgba(111,75,242,0.35)');
+    g.addColorStop(0, `rgba(${r},${g0},${b},${(0.35 + 0.25 * pul).toFixed(3)})`);
+    g.addColorStop(0.5, `rgba(${r},${g0},${b},${(0.75 + 0.25 * pul).toFixed(3)})`);
+    g.addColorStop(1, `rgba(${r},${g0},${b},${(0.35 + 0.25 * pul).toFixed(3)})`);
     ctx.fillStyle = g;
-    roundRect(ctx, x, y - 3, w, 5, 2.5);
+    const th = 5 + 3 * pul;
+    roundRect(ctx, x, y - th + 2, w, th, th / 2);
     ctx.fill();
   }
 

@@ -132,6 +132,9 @@ function placeStrip() {
   const strip = $('#status-strip');
   if (!L || !L.strip) return;
   strip.style.top = `${Math.round(L.strip.y + (L.strip.h - 36) / 2)}px`;
+  // the count-in sits in the middle of the falling-notes lane
+  if (L.fall && L.fall.h > 200) $('#countdown').style.top = `${Math.round(L.fall.y + L.fall.h * 0.46)}px`;
+  else $('#countdown').style.top = '';
 }
 
 export function startSession(mode) {
@@ -214,12 +217,14 @@ function onSessionEvent(ev) {
     // Wait mode has no timing: colour by how cleanly the note was found, not early/late.
     const col = ev.wait ? (ev.grade === 'perfect' ? GRADE_COLORS.perfect : ev.grade === 'great' ? GRADE_COLORS.great : '#6F4BF2') : gradeColor(ev.grade, ev.errMs);
     stage.burst(ev.note.midi, col, ev.grade === 'perfect' ? 10 : 7, { grade: ev.grade });
+    stage.land(ev.note, col, { grade: ev.grade });
     stage.ring(ev.note.eventId, ev.note.midi, col);
     stage.chip(ev.note.midi, ev.label, col, { grade: ev.grade, errMs: ev.errMs, eventId: ev.note.eventId });
     sfx(ev.grade === 'perfect' ? 'perfect' : 'hit');
     if (S.combo > 0 && S.combo % 10 === 0) {
       sfx('combo', { level: Math.min(8, S.combo / 10) });
       comboFlash(S.combo);
+      stage.sweep();
     }
     if (S.session.mode === 'tempo') {
       S.timingRecent.push({ errMs: ev.errMs, t: performance.now(), color: col });
@@ -229,6 +234,7 @@ function onSessionEvent(ev) {
   } else if (ev.type === 'miss') {
     S.combo = 0;
     S.judged++;
+    if (!S.piece.rhythmOnly) stage.miss(ev.note.midi);
   } else if (ev.type === 'wrong') {
     S.combo = 0;
     S.lastKind.set(ev.midi, { kind: 'bad', t: performance.now() });
@@ -243,15 +249,34 @@ function onSessionEvent(ev) {
       d.classList.toggle('on', i === idx);
       d.classList.toggle('first', i === 0);
     });
+    // Count-in: the number sits in a ring that closes over one beat; "Go!" on beat 1.
     const cd = $('#countdown');
     if (ev.beat < 0) {
-      cd.textContent = String(-ev.beat);
-      cd.classList.remove('pulse');
+      cd.style.setProperty('--beat', `${Math.max(0.25, S.session.spb * (S.piece.ts.compound ? 1.5 : 1)).toFixed(3)}s`);
+      cd.innerHTML = `<b>${-ev.beat}</b>`;
+      cd.classList.remove('pulse', 'go');
       void cd.offsetWidth;
       cd.classList.add('pulse');
-    } else cd.textContent = '';
+    } else if (ev.beat === 0 && S.session.countIn > 0 && S.session.mode === 'tempo' && !S.demo) {
+      cd.innerHTML = '<b>Go!</b>';
+      cd.classList.remove('pulse');
+      void cd.offsetWidth;
+      cd.classList.add('pulse', 'go');
+      clearTimeout(S.goTimer);
+      S.goTimer = setTimeout(() => {
+        if (cd.classList.contains('go')) cd.innerHTML = '';
+        cd.classList.remove('go');
+      }, 520);
+    } else if (!cd.classList.contains('go')) cd.innerHTML = '';
   } else if (ev.type === 'finish') {
-    app.finishPiece(ev.result);
+    // A short flourish across the keys, then the results.
+    const result = ev.result;
+    const piece = S.piece;
+    stage.finale();
+    clearTimeout(S.finishTimer);
+    S.finishTimer = setTimeout(() => {
+      if (S.screen === 'play' && S.piece === piece) app.finishPiece(result);
+    }, stage.reduced ? 150 : 650);
   }
   const c = $('#hud-combo');
   c.textContent = String(S.combo);
@@ -268,6 +293,10 @@ export function flash(text, kind = '', ms = 2200) {
   el.classList.add('show');
   el.style.animationDuration = `${ms}ms`;
 }
+// (When it has played, drop the class: a hidden screen that is shown again would replay it.)
+$('#feedback-pop').addEventListener('animationend', (e) => {
+  if (e.target.id === 'feedback-pop') e.target.classList.remove('show');
+});
 
 app.flash = flash;
 
@@ -484,6 +513,7 @@ export function loop() {
       wrongMarks,
       lookaheadSec: coach.settings.lookaheadSec,
       timingMeter: s.mode === 'tempo' && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
+      streak: S.demo ? 0 : S.combo,
     });
     micDot();
     barProgress();
@@ -526,7 +556,11 @@ export function stopPlay(keepScreen) {
   S.demoHandle = null;
   S.demo = false;
   if (audio.synth) audio.synth.stopAll();
-  $('#countdown').textContent = '';
+  clearTimeout(S.finishTimer);
+  clearTimeout(S.goTimer);
+  $('#countdown').innerHTML = '';
+  $('#countdown').classList.remove('go', 'pulse');
+  $('#feedback-pop').classList.remove('show');
   if (!keepScreen) releaseWakeLock();
 }
 app.stopPlay = stopPlay;
@@ -564,6 +598,7 @@ $('#btn-skip').addEventListener('click', () => {
   } else runActivity(coach.nextActivity());
 });
 $('#btn-quit').addEventListener('click', () => {
+  $('#pause-menu').classList.add('hidden');
   stopPlay();
   show('home');
 });
@@ -682,6 +717,8 @@ export function startFreePlay() {
   app.withListening(() => {
     stopPlay(true);
     S.free = true;
+    $('#pause-menu').classList.add('hidden');
+    $('#results').classList.add('hidden');
     $('#screen-play').classList.add('free');
     $('#screen-play').classList.remove('placement');
     S.piece = null;

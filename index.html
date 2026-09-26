@@ -118,23 +118,34 @@
     </section>
 
     <!-- LEVEL INTRO ----------------------------------------------------------------------------- -->
-    <section id="screen-intro" class="screen focus">
+    <section id="screen-intro" class="screen focus intro-screen">
       <header class="focus-top">
         <button class="icon-btn" data-go="home" aria-label="Home"></button>
         <span id="intro-stage" class="stage-chip"></span>
+        <div id="intro-facts" class="intro-top-facts"></div>
       </header>
       <div class="content intro">
-        <div class="coach-col">
-          <div class="bubble tail-bottom-left" data-coach id="intro-line"></div>
-          <div class="pip-slot" data-pip="conduct" data-size="210"></div>
-        </div>
-        <div class="card intro-card">
-          <div class="intro-head"><div id="intro-coin" class="coin-sm">1</div><div><small class="eyebrow">New level</small><h2 id="intro-title"></h2></div></div>
-          <p id="intro-concept" class="concept"></p>
+        <div class="intro-main">
+          <div class="intro-hero">
+            <div id="intro-coin" class="intro-coin"><span>1</span></div>
+            <div class="intro-titles"><p id="intro-eyebrow" class="eyebrow">New level</p><h1 id="intro-title"></h1></div>
+          </div>
+          <p id="intro-concept" class="intro-concept"></p>
           <ul id="intro-tips" class="tips"></ul>
-          <div class="row">
+        </div>
+        <div class="intro-side">
+          <section id="intro-skill" class="card intro-skill" aria-labelledby="intro-skill-title">
+            <div class="skill-head"><h3 id="intro-skill-title">Where your hands go</h3><small id="intro-skill-sub"></small></div>
+            <div id="intro-keys" class="mini-keys"></div>
+            <p id="intro-hands" class="intro-hands"></p>
+          </section>
+          <div class="intro-coach">
+            <div class="pip-slot" data-pip="conduct" data-size="128"></div>
+            <div class="bubble tail-left" data-coach id="intro-line"></div>
+          </div>
+          <div class="intro-actions">
+            <button id="btn-intro-hear" class="btn btn-lg">Hear it first</button>
             <button id="btn-intro-go" class="btn btn-primary btn-lg">Let's play</button>
-            <button id="btn-intro-hear" class="btn">Hear it first</button>
           </div>
         </div>
       </div>
@@ -212,12 +223,23 @@
       <div id="results" class="results hidden">
         <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
         <div class="res-left">
-          <div class="stars" id="res-stars"></div>
-          <div class="big-score"><span id="res-score">0</span><small>%</small></div>
-          <div class="pct-label">Accuracy</div>
+          <div class="gauge" id="res-gauge" role="img" aria-label="Accuracy">
+            <svg viewBox="0 0 300 300" aria-hidden="true">
+              <path class="g-track edge" transform="translate(0 5)" d="M66.56 233.44 A118 118 0 1 1 233.44 233.44"/>
+              <path class="g-track" d="M66.56 233.44 A118 118 0 1 1 233.44 233.44"/>
+              <path class="g-fill edge" id="res-gauge-edge" transform="translate(0 5)" d="M66.56 233.44 A118 118 0 1 1 233.44 233.44" stroke-dasharray="556.06 556.06" stroke-dashoffset="556.06"/>
+              <path class="g-fill" id="res-gauge-fill" d="M66.56 233.44 A118 118 0 1 1 233.44 233.44" stroke-dasharray="556.06 556.06" stroke-dashoffset="556.06"/>
+            </svg>
+            <div class="g-center">
+              <div class="big-score"><span id="res-score">0</span><small>%</small></div>
+              <div class="pct-label">Accuracy</div>
+            </div>
+            <div id="res-stars" class="g-stars"></div>
+            <span id="res-best" class="best-tag hidden"></span>
+          </div>
           <div class="res-coach">
-            <div class="bubble tail-left" data-coach id="res-line"></div>
             <div class="res-pip" id="res-pip"></div>
+            <div class="bubble tail-left" data-coach id="res-line"></div>
           </div>
         </div>
         <div class="res-right">
@@ -300,34 +322,30 @@
       <div class="content scroller">
         <header class="page-head"><div><h1>Practice</h1><p class="sub">Pick a drill, a level and a tempo</p></div></header>
         <div class="practice">
-          <div class="card form">
-            <div class="field"><span class="label">Exercise</span>
-              <div class="seg" id="pr-kind">
-                <button data-v="sight" class="on">Sight-reading</button>
-                <button data-v="rhythm">Rhythm</button>
-                <button data-v="scale">Scales</button>
-                <button data-v="arpeggio">Arpeggios</button>
-                <button data-v="chords">Chords</button>
-                <button data-v="notes">Note reading</button>
+          <div class="pr-main">
+            <h2 class="pr-label" id="pr-kind-label">Exercise</h2>
+            <div class="pr-kinds" id="pr-kind" role="radiogroup" aria-labelledby="pr-kind-label"></div>
+            <div class="card form pr-card">
+              <label class="field"><span class="label">Level <span id="pr-level-name" class="muted"></span></span>
+                <input type="range" id="pr-level" min="1" max="40" value="1">
+              </label>
+              <div class="field"><span class="label" id="pr-mode-label">Mode</span>
+                <div class="seg-slide" id="pr-mode" role="radiogroup" aria-labelledby="pr-mode-label" data-i="0">
+                  <span class="thumb" aria-hidden="true"></span>
+                  <button data-v="tempo" class="on" role="radio" aria-checked="true">Tempo<small>graded on time</small></button>
+                  <button data-v="wait" role="radio" aria-checked="false">Wait<small>stops for you</small></button>
+                </div>
+                <p id="pr-mode-hint" class="pr-hint" aria-live="polite"></p>
               </div>
+              <label class="field"><span class="label">Tempo <span id="pr-tempo-val" class="muted"></span></span>
+                <input type="range" id="pr-tempo" min="-50" max="130" value="30">
+              </label>
+              <div class="pr-go"><button id="btn-pr-go" class="btn btn-primary btn-lg">Start practice</button></div>
             </div>
-            <label class="field"><span class="label">Level <span id="pr-level-name" class="muted"></span></span>
-              <input type="range" id="pr-level" min="1" max="40" value="1">
-            </label>
-            <div class="field"><span class="label">Mode</span>
-              <div class="seg" id="pr-mode">
-                <button data-v="tempo" class="on">Tempo (graded on time)</button>
-                <button data-v="wait">Wait (stops for you)</button>
-              </div>
-            </div>
-            <label class="field"><span class="label">Tempo <span id="pr-tempo-val" class="muted"></span></span>
-              <input type="range" id="pr-tempo" min="-50" max="130" value="30">
-            </label>
-            <div class="row"><button id="btn-pr-go" class="btn btn-primary btn-lg">Start practice</button></div>
           </div>
           <div class="practice-pip">
             <div class="bubble tail-bottom" data-coach>Short and often beats long and rarely. Five minutes counts!</div>
-            <div class="pip-slot" data-pip="conduct" data-size="170"></div>
+            <div class="pip-slot" data-pip="conduct" data-size="160"></div>
           </div>
         </div>
       </div>
