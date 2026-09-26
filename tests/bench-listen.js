@@ -122,7 +122,9 @@ function listen(Transcriber, audio, mat, mode, chunk) {
   let lo = 0; // first note that may still be due
   let key = '';
   let seg = 0;
-  const t0 = performance.now();
+  // CPU time of this thread (robust when other processes share the machine), else wall time
+  const cpu = typeof process.threadCpuUsage === 'function' ? () => { const u = process.threadCpuUsage(); return (u.user + u.system) / 1000; } : () => performance.now();
+  const t0 = cpu();
   for (let i = 0; i + chunk <= audio.length; i += chunk) {
     const t = i / SR;
     if (!calibrated && t > 0.4) {
@@ -144,7 +146,7 @@ function listen(Transcriber, audio, mat, mode, chunk) {
     at = i + chunk;
     tr.push(audio.subarray(i, i + chunk), i);
   }
-  const ms = performance.now() - t0;
+  const ms = cpu() - t0;
   const stats = {};
   for (const [k, v] of Object.entries(tr.stats || {})) if (typeof v === 'number') stats[k] = v;
   return { events, ms, stats };
@@ -693,7 +695,7 @@ function markdown(R, B) {
 
   L.push('## Speed');
   L.push('');
-  L.push(`One core: median job ${R.speed.median.toFixed(1)}× real time (slowest ${R.speed.min.toFixed(1)}×, overall ${R.speed.overall.toFixed(1)}×). Listener stats over all runs: ${Object.entries(R.stats).map(([k, v]) => `${k} ${v}`).join(', ')}.`);
+  L.push(`One core (thread CPU time): median job ${R.speed.median.toFixed(1)}× real time (slowest ${R.speed.min.toFixed(1)}×, overall ${R.speed.overall.toFixed(1)}×). Listener stats over all runs: ${Object.entries(R.stats).map(([k, v]) => `${k} ${v}`).join(', ')}.`);
   L.push('');
 
   L.push('## In-browser pipeline latency (headless Chromium, fake microphone)');
