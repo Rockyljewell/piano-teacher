@@ -1,5 +1,7 @@
-// AudioWorklet that cuts the microphone signal into 512-sample chunks tagged with their exact
-// frame index (the AudioContext clock) and sends them to the listener.
+// AudioWorklet that cuts the microphone signal into 256-sample chunks (5.3 ms at 48 kHz) tagged
+// with their exact frame index (the AudioContext clock) and sends them to the listener. Small
+// chunks matter: the listener decides most notes ~20-40 ms after the attack, and a note can only
+// be reported once the chunk holding the end of its analysis window has arrived.
 //
 // Normal path: the main thread passes in a MessagePort ({type: 'port', port}) whose other end
 // belongs to the listener Web Worker, so chunks go straight from the audio thread to the worker
@@ -13,7 +15,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const o = (options && options.processorOptions) || {};
-    this.size = o.chunk || 512;
+    this.size = o.chunk || 256;
     this.buf = new Float32Array(this.size);
     this.n = 0;
     this.start = 0;

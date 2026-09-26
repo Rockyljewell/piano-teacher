@@ -1,0 +1,8 @@
+# Training the listening model (tools/nn/README.md). CPU-only torch (~195 MB):
+#   python3 -m venv tools/nn/.venv
+#   tools/nn/.venv/bin/pip install -r tools/nn/requirements.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1
+numpy==2.4.6
+scipy==1.17.1
+soundfile==0.14.0

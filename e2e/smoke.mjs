@@ -19,10 +19,10 @@ const out = process.argv[2] || 'e2e-out';
 fs.mkdirSync(out, { recursive: true });
 const URL = process.env.URL || 'http://localhost:8080/';
 
-// Fake mic: 4 s of room noise, then middle C struck every second.
+// Fake mic: 4 s of room noise, middle C, then C-E-G chords every 1.5 s (setup's chord step).
 const sr = 48000;
-const notes = [];
-for (let i = 0; i < 12; i++) notes.push({ midi: 60, t: 4 + i, dur: 0.6, vel: 0.6 });
+const notes = [{ midi: 60, t: 4, dur: 0.6, vel: 0.6 }];
+for (let i = 0; i < 7; i++) for (const m of [60, 64, 67]) notes.push({ midi: m, t: 5.5 + i * 1.5 + (m - 60) * 0.004, dur: 0.8, vel: 0.6 });
 const wav = path.resolve(out, 'fake-mic.wav');
 fs.writeFileSync(wav, toWav(renderPiano(notes, { sr, length: 17 }), sr));
 
@@ -53,6 +53,14 @@ console.log('middle C detected through the fake microphone:', heardC);
 if (!heardC) {
   console.log('setup message:', await page.textContent('#setup-msg'));
   await page.click('#btn-setup-skip');
+} else {
+  const heardChord = await page
+    .waitForFunction(() => document.querySelector('#step-chord').classList.contains('done'), null, { timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  console.log('C-E-G chord step done:', heardChord, '|', (await page.textContent('#setup-msg')).trim());
+  // after three missed tries the chord step offers "Continue" instead of finishing by itself
+  if (await page.evaluate(() => document.querySelector('#screen-setup.active') && !document.querySelector('#btn-setup-go').disabled && /Continue/.test(document.querySelector('#btn-setup-go').textContent))) await page.click('#btn-setup-go');
 }
 
 // "Have you played before?" -> first placement test.
@@ -141,6 +149,8 @@ await page.waitForSelector('#screen-reveal.active', { timeout: 8000 });
 await page.waitForTimeout(2500);
 await shot('07-reveal');
 const placed = await page.evaluate(() => window.__maestro.coach.s.level);
+const lst = await page.evaluate(() => window.__maestro.audio.diagnostics().listener);
+console.log(`listener: ${lst.engine} engine, ${lst.mode}, ${lst.costMsPerSec} ms CPU per second`);
 console.log(`placed at level ${placed} after ${tests + 1} tests (simulated skill ${SKILL})`);
 await page.click('#btn-reveal-go');
 await page.waitForTimeout(800);

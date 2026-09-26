@@ -11,7 +11,8 @@
 //      | {type: 'onset', t, strength} | {type: 'status', ...} (~20 Hz while audio flows, 4 Hz
 //      otherwise) | {type: 'cal', id, ok, noiseRms, noiseLevel}
 //      | {type: 'recording', id, samples, sampleRate, startFrame} | {type: 'error', message}
-import { Transcriber } from './transcriber.js';
+import { Transcriber as DspTranscriber } from './transcriber.js';
+import { Transcriber as HybridTranscriber } from './nn/hybrid-transcriber.js';
 
 export const ZERO_LEVEL = 1e-7; // |sample| below this counts as digital silence
 
@@ -19,7 +20,9 @@ const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : 
 const finite = (x) => (typeof x === 'number' && Number.isFinite(x) && x > -150 ? x : null);
 
 export class Listener {
-  // config: { sensitivity, strictness, noisyRoom, range: [lo, hi] | null, expected: [midi] }
+  // config: { sensitivity, strictness, noisyRoom, range: [lo, hi] | null, expected: [midi],
+  //           engine: 'hybrid' (default: the DSP plus the learned network, which joins once its
+  //           weights have loaded) | 'dsp' }
   constructor(sampleRate, config = {}, emit = () => {}) {
     this.sr = sampleRate;
     this.emit = emit;
@@ -31,7 +34,8 @@ export class Listener {
     };
     if (config.strictness != null) o.strictness = config.strictness;
     if (config.noisyRoom != null) o.noisyRoom = config.noisyRoom;
-    this.tr = new Transcriber(sampleRate, o);
+    this.tr = config.engine === 'dsp' ? new DspTranscriber(sampleRate, o) : new HybridTranscriber(sampleRate, o);
+    this.slow = 0; // consecutive seconds the analysis took too much of a core (see status())
     if (config.range) this.tr.setRange(config.range[0], config.range[1]);
     if (config.expected && config.expected.length) this.tr.setExpected(config.expected);
     this.epoch = 0; // bumped by hard resets (new microphone track)
@@ -184,6 +188,15 @@ export class Listener {
     if (span >= 1000) {
       this.rates = { chunkRate: (w.chunks * 1000) / span, costMsPerSec: (w.cost * 1000) / span, costMax: w.max };
       this.win = { t0: now, chunks: 0, cost: 0, max: 0 };
+      // A device too slow for both engines (over 45% of a core for 3 s in a row): back to the
+      // DSP engine alone rather than falling behind.
+      if (this.tr.engine === 'hybrid' && typeof this.tr.dropNN === 'function') {
+        this.slow = this.rates.costMsPerSec > 450 ? this.slow + 1 : 0;
+        if (this.slow >= 3) {
+          this.tr.dropNN();
+          this.emit({ type: 'error', message: `learned listener off: ${Math.round(this.rates.costMsPerSec)} ms/s` });
+        }
+      }
     }
     const tr = this.tr;
     const st = {
@@ -201,6 +214,7 @@ export class Listener {
       chunkRate: this.rates.chunkRate,
       costMsPerSec: this.rates.costMsPerSec,
       costMax: this.rates.costMax,
+      engine: tr.engine || 'dsp',
       noiseLevel: finite(tr.noiseLevel),
       pianoLevel: finite(tr.pianoLevel),
       tuningCents: tr.tuningCents,

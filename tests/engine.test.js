@@ -248,3 +248,41 @@ test('key-signature slips are recognised (F played for F sharp)', () => {
   assert.equal(r.sigSlips[0].name, 'F♯');
   assert.equal(r.sigSlips[0].count, 2);
 });
+
+// ---- octave slips ---------------------------------------------------------------------------
+// A single note heard an octave off (the microphone's classic mistake: the octave shares its
+// partials) still counts; the hand in the wrong octave (three or more in a row, same direction)
+// does not, and the student is told.
+const shift = (every, by) => (piece, t0, spb) => piece.notes.map((n, i) => ({ midi: n.midi + (i % every === every - 1 ? by : 0), t: t0 + n.beat * spb }));
+
+test('an isolated note heard an octave off counts as the expected note', () => {
+  const piece = generate(1, { seed: 11 });
+  const { r, events } = run(piece, shift(4, 12));
+  assert.equal(r.hits, r.total);
+  assert.ok(r.octaveForgiven >= 1);
+  assert.ok(events.some((e) => e.type === 'hit' && e.octave));
+  assert.ok(!events.some((e) => e.type === 'octave'));
+});
+
+test('playing in the wrong octave is caught after two notes and the student is told', () => {
+  const piece = generate(1, { seed: 12 });
+  const { r, events } = run(piece, (p, t0, spb) => p.notes.map((n) => ({ midi: n.midi + 12, t: t0 + n.beat * spb })));
+  assert.equal(r.octaveForgiven, 2);
+  assert.ok(r.hits <= 2);
+  const oct = events.filter((e) => e.type === 'octave');
+  assert.equal(oct.length, 1);
+  assert.equal(oct[0].dir, 1);
+});
+
+test('an exact match always wins over an octave slip', () => {
+  const piece = generate(1, { seed: 13 });
+  const { r } = run(piece, exact(0));
+  assert.equal(r.octaveForgiven, 0);
+});
+
+test('wait mode forgives an isolated octave slip too', () => {
+  const piece = generate(1, { seed: 14 });
+  const { r } = run(piece, shift(5, -12), { mode: 'wait' });
+  assert.equal(r.hits, r.total);
+  assert.ok(r.octaveForgiven >= 1);
+});

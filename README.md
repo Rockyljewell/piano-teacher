@@ -54,7 +54,7 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 2. **Attacks.** Spectral flux is measured only on energy clearly above the noise floor.
 3. **Pitch.** An 8192-sample window goes through noise subtraction and whitening. Harmonic salience is computed for all 88 keys with a piano model (string inharmonicity, stretch tuning, nearly pure treble). Notes are then found by iterative cancellation (after Klapuri, 2006), so every note of a chord is found. The piano's own tuning is learned after a few notes.
 4. **Is it a piano?** A small fitted model scores each candidate note: is the tone steady, does the pitch hold (voices wobble), did it strike and then only decay (voices swell, claps vanish), and how loud is it compared with the room and your recent playing? Each note gets a 0–1 confidence. Doubtful candidates are watched for up to 0.3 s. Wrong notes only count against you when the listener is confident.
-5. **Lesson hints.** During lessons the listener knows which notes are due and the piece's range. Expected notes need less evidence, and stray sounds far outside the piece need more.
+5. **Lesson hints.** During lessons the listener knows which notes are due and the piece's range. Expected notes need less evidence, and stray sounds far outside the piece need more. It also knows the order they come due in: in an arpeggio or a scale, the next note is not reported at the attack of the one before it (whose octave, fifth or third it shares), and the lower note of a bass octave is heard by its odd partials, which the upper note lacks.
 
 **False notes per minute**, measured with `npm run eval:noise` on simulated and real recordings:
 
@@ -78,7 +78,21 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 | Same piece, speech 10 dB below the piano | 69 / 56% | 91 / 94% |
 | Triads, with lesson hints | 88 / 84% | 97 / 99% |
 
-Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Notes are reported about 85 ms after the attack (median), timestamped at the attack.
+Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Notes are timestamped at the attack.
+
+**Speed and chords** (held-out upright and grand pianos never used for tuning, iPad on the music stand; full tables in [docs/listening-bench.md](docs/listening-bench.md)):
+
+| In a lesson | Before | Now |
+| --- | --- | --- |
+| Note reported after the attack, C3 and up (median / p90) | 86 / 149 ms | 22 / 42 ms |
+| Same, below C3 (median) | 124 ms | 44 ms |
+| Chords heard complete | 74.5% | 96.4% |
+| Lesson pieces, levels 1–20 (F1) | 91.2% | 98.6% |
+| Octaves heard complete | 48.9% | 92.0% |
+
+A fast path decides each note from short windows starting at the attack (21–85 ms, depending on the register), so the ringing of earlier notes cancels out. It only trusts notes the lesson did not ask for once the piano has clearly been heard, so room noise stays as rare as before. In the browser, worker hops add about 5–15 ms.
+
+**Learned listener.** On top of that DSP engine runs a small causal neural network (12k parameters, 26 KB, plain JavaScript in the worker; see [docs/listening-model.md](docs/listening-model.md)). It adds the due notes the DSP missed in lessons. In free play a small fitted arbiter decides which of the two engines' notes to report (it drops the DSP's partial "ghosts" and reports the network's notes as soon as they are sure). Quick benchmark on the same held-out pianos ([docs/listening-bench-hybrid-quick.md](docs/listening-bench-hybrid-quick.md)), hybrid vs DSP alone: lesson chords 98% vs 96%, lesson octaves 100% vs 96%; free play single notes 85/83% vs 77/77% (recall/precision), triads 94/77% vs 82/79%, 16th scales 95% vs 63%, octaves 91% vs 39%, latency 38 vs 69 ms median (p90 132 vs 290 ms); room noise unchanged. It loads in the background (the DSP listens meanwhile), and a device too slow for both falls back to the DSP alone; `?engine=dsp` forces that.
 
 **Reliability.** The listener runs in a Web Worker: the capture AudioWorklet sends mic samples straight to it, so transcription never competes with the animation for the main thread. A health supervisor watches the audio engine and the microphone. It covers iOS stopping or "interrupting" the AudioContext, a clock that stops advancing, and a mic track that ends, mutes or goes silent. It recovers automatically where it can. When iOS needs a tap, the lesson pauses and asks for one, instead of freezing.
 
@@ -89,7 +103,7 @@ Onset timing error is 1.5–3 ms in a quiet room and 4–6 ms at 10 dB SNR. Note
 
 It can restart the microphone, run a note test, and save a 15-second recording plus a log to share when something goes wrong.
 
-Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Fast pedalled passages and triads are weaker when played outside a lesson (free play).
+Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Free play (no lesson hints) is less precise than lessons (about one false note in six), weaker on chords in both hands, and the bottom octave (below C2) is often missed on upright pianos.
 
 ## Development
 
@@ -119,4 +133,5 @@ The microphone needs a secure context: `localhost` works on a computer, but an i
 - **Fonts:** [Fredoka](https://github.com/hafontia/Fredoka-One) and [Nunito](https://github.com/googlefonts/nunito), SIL Open Font License 1.1 (licences in `assets/fonts/`).
 - **Music:** public-domain melodies with arrangements written for this project. Classical pieces were checked against public-domain [Mutopia Project](https://www.mutopiaproject.org/) editions. Sources are listed per song in [docs/SONGS.md](docs/SONGS.md).
 - **Test recordings** (downloaded on demand, never shipped): LibriVox public-domain readings, and 1920 recordings from the Great 78 Project at the Internet Archive.
+- **Learned listener** (`assets/models/piano-nn.bin`, trained here with `tools/nn/`): rendered from Salamander Grand Piano V3 (CC BY 3.0, Alexander Holm), MuseScore General (MIT; public-domain piano samples), FluidR3_GM (MIT, Frank Wen), GeneralUser GS (GeneralUser GS License v2.0, S. Christian Collins), the University of Iowa Musical Instrument Samples (free for any use) and additive-synth pianos; background noise from LibriVox and Great 78 Project public-domain recordings. Sources and licence links: [docs/listening-model.md](docs/listening-model.md).
 - Pip, the sound effects and the listener's confidence model are original to this project.

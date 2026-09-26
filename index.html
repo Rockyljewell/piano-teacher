@@ -62,6 +62,7 @@
             <li id="step-mic"><span class="step-coin" data-n="1"></span><div><b>Microphone</b><span>Allow access so Maestro can hear your piano.</span></div></li>
             <li id="step-quiet"><span class="step-coin" data-n="2"></span><div><b>Silence check</b><span>Stay quiet for two seconds while I measure the room.</span></div></li>
             <li id="step-c"><span class="step-coin" data-n="3"></span><div><b>Play middle C</b><span>Play the C near the middle of your keyboard.</span></div></li>
+            <li id="step-chord"><span class="step-coin" data-n="4"></span><div><b>Play a chord</b><span>C, E and G together, so I know I hear every note.</span></div></li>
           </ol>
           <div class="meter" aria-label="Microphone level"><div id="setup-meter"></div></div>
           <p id="setup-room" class="fine"></p>
@@ -468,6 +469,8 @@
             </section>
             <div class="diag-actions">
               <button id="diag-restart" class="btn btn-primary btn-lg btn-block">Restart microphone</button>
+              <button id="diag-listentest" class="btn btn-primary btn-block">Record a listening test</button>
+              <p class="fine diag-test-note">Play a short guided piece (40 s). It saves a recording of your own piano so listening can be tuned to it.</p>
               <button id="diag-record" class="btn btn-block">Save a troubleshooting recording</button>
               <div id="diag-rec" class="diag-rec hidden" aria-live="polite"></div>
             </div>

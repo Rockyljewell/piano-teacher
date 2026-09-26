@@ -117,6 +117,11 @@ export class Session {
     this.status = new Map(); // noteId -> {s: 'hit'|'miss', err, grade, t}
     this.wrong = []; // counted wrong notes {midi, beat, t}
     this.ignored = 0; // unexpected notes not counted (low confidence / ghosts)
+    // Octave slips: a note heard exactly an octave from the one expected is usually the
+    // microphone (the octave shares its partials), so it counts. Several in a row in the same
+    // direction are the hand in the wrong octave: those count as wrong and the student is told.
+    this.octaveRun = { dir: 0, count: 0, warned: false };
+    this.octaveForgiven = 0;
     this.extras = 0;
     this.started = false;
     this.finished = false;
@@ -291,6 +296,24 @@ export class Session {
 
   // A note (or, for rhythm drills, any attack) was heard at audio time t.
   // opts.confidence (0..1) comes from the listener; touch/MIDI input is always 1.
+  // Is a note heard an octave away from `n` a microphone slip (forgive) or the hand in the wrong
+  // octave (the third in a row in the same direction)? Emits a coaching event on the latter.
+  _octaveSlip(midi, n) {
+    const dir = Math.sign(midi - n.midi);
+    const run = this.octaveRun;
+    if (run.dir === dir) run.count++;
+    else Object.assign(run, { dir, count: 1, warned: false });
+    if (run.count < 3) {
+      this.octaveForgiven++;
+      return true;
+    }
+    if (!run.warned) {
+      run.warned = true;
+      this.onEvent({ type: 'octave', dir, midi, expected: n.midi });
+    }
+    return false;
+  }
+
   noteOn(midi, t, { anyPitch = false, confidence = 1 } = {}) {
     if (!this.started || this.finished || this.paused) return null;
     const tt = t - this.latency;
@@ -301,7 +324,12 @@ export class Session {
     if (this.mode === 'wait') {
       const g = this.waitGroup;
       if (g) {
-        const cand = g.notes.find((n) => !this.status.has(n.id) && (rhythm || n.midi === midi));
+        let cand = g.notes.find((n) => !this.status.has(n.id) && (rhythm || n.midi === midi));
+        let octave = false;
+        if (!cand && !rhythm && !g.notes.some((n) => n.midi === midi)) {
+          const o = g.notes.find((n) => !this.status.has(n.id) && Math.abs(n.midi - midi) === 12);
+          if (o && this.beat >= g.beat - 1 && this._octaveSlip(midi, o)) (cand = o), (octave = true);
+        } else if (cand && !rhythm) this.octaveRun.count = 0;
         if (cand && this.beat >= g.beat - 1) {
           const wl = this._waitLog(this.groupIdx);
           if (wl.dueT != null) wl.hesBeats = Math.max(wl.hesBeats, (tt - wl.dueT) / this.spb);
@@ -309,7 +337,7 @@ export class Session {
           const grade = wl.wrong >= 2 ? 'ok' : wl.wrong === 1 ? 'good' : slow ? 'great' : 'perfect';
           this.status.set(cand.id, { s: 'hit', err: 0, grade, t: tt, group: this.groupIdx });
           const label = grade === 'perfect' ? 'Nice!' : grade === 'great' ? 'Got it' : 'Found it!';
-          res = { type: 'hit', note: cand, grade, err: 0, errMs: 0, timing: 'on', label, wait: true, tries: wl.wrong + 1 };
+          res = { type: 'hit', note: cand, grade, err: 0, errMs: 0, timing: 'on', label, wait: true, tries: wl.wrong + 1, octave };
         }
       }
     } else {
@@ -324,14 +352,30 @@ export class Session {
           bestErr = err;
         }
       }
+      let octave = false;
+      if (best && !rhythm) this.octaveRun.count = 0;
+      if (!best && !rhythm) {
+        // No exact match: an unplayed note an octave away, due now, and no note of this pitch
+        // expected anywhere near (then it would be a real extra note)?
+        let ob = null,
+          oe = Infinity;
+        for (const n of this.piece.notes) {
+          if (this.status.has(n.id) || Math.abs(n.midi - midi) !== 12) continue;
+          const err = (beat - n.beat) * this.spb;
+          if (Math.abs(err) <= (this.windowOf.get(n.id) ?? this.window) && Math.abs(err) < Math.abs(oe)) (ob = n), (oe = err);
+        }
+        const samePitchNear = ob && this.piece.notes.some((n) => n.midi === midi && Math.abs(n.beat - beat) < 2);
+        if (ob && !samePitchNear && this._octaveSlip(midi, ob)) (best = ob), (bestErr = oe), (octave = true);
+      }
       if (best) {
         const grade = gradeFor(bestErr, this.profile);
         const errMs = Math.round(bestErr * 1000);
-        this.status.set(best.id, { s: 'hit', err: bestErr, grade, t: tt });
+        this.status.set(best.id, { s: 'hit', err: bestErr, grade, t: tt, octave });
         res = {
           type: 'hit', note: best, grade, err: bestErr, errMs,
           timing: grade === 'perfect' ? 'on' : errMs < 0 ? 'early' : 'late',
           label: timingLabel(grade, errMs),
+          octave,
         };
       }
     }
@@ -515,7 +559,7 @@ export class Session {
       waitStats = { groups: this.groups.length, wrongTries, slowGroups: slow, cleanGroups: this.groups.length - [...this.waitLog.values()].filter((w) => w.wrong > 0).length };
     }
     return {
-      score, stars, hits, total, noteAcc, noteCredit, timing, extras: this.extras, ignored: this.ignored, byGrade,
+      score, stars, hits, total, noteAcc, noteCredit, timing, extras: this.extras, ignored: this.ignored, octaveForgiven: this.octaveForgiven, byGrade,
       mode: this.mode, bpm: piece.bpm, level: this.level, profile: p,
       weights: { timing: tempo ? wt : 0, extraPenalty: Math.round(extraPenalty * 1000) / 1000 },
       meanErr: meanErrMs / 1000, meanErrMs: Math.round(meanErrMs), medianErrMs: Math.round(medianErrMs), iqrMs: Math.round(iqrMs),

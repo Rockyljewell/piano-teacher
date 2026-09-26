@@ -13,6 +13,9 @@
     "eval:noise": "node tests/noise-eval.js",
     "corpus": "node tests/corpus-fetch.js",
     "fit": "node tests/noise-fit.js",
-    "e2e": "node e2e/smoke.mjs"
+    "e2e": "node e2e/smoke.mjs",
+    "bench": "node tests/bench-listen.js",
+    "bench:fetch": "node tests/bench-fetch.js",
+    "fit:look": "node tests/look-fit.js"
   }
 }
