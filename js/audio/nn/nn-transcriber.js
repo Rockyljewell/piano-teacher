@@ -110,7 +110,7 @@ export class Transcriber {
 
   _init(w) {
     this.weights = w;
-    this.dec = { ...DEC, ...(w.header.decoder || {}) };
+    this.dec = { ...DEC, ...(w.header.decoder || {}), ...(this.opts.decoder || {}) };
     this.model = new Model(w);
     this.KO = this.model.KO;
     this.K = this.KO - 2;
@@ -388,7 +388,7 @@ export class Transcriber {
           this.pianoLevelT = tNow;
         }
         const vel = clamp((level + 60) / 45, 0.05, 1);
-        this.onNoteOn(midi, t, vel, { confidence: conf, restrike });
+        this.onNoteOn(midi, t, vel, { confidence: conf, restrike, p, expected });
       } else if (this.armed[k] && p >= th * 0.6 && p < th && this.frame - this.lastFire[k] >= D.refractory) {
         // a near miss (counted once per attack window)
         if (!this._near) this._near = new Int32Array(88).fill(-1000);
