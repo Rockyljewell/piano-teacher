@@ -32,7 +32,7 @@ import { roomTone, mixInto } from './noise-sim.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TR_PATH = process.env.TRANSCRIBER ? path.resolve(process.env.TRANSCRIBER) : path.join(here, '../js/audio/transcriber.js');
 const SR = 48000;
-export const LOOK_KEYS = ['look', 'found', 'sc', 'rank', 'relSal', 'rise', 'riseLow', 'harm', 'snr', 'rel', 'relKnown', 'sub', 'uniqN', 'uniqFrac', 'under', 'excess', 'share', 'active', 'prev', 'ampRatio', 'onset', 'f0', 'nsig', 'tonal', 'flat', 'dev', 'ddev'];
+export const LOOK_KEYS = ['look', 'found', 'sc', 'rank', 'relSal', 'rise', 'riseLow', 'harm', 'snr', 'rel', 'relKnown', 'sub', 'uniqN', 'uniqFrac', 'under', 'excess', 'share', 'active', 'prev', 'ampRatio', 'onset', 'f0', 'nsig', 'tonal', 'flat', 'dev', 'ddev', 'ctr1', 'ctr2', 'expNbr'];
 const NEVER = { bias: -50 };
 
 function renderInst(inst, mat) {
@@ -255,13 +255,13 @@ function logit(M, x) {
 // Candidate-level report with the transcriber's emission rule (strictness 0.5): an expected
 // note fires at p >= 0.55, an unexpected one at p >= 0.875 once seen in two windows and when
 // the piano's level is known; a sounding note is re-struck at 0.6 (expected) / 0.85.
-// Emission rule of _lookDecide at strictness 0.5: expected new notes at p >= 0.55, sounding
+// Emission rule of _lookDecide at strictness 0.5: expected new notes at p >= 0.925, sounding
 // notes struck again at 0.6 (expected) / 0.85; unexpected new notes only in free play, once
 // seen in two windows, when the piano's level is known, at p >= 0.875.
 export function fires(r, p) {
   const relKnown = r.x[LOOK_KEYS.indexOf('relKnown')];
   if (r.active) return p >= (r.exp ? 0.6 : 0.85);
-  if (r.exp) return p >= 0.55;
+  if (r.exp) return p >= 0.925;
   return !r.src.endsWith('|lesson') && relKnown && r.n >= 2 && p >= 0.875;
 }
 
@@ -313,10 +313,35 @@ async function main() {
       val = rows.filter((r) => byJob(r) === 0);
     const data = process.env.FULL ? rows : train;
     const ep = Number(process.env.EPOCHS || 30);
-    M = {
-      exp: fitMLP(data.filter((r) => r.exp), { H, epochs: ep, init: M ? M.exp : null }),
-      free: fitMLP(data.filter((r) => !r.exp), { H, epochs: ep, init: M ? M.free : null, noiseW: Number(process.env.NOISEW || 4) }),
-    };
+    const fitBoth = (init, epochs, lr) => ({
+      exp: fitMLP(data.filter((r) => r.exp), { H, epochs, lr, init: init ? init.exp : null }),
+      free: fitMLP(data.filter((r) => !r.exp), { H, epochs, lr, init: init ? init.free : null, noiseW: Number(process.env.NOISEW || 4) }),
+    });
+    M = fitBoth(M, ep, 0.01);
+    // Hard examples: a candidate fires as soon as ONE look is confident enough, so candidates
+    // that fire falsely get more weight (all their looks), as do real strikes that never fire.
+    for (let hm = 0; hm < Number(process.env.MINE ?? 2); hm++) {
+      const by = new Map();
+      for (const r of data) {
+        let c = by.get(r.key);
+        if (!c) by.set(r.key, (c = { rows: [], fired: false, label: r.label }));
+        c.rows.push(r);
+        if (fires(r, sigmoid(logit(r.exp ? M.exp : M.free, r.x)))) c.fired = true;
+      }
+      let hn = 0,
+        hp = 0;
+      for (const c of by.values()) {
+        if (!c.label && c.fired) {
+          hn++;
+          for (const r of c.rows) r.boost = (r.boost || 1) * 2;
+        } else if (c.label && !c.fired) {
+          hp++;
+          for (const r of c.rows) r.boost = (r.boost || 1) * 1.5;
+        }
+      }
+      console.log(`  hard examples: ${hn} false fires, ${hp} misses`);
+      M = fitBoth(M, 12, 0.005);
+    }
     report(val, M, `round ${round}, validation fold`);
     if (process.env.MODEL_OUT) fs.writeFileSync(process.env.MODEL_OUT, JSON.stringify(M));
   }
