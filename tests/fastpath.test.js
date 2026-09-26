@@ -193,7 +193,6 @@ test('lesson hints: both notes of a bass melody in octaves are heard', () => {
     pairs += 16;
     extra += score(notes, events).extras.length;
   }
-  console.log("OCT", complete, pairs, extra);
   assert.ok(complete / pairs >= 0.8, `${complete}/${pairs} octaves complete`);
   assert.ok(extra <= 6, `${extra} extra notes`);
 });
