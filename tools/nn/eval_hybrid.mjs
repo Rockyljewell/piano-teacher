@@ -70,7 +70,7 @@ function run(Cls, x, notes, lesson, opts = {}) {
 }
 
 // the hybrid's rules (js/audio/nn/hybrid-transcriber.js) replayed on the recorded streams
-function hybrid(nnEv, dspEv, { trustP, octP, wait = 0.06 }) {
+function hybrid(nnEv, dspEv, { trustP, octP, expP = 0.5, wait = 0.06 }, lesson) {
   const all = [...nnEv.map((e) => ({ ...e, src: 'nn' })), ...dspEv.map((e) => ({ ...e, src: 'dsp' }))].sort((a, b) => a.at - b.at);
   const out = [];
   let held = [];
@@ -93,6 +93,10 @@ function hybrid(nnEv, dspEv, { trustP, octP, wait = 0.06 }) {
       check(e.at);
     } else {
       if (e.restrike || has(e.midi, e.t)) continue;
+      if (lesson) {
+        if (e.exp && e.p >= expP) out.push(e);
+        continue;
+      }
       if (e.p >= trustP) out.push(e);
       else if (e.p >= octP) held.push(e);
     }
@@ -131,10 +135,12 @@ for (const m of index) {
   }
   rec.push(r);
 }
+fs.writeFileSync(path.join(here, '.data', 'hybrid-rec.json'), JSON.stringify(rec));
 console.log(`${rec.length} mixtures recorded in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 
 const configs = [{ name: 'nn', nnOnly: true }, { name: 'dsp', dspOnly: true }];
-for (const trustP of [0.9, 0.95, 0.97, 0.99, 1.01]) for (const octP of [0.5, 0.7, 0.9, 1.01]) configs.push({ name: `trust ${trustP} oct ${octP}`, trustP, octP });
+for (const trustP of [0.9, 0.95, 0.97, 0.99, 1.01]) for (const octP of [0.5, 0.7, 0.9, 1.01]) configs.push({ name: `trust ${trustP} oct ${octP}`, trustP, octP, expP: 0.5 });
+for (const expP of [0.2, 0.3, 0.5, 0.7, 0.9, 1.01]) configs.push({ name: `lesson expP ${expP}`, trustP: 0.97, octP: 0.5, expP });
 for (const lesson of [false, true]) {
   for (const c of configs) {
     const acc = { n: 0, hit: 0, ev: 0, lat: [] };
@@ -143,7 +149,7 @@ for (const lesson of [false, true]) {
     for (const r of rec) {
       const nn = r[lesson ? 'nnL' : 'nnF'],
         dsp = r[lesson ? 'dspL' : 'dspF'];
-      const ev = c.dspOnly ? dsp : c.nnOnly ? r[lesson ? 'nnLd' : 'nnFd'] : hybrid(nn, dsp, c);
+      const ev = c.dspOnly ? dsp : c.nnOnly ? r[lesson ? 'nnLd' : 'nnFd'] : hybrid(nn, dsp, c, lesson);
       if (r.noise) {
         fp += ev.length;
         sec += r.sec;

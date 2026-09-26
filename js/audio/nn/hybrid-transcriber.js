@@ -4,7 +4,9 @@
 //
 //   - Every DSP note is reported as the DSP reports it (lessons, noise rejection unchanged),
 //     unless the network already reported that key for the same attack (+-80 ms).
-//   - A network note the DSP does not have is added when
+//   - In lessons (setExpected / setRange in use) the network only adds due notes the DSP
+//     missed (p >= expP), reported at the network's latency.
+//   - In free play, a network note the DSP does not have is added when
 //       * the network is very sure (p >= trustP, calibrated precision >= ~90 %), reported at the
 //         network's latency - fast passages, free-play notes the DSP only confirms late; or
 //       * it is the octave (or double octave) partner of a note the DSP reported for the same
@@ -26,6 +28,8 @@ export class Transcriber {
     this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.97);
     this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.5);
     this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.06);
+    this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
+    this.lesson = false; // setExpected / setRange seen: the app knows what should be played
     this.reported = []; // [{midi, t, src}] of the last ~1.5 s
     this.held = []; // network notes waiting for an octave partner
     this.stats = { emitted: 0, rejected: 0, restrikes: 0, nnAdded: 0, nnDropped: 0 };
@@ -68,6 +72,15 @@ export class Transcriber {
   _nnNote(midi, t, vel, info = {}) {
     if (info.restrike || this._has(midi, t)) return;
     const p = info.p ?? 0;
+    if (this.lesson) {
+      // lessons: the DSP is excellent; the network only adds due notes it is fairly sure of
+      if (info.expected && p >= this.expP) {
+        this.stats.nnAdded++;
+        return this._report(midi, t, vel, info, 'nn');
+      }
+      this.stats.nnDropped++;
+      return;
+    }
     if (p >= this.trustP) {
       this.stats.nnAdded++;
       return this._report(midi, t, vel, info, 'nn');
@@ -140,10 +153,12 @@ export class Transcriber {
   }
 
   setExpected(midis, range) {
+    this.lesson = true;
     this.dsp.setExpected(midis, range);
     this.nn.setExpected(midis, range);
   }
   setRange(lo, hi) {
+    this.lesson = lo != null;
     this.dsp.setRange(lo, hi);
     this.nn.setRange(lo, hi);
   }
