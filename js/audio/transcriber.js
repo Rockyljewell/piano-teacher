@@ -1183,9 +1183,14 @@ export class Transcriber {
     while (A.length && A[0] < now - 20) A.shift();
     if (this.pianoLevel == null) return (this.pianoOpen = false);
     // opens on >= 6 notes the long window was sure of (or that were due) within 15 s, stays
-    // open while notes keep coming (>= 3 in 20 s, fast ones included)
-    if (this.pianoOpen) this.pianoOpen = A.length >= 3;
-    else this.pianoOpen = S.filter((v) => v >= now - 15).length >= 6;
+    // open while notes keep coming (fast ones included); a pause of 1.5 s closes it, and it has
+    // to be earned again (the room goes on when the student stops)
+    if (this.pianoOpen) {
+      if (!A.length || now - A[A.length - 1] > 1.5) {
+        this.pianoOpen = false;
+        S.length = 0;
+      }
+    } else this.pianoOpen = S.filter((v) => v >= now - 15).length >= 6;
     return this.pianoOpen;
   }
 
@@ -2107,7 +2112,7 @@ export class Transcriber {
       st.missing = 0;
       this.stats.fastRestrikes = (this.stats.fastRestrikes || 0) + 1;
       this.emitPath = 'fast';
-      this._emit(m, l.o.t, Math.min(0.97, Math.max(st.conf, p)), st.sal, ev.level - 3, true);
+      this._emit(m, l.o.t, Math.min(0.97, Math.max(st.conf, p)), st.sal, -200, true);
       this.emitPath = null;
       return;
     }
@@ -2136,7 +2141,7 @@ export class Transcriber {
       this.onOnset(l.o.t, l.o.strength);
     }
     this.emitPath = 'fast';
-    this._emit(m, l.o.t, exp ? Math.max(0.6, p) : p, f.salience || 1, ev.level - 3);
+    this._emit(m, l.o.t, exp ? Math.max(0.6, p) : p, f.salience || 1, -200);
     this.emitPath = null;
   }
 
