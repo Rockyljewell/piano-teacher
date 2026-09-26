@@ -14,8 +14,10 @@
 //         of the note an octave below.
 //     Other network notes wait up to `wait` for such evidence, then are dropped.
 //   - Onsets and note-offs come from the DSP.
-// Costs both engines' CPU.
-import { Transcriber as NNTranscriber } from './nn-transcriber.js';
+// Costs both engines' CPU. Until the network's weights are in (fetched when this module loads) the
+// hybrid is exactly the DSP engine; the network joins by itself once they arrive. dropNN() (the
+// listener calls it when the device is too slow) returns to the DSP alone for good.
+import { Transcriber as NNTranscriber, getWeights, ready } from './nn-transcriber.js';
 import { Transcriber as DspTranscriber } from '../transcriber.js';
 
 const ENV = typeof process !== 'undefined' && process.env ? process.env : {};
@@ -25,28 +27,59 @@ export class Transcriber {
   constructor(sampleRate, opts = {}) {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
-    this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.99);
-    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.7);
+    this.trustP = opts.trustP ?? num(ENV.HYBRID_TRUST, 0.995);
+    this.octP = opts.octP ?? num(ENV.HYBRID_OCT, 0.5);
     this.wait = opts.wait ?? num(ENV.HYBRID_WAIT, 0.25); // s a network note may wait for evidence (the DSP needs ~150 ms in free play)
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
     this.reported = []; // [{midi, t, src}] of the last ~1.5 s
     this.held = []; // network notes waiting for an octave partner
     this.stats = { emitted: 0, rejected: 0, restrikes: 0, nnAdded: 0, nnDropped: 0 };
+    this.opts = opts;
+    this.set = { expected: null, range: null, lohi: null, strictness: null, noisyRoom: null, a4: null, sensitivity: null };
+    this.nnOff = opts.engine === 'dsp';
     this.dsp = new DspTranscriber(sampleRate, {
       ...opts,
       onNoteOn: (midi, t, vel, info) => this._dspNote(midi, t, vel, info),
     });
-    this.nn = new NNTranscriber(sampleRate, {
-      ...opts,
+    this.nn = null;
+    if (!this.nnOff) {
+      if (getWeights()) this._makeNN();
+      else
+        ready.then((w) => {
+          if (w && !this.nn && !this.nnOff) this._makeNN();
+        });
+    }
+  }
+
+  _makeNN() {
+    const o = this.opts;
+    this.nn = new NNTranscriber(this.sr, {
+      ...o,
+      weights: getWeights(),
       // octave partners are exactly what the network is here for: no partial ("ghost")
       // suppression inside it; the octave rule above decides
       // (and a low firing threshold: the rules here decide, on the probability's peak)
-      decoder: { ghostP: 0, thrReg: null, thr: 0.3, confirm: 1, ...(opts.nnDecoder || {}) },
+      decoder: { ghostP: 0, thrReg: null, thr: 0.3, confirm: 1, ...(o.nnDecoder || {}) },
       onNoteOn: (midi, t, vel, info) => this._nnNote(midi, t, vel, info),
       onNoteOff: () => {},
       onOnset: () => {},
     });
+    // settings made before the network joined
+    const st = this.set;
+    if (st.strictness != null) this.nn.setStrictness(st.strictness);
+    if (st.noisyRoom != null) this.nn.setNoisyRoom(st.noisyRoom);
+    if (st.a4 != null) this.nn.setTuning(st.a4);
+    if (st.sensitivity != null) this.nn.sensitivity = st.sensitivity;
+    if (st.lohi) this.nn.setRange(st.lohi[0], st.lohi[1]);
+    if (st.expected) this.nn.setExpected(st.expected, st.range);
+  }
+
+  // Back to the DSP engine alone (for good): the device can't afford both.
+  dropNN() {
+    this.nnOff = true;
+    this.nn = null;
+    this.held = [];
   }
 
   _now() {
@@ -97,7 +130,7 @@ export class Transcriber {
     if (!this.held.length) return;
     const now = this._now();
     const keep = [];
-    const lp = this.nn.lastP;
+    const lp = this.nn && this.nn.lastP;
     for (const h of this.held) {
       if (this._has(h.midi, h.t)) continue; // the DSP heard it itself
       if (lp) h.pmax = Math.max(h.pmax, lp[h.midi - 21] || 0);
@@ -115,10 +148,10 @@ export class Transcriber {
   }
   set pos(v) {
     this.dsp.pos = v;
-    this.nn.pos = v;
+    if (this.nn) this.nn.pos = v;
   }
   get engine() {
-    return this.nn.engine === 'nn' ? 'hybrid' : 'dsp';
+    return this.nn && this.nn.engine === 'nn' ? 'hybrid' : 'dsp';
   }
   get noiseLevel() {
     return this.dsp.noiseLevel;
@@ -139,13 +172,14 @@ export class Transcriber {
     return this.dsp.sensitivity;
   }
   set sensitivity(v) {
+    this.set.sensitivity = v;
     this.dsp.sensitivity = v;
-    this.nn.sensitivity = v;
+    if (this.nn) this.nn.sensitivity = v;
   }
 
   push(samples, frame0) {
     this.dsp.push(samples, frame0);
-    if (this.nn.engine === 'nn') this.nn.push(samples, frame0);
+    if (this.nn && this.nn.engine === 'nn') this.nn.push(samples, frame0);
     this._checkHeld();
     const s = this.dsp.stats;
     this.stats.emitted = s.emitted + this.stats.nnAdded;
@@ -154,38 +188,45 @@ export class Transcriber {
   }
 
   setExpected(midis, range) {
-    this.lesson = true;
+    this.set.expected = midis;
+    this.set.range = range;
+    // a lesson: notes are due, or the piece's range is set (the app sends [] in free play)
+    this.lesson = !!(midis && midis.length) || !!range || !!this.set.lohi;
     this.dsp.setExpected(midis, range);
-    this.nn.setExpected(midis, range);
+    if (this.nn) this.nn.setExpected(midis, range);
   }
   setRange(lo, hi) {
-    this.lesson = lo != null;
+    this.set.lohi = lo != null ? [lo, hi] : null;
+    this.lesson = lo != null || !!(this.set.expected && this.set.expected.length);
     this.dsp.setRange(lo, hi);
-    this.nn.setRange(lo, hi);
+    if (this.nn) this.nn.setRange(lo, hi);
   }
   setStrictness(v) {
+    this.set.strictness = v;
     this.dsp.setStrictness(v);
-    this.nn.setStrictness(v);
+    if (this.nn) this.nn.setStrictness(v);
   }
   setNoisyRoom(on) {
+    this.set.noisyRoom = on;
     this.dsp.setNoisyRoom(on);
-    this.nn.setNoisyRoom(on);
+    if (this.nn) this.nn.setNoisyRoom(on);
   }
   setTuning(a4) {
+    this.set.a4 = a4;
     this.dsp.setTuning(a4);
-    this.nn.setTuning(a4);
+    if (this.nn) this.nn.setTuning(a4);
   }
   startCalibration() {
     this.dsp.startCalibration();
-    this.nn.startCalibration();
+    if (this.nn) this.nn.startCalibration();
   }
   finishCalibration() {
-    this.nn.finishCalibration();
+    if (this.nn) this.nn.finishCalibration();
     return this.dsp.finishCalibration();
   }
   reset() {
     this.dsp.reset();
-    this.nn.reset();
+    if (this.nn) this.nn.reset();
     this.reported = [];
     this.held = [];
   }

@@ -149,6 +149,8 @@ await page.waitForSelector('#screen-reveal.active', { timeout: 8000 });
 await page.waitForTimeout(2500);
 await shot('07-reveal');
 const placed = await page.evaluate(() => window.__maestro.coach.s.level);
+const lst = await page.evaluate(() => window.__maestro.audio.diagnostics().listener);
+console.log(`listener: ${lst.engine} engine, ${lst.mode}, ${lst.costMsPerSec} ms CPU per second`);
 console.log(`placed at level ${placed} after ${tests + 1} tests (simulated skill ${SKILL})`);
 await page.click('#btn-reveal-go');
 await page.waitForTimeout(800);

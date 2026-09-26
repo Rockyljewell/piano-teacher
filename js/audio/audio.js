@@ -798,7 +798,8 @@ export class AudioEngine {
   async _startLocal(cfg) {
     const { Listener } = await import('./listener.js');
     if (this._local) this._local.stopStatus();
-    this._local = new Listener(this.ctx.sampleRate, cfg, (m) => this._onListenerMsg(m));
+    // on the main thread the DSP engine alone: the network's CPU would cost animation frames
+    this._local = new Listener(this.ctx.sampleRate, { ...cfg, engine: 'dsp' }, (m) => this._onListenerMsg(m));
     this._local.startStatus(50);
     this._workerAlive = perfNow();
   }
@@ -817,6 +818,8 @@ export class AudioEngine {
       range: this._range || null,
       expected: this._expected || [],
       epoch: this._epoch,
+      // the DSP engine plus the learned network (js/audio/nn/), or the DSP alone (?engine=dsp)
+      engine: this.listenEngine || (typeof location !== 'undefined' && /[?&]engine=dsp\b/.test(location.search || '') ? 'dsp' : 'hybrid'),
     };
   }
 
@@ -901,6 +904,10 @@ export class AudioEngine {
     st.chunkRate = s.chunkRate;
     st.costMsPerSec = s.costMsPerSec;
     st.costMax = s.costMax;
+    if (s.engine && s.engine !== st.engine) {
+      st.engine = s.engine;
+      this._log('listener-engine', { engine: s.engine });
+    }
     st.gaps = s.gaps;
     st.errors = s.errors;
     st.stats = s.stats;
@@ -1607,6 +1614,7 @@ export class AudioEngine {
       },
       listener: {
         mode: this.mode,
+        engine: st.engine || null,
         chunks: st.chunks,
         chunkRate: Math.round(st.chunkRate * 10) / 10,
         lastChunkMs: st.lastChunkWall ? Math.round(w - st.lastChunkWall) : null,

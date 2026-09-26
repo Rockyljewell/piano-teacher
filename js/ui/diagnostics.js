@@ -332,7 +332,8 @@ function renderStatus() {
   const dataLevel = !d.mic.wanted ? 'warn' : flowing && L.zeroMs < 1000 ? 'ok' : 'bad';
   const busy = Math.round((L.load || 0) * 100);
   const where = L.mode === 'worker' ? 'in the background' : L.mode === 'relay' ? 'in the background (relayed)' : L.mode ? 'on the main thread' : '';
-  const loadText = L.mode ? `${busy}% busy · ${where}` : '–';
+  const engine = L.engine === 'hybrid' ? 'learned + classic' : L.engine === 'dsp' ? 'classic' : '';
+  const loadText = L.mode ? `${busy}% busy · ${where}${engine ? ` · ${engine}` : ''}` : '–';
   const loadLevel = !L.mode ? 'warn' : busy > 60 ? 'bad' : busy > 35 ? 'warn' : 'ok';
   const hi = d.holds;
   const holdText = hi.holds.length ? `Paused: ${[...new Set(hi.holds.map((x) => HOLD_TEXT[x.reason] || x.reason))].join(', ')} (${(Math.max(...hi.holds.map((x) => x.ms)) / 1000).toFixed(1)} s)` : hi.tailMs > 0 ? 'Resuming…' : 'Listening';
