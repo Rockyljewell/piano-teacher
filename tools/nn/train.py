@@ -179,6 +179,7 @@ def targets(notes, T, k_on=K_ONSET, k_bass=0):
 
 
 K_BASS = 0
+K_ON = K_ONSET
 
 
 def batch(rng, clips, noise, fe, B, T, p_noise=0.8):
@@ -187,7 +188,7 @@ def batch(rng, clips, noise, fe, B, T, p_noise=0.8):
     for _ in range(B):
         piano, nt, _ = clips.crop(rng, n)
         X.append(augment(rng, piano, noise, p_noise=p_noise))
-        o, a, f = targets(nt, T + WARM, k_bass=K_BASS)
+        o, a, f = targets(nt, T + WARM, k_on=K_ON, k_bass=K_BASS)
         O.append(o), A.append(a), Fr.append(f)
     x = torch.from_numpy(np.stack(X))
     with torch.no_grad():
@@ -195,7 +196,11 @@ def batch(rng, clips, noise, fe, B, T, p_noise=0.8):
     return feats, torch.from_numpy(np.stack(O)), torch.from_numpy(np.stack(A)), torch.from_numpy(np.stack(Fr))
 
 
-def loss_fn(out, onset, age, frame, pos_w=4.0):
+POS_W = 4.0
+
+
+def loss_fn(out, onset, age, frame, pos_w=None):
+    pos_w = POS_W if pos_w is None else pos_w
     # out [B, 2+K, T, 88]; targets [B, T, 88]
     lo = out[:, 0, WARM:]
     lf = out[:, 1, WARM:]
@@ -256,7 +261,7 @@ def evaluate(model, fe, clips, noise, n=48, T=700, seed=12345, thr=(0.3, 0.4, 0.
                 for (t0, k) in true:
                     best = None
                     for j, (te, ke, _) in enumerate(ev):
-                        if ke == k and j not in used and -2 <= te - t0 <= 7:
+                        if ke == k and j not in used and -2 <= te - t0 <= 10:
                             best = j
                             break
                     if best is not None:
@@ -330,11 +335,15 @@ def main():
     ap.add_argument('--resume', default='')
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--wins', default='2048,512', help='STFT windows, longest first')
+    ap.add_argument('--k-onset', type=int, default=4, help='onset window (frames): the most the model may take to decide')
     ap.add_argument('--k-bass', type=int, default=0, help='onset window (frames) below C3 (0: same as above)')
+    ap.add_argument('--pos-weight', type=float, default=4.0, help='weight of positive onset frames')
     ap.add_argument('--init-from', default='', help='warm start from a checkpoint of a smaller configuration')
     a = ap.parse_args()
-    global K_BASS
+    global K_BASS, POS_W, K_ON
     K_BASS = a.k_bass
+    K_ON = a.k_onset
+    POS_W = a.pos_weight
     wins = tuple(int(w) for w in a.wins.split(','))
     torch.set_num_threads(2)
     os.makedirs(a.out, exist_ok=True)
@@ -343,7 +352,7 @@ def main():
     train, val = Clips('train'), Clips('val')
     noise = NoiseBank()
     fe = TorchFrontend(wins)
-    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','), wins=wins, k_bass=a.k_bass or None)
+    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','), wins=wins, k_bass=a.k_bass or None, k_onset=a.k_onset)
     # fixed input normalisation from a few batches
     with torch.no_grad():
         fs = torch.cat([batch(rng, train, noise, fe, 8, 200)[0] for _ in range(4)])

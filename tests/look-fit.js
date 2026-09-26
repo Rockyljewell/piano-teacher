@@ -27,7 +27,7 @@ import { render, hasInstrument } from './bench-sampler.js';
 import { applyCondition } from './bench-listen.js';
 import { renderPiano } from './synth-piano.js';
 import { makeNoise, NOISE_TYPES, pieces } from './noise-eval.js';
-import { roomTone, mixInto } from './noise-sim.js';
+import { roomTone, mixInto, activeRms, gainDb } from './noise-sim.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TR_PATH = process.env.TRANSCRIBER ? path.resolve(process.env.TRANSCRIBER) : path.join(here, '../js/audio/transcriber.js');
@@ -63,6 +63,12 @@ async function collect(job, model) {
     notes = mat.notes;
     segs = mat.segs;
     audio = applyCondition(renderInst(job.inst, mat), job.cond, 1 + job.seed);
+    if (job.noise) {
+      // a loud room: the noise at `snr` dB below this piece's active level (as noise-eval does)
+      const x = makeNoise(job.noise, audio.length / SR, { sr: SR, seed: job.seed, level: 0 });
+      if (!x) return [];
+      mixInto(audio, x, activeRms(audio, SR) / activeRms(x, SR) / gainDb(job.snr), 0);
+    }
     modes = ['lesson', 'free'];
   }
   const rows = [];
@@ -152,6 +158,11 @@ export function buildJobs() {
     jobs.push({ kind: 'pause', noise, level: 'loud', sec: 30, seed: 22, src: `pause|${noise}` });
     jobs.push({ kind: 'pause', noise, level: 'realistic', sec: 30, seed: 23, src: `pause|${noise}` });
   }
+  // the piano in a loud room (speech / TV 10 dB below it, knocks and dishes)
+  for (const seed of seeds.slice(0, 1))
+    for (const inst of insts)
+      for (const noise of ['speech', 'tv', 'taps', 'dishes', ...(hasInstrument('salamander') ? ['real-speech', 'real-radio'] : [])])
+        for (const mat of ['lesson', 'triads', 'scales16']) jobs.push({ kind: 'piano', inst, cond: 'stand', mat, part: mat === 'lesson' ? 1 : 0, seed, noise, snr: 10, src: `${inst}|stand+${noise}|${mat}` });
   jobs.forEach((j, i) => {
     j.id = i;
     j.fold = i % 5;
@@ -307,7 +318,9 @@ async function main() {
   const H = Number(process.env.H || 10);
   for (let round = 1; round <= rounds; round++) {
     // DAgger: keep every round's rows, add the ones the latest model runs into
-    if (!rows || round > 1) rows = [...(rows || []), ...(await runAll(jobs, M, threads))];
+    // (COLLECT=regex: only jobs whose source matches, e.g. new material added to a ROWS dump)
+    const coll = process.env.COLLECT ? jobs.filter((j) => new RegExp(process.env.COLLECT).test(j.src)) : jobs;
+    if (!rows || round > 1) rows = [...(rows || []), ...(await runAll(coll, M, threads))];
     console.log(`round ${round}: ${rows.length} candidate rows (${rows.filter((r) => r.label).length} real strikes), ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     const byJob = (r) => Number(r.key.split('|')[0]) % 5;
     const train = rows.filter((r) => byJob(r) !== 0),
