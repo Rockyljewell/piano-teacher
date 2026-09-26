@@ -1,28 +1,38 @@
-// Hybrid listener: the learned transcriber (fast, polyphonic) with the DSP transcriber running
-// alongside as a second opinion. Same interface as js/audio/transcriber.js.
+// Hybrid listener: the learned transcriber (fast, polyphonic) gated by the DSP transcriber
+// running alongside. Same interface as js/audio/transcriber.js.
 //
-//   - every network note is reported at once, exactly as nn-transcriber.js reports it;
-//   - a note the DSP engine is confident about (or that the lesson expects) and that the network
-//     did not report within 80 ms of the same attack is reported late ("rescue"), with the DSP's
-//     timing and confidence;
-//   - onsets and note-offs come from the network.
-// Costs both engines' CPU (see docs/listening-model.md for the measured trade-off).
+//   - Expected notes (setExpected: the lesson says they are due) that the network hears are
+//     reported at once, at the network's latency.
+//   - Unexpected notes must also be confirmed by the DSP engine's evidence: an attack in its
+//     spectral flux (above its calibrated noise floor) within +-40 ms, and harmonic evidence for
+//     that key (the key is among the notes its iterative harmonic analysis finds, or it is
+//     already judging / sounding that key). The note waits up to `gateWait` for it (the DSP
+//     analyses every ~21 ms), then is reported - or dropped.
+//   - Rescue: a note the DSP engine reports confidently that the network did not hear (+-80 ms)
+//     is reported late, with the DSP's timing and confidence.
+//   - Onsets and note-offs come from the network.
+// The gate reads a few fields of the DSP transcriber (onsets, weakPeaks, lastDetected, pending,
+// active); if they are missing (a future DSP version), unexpected notes pass ungated.
 import { Transcriber as NNTranscriber } from './nn-transcriber.js';
 import { Transcriber as DspTranscriber } from '../transcriber.js';
+
+const ENV = typeof process !== 'undefined' && process.env ? process.env : {};
 
 export class Transcriber {
   constructor(sampleRate, opts = {}) {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
+    this.gate = opts.gate ?? (ENV.HYBRID_GATE != null ? ENV.HYBRID_GATE !== '0' : true);
+    this.rescue = opts.rescue ?? (ENV.HYBRID_RESCUE != null ? ENV.HYBRID_RESCUE !== '0' : true);
     this.rescueConf = opts.rescueConf ?? 0.7; // DSP confidence needed to add a note the network missed
-    this.recent = []; // [{midi, t}] network notes of the last ~1 s
-    this.stats = { emitted: 0, rejected: 0, restrikes: 0, rescued: 0 };
+    this.gateWait = opts.gateWait ?? (ENV.HYBRID_WAIT != null ? Number(ENV.HYBRID_WAIT) : 0.06); // s an unexpected note may wait for the DSP's evidence
+    this.recent = []; // [{midi, t}] reported notes of the last ~1.5 s
+    this.held = []; // unexpected network notes waiting for evidence
+    this.stats = { emitted: 0, rejected: 0, restrikes: 0, rescued: 0, gated: 0 };
+    this.expected = new Set();
     this.nn = new NNTranscriber(sampleRate, {
       ...opts,
-      onNoteOn: (midi, t, vel, info) => {
-        this.recent.push({ midi, t });
-        this.onNoteOn(midi, t, vel, info);
-      },
+      onNoteOn: (midi, t, vel, info) => this._nnNote(midi, t, vel, info),
     });
     this.dsp = new DspTranscriber(sampleRate, {
       ...opts,
@@ -30,19 +40,51 @@ export class Transcriber {
       onNoteOff: () => {},
       onOnset: () => {},
     });
-    this.expected = new Set();
+  }
+
+  _report(midi, t, vel, info) {
+    this.recent.push({ midi, t });
+    this.onNoteOn(midi, t, vel, info);
+  }
+
+  _nnNote(midi, t, vel, info = {}) {
+    if (!this.gate || info.expected || this.nn.engine !== 'nn' || !this.dsp.lastDetected) return this._report(midi, t, vel, info);
+    this.held.push({ midi, t, vel, info, until: this.nn.pos / this.sr + this.gateWait });
+    this._checkHeld();
+  }
+
+  // DSP evidence for `midi` attacked at `t`?
+  _evidence(midi, t) {
+    const d = this.dsp;
+    const near = (o) => Math.abs(o.t - t) <= 0.04;
+    const flux = (d.onsets || []).some(near) || (d.weakPeaks || []).some((o) => o.medium && near(o));
+    if (!flux) return false;
+    return (d.lastDetected || []).some((x) => x.midi === midi) || (d.pending && d.pending.has(midi)) || (d.active && d.active.has(midi));
+  }
+
+  _checkHeld() {
+    if (!this.held.length) return;
+    const now = this.nn.pos / this.sr;
+    const keep = [];
+    for (const h of this.held) {
+      if (this._evidence(h.midi, h.t)) this._report(h.midi, h.t, h.vel, h.info);
+      else if (now < h.until) keep.push(h);
+      else this.stats.gated++;
+    }
+    this.held = keep;
   }
 
   _dspNote(midi, t, vel, info = {}) {
+    if (!this.rescue) return;
     const now = this.nn.pos / this.sr;
     this.recent = this.recent.filter((e) => now - e.t < 1.5);
     if (info.restrike) return;
     if (this.recent.some((e) => e.midi === midi && Math.abs(e.t - t) <= 0.08)) return;
+    if (this.held.some((e) => e.midi === midi && Math.abs(e.t - t) <= 0.08)) return;
     const conf = info.confidence ?? 1;
     if (conf < this.rescueConf && !this.expected.has(midi)) return;
-    this.recent.push({ midi, t });
     this.stats.rescued++;
-    this.onNoteOn(midi, t, vel, { confidence: conf * 0.95, restrike: false, rescued: true });
+    this._report(midi, t, vel, { confidence: conf * 0.95, restrike: false, rescued: true });
   }
 
   get pos() {
@@ -79,12 +121,14 @@ export class Transcriber {
   }
 
   push(samples, frame0) {
-    this.nn.push(samples, frame0);
+    // DSP first: its evidence for this chunk is then available when the network's notes arrive
     if (this.nn.engine === 'nn') this.dsp.push(samples, frame0);
+    this.nn.push(samples, frame0);
+    this._checkHeld();
     const s = this.nn.stats;
-    this.stats.emitted = s.emitted + this.stats.rescued;
+    this.stats.emitted = s.emitted + this.stats.rescued - this.stats.gated;
     this.stats.restrikes = s.restrikes;
-    this.stats.rejected = s.rejected;
+    this.stats.rejected = s.rejected + this.stats.gated;
   }
 
   setExpected(midis, range) {
@@ -120,5 +164,6 @@ export class Transcriber {
     this.nn.reset();
     this.dsp.reset();
     this.recent = [];
+    this.held = [];
   }
 }

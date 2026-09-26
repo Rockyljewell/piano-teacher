@@ -57,6 +57,13 @@ export async function loadWeights(url = WEIGHTS_URL) {
 export const ready = isNode ? Promise.resolve(await loadWeights(process.env.NN_WEIGHTS ? (await import('node:url')).pathToFileURL((await import('node:path')).resolve(process.env.NN_WEIGHTS)) : WEIGHTS_URL)) : loadWeights();
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+// registers for per-register thresholds: A0-B1, C2-B2, C3-B3, C4-B4, C5-B5, C6-C8
+export const REGISTERS = [21, 36, 48, 60, 72, 84, 109];
+export const regOf = (midi) => {
+  let r = 0;
+  while (r < REGISTERS.length - 2 && midi >= REGISTERS[r + 1]) r++;
+  return r;
+};
 const sigmoid = (z) => 1 / (1 + Math.exp(-z));
 
 // Decoder defaults (overridden by the weights file's "decoder" section, fitted in tools/nn/).
@@ -307,7 +314,8 @@ export class Transcriber {
 
   _threshold(midi, expected) {
     const D = this.dec;
-    let th = expected ? D.thrExp + 0.2 * D.thrStrict * (this.strictness - 0.5) : D.thr + D.thrStrict * 2 * (this.strictness - 0.5);
+    const r = regOf(midi);
+    let th = expected ? (D.thrExpReg ? D.thrExpReg[r] : D.thrExp) + 0.2 * D.thrStrict * (this.strictness - 0.5) : (D.thrReg ? D.thrReg[r] : D.thr) + D.thrStrict * 2 * (this.strictness - 0.5);
     if (!expected && this.range && (midi < this.range[0] - 5 || midi > this.range[1] + 5)) th += D.thrOut;
     th /= Math.sqrt(this.sensitivity || 1);
     return clamp(th, 0.05, 0.97);
