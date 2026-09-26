@@ -69,7 +69,8 @@ def write(path, m, decoder=None, f16=True):
         blobs.append(b + b'\0' * pad)
         off += len(b) + pad
     cfg = dict(m.cfg, harm=HARM, shifts=SHIFTS, xoff=XOFF, pos0=POS0)
-    header = dict(version=1, cfg=cfg, frontend=dict(sr=FE.SR, hop=FE.HOP, wins=list(FE.WINS), nb=FE.NB, midi0=FE.MIDI0, bps=FE.BPS, eps=FE.EPS),
+    wins = list(m.cfg.get('wins') or FE.WINS)
+    header = dict(version=1, cfg=cfg, frontend=dict(sr=FE.SR, hop=FE.HOP, wins=wins, nb=FE.NB, midi0=FE.MIDI0, bps=FE.BPS, eps=FE.EPS),
                   tensors=meta, decoder=decoder or {})
     hb = json.dumps(header, separators=(',', ':')).encode()
     with open(path, 'wb') as f:
@@ -110,11 +111,11 @@ def test_signal(n=16000 * 3 // 2):
 
 def parity(m, path):
     x = test_signal()
-    feats = FE.features_np(x)  # [T, 2, NB]
+    feats = FE.features_np(x, tuple(m.cfg.get('wins') or FE.WINS))  # [T, nspec, NB]
     with torch.no_grad():
         out = m(torch.from_numpy(feats).permute(1, 0, 2)[None])[0]  # [C, T, 88]
     frames = [30, 60, 75, 80, 90, 120, 145]
-    ref = dict(n=len(x), frames=frames, feats={str(t): [round(float(v), 5) for v in feats[t].reshape(-1)] for t in (10, 75, 145)},
+    ref = dict(n=len(x), frames=frames, wins=list(m.cfg.get('wins') or FE.WINS), feats={str(t): [round(float(v), 5) for v in feats[t].reshape(-1)] for t in (10, 75, 145)},
                logits={str(t): [round(float(v), 4) for v in out[:, t].T.reshape(-1)] for t in frames})
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(ref, open(path, 'w'))

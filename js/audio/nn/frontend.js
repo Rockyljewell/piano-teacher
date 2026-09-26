@@ -252,22 +252,24 @@ export class Resampler {
 
 // ---- features -----------------------------------------------------------------------------------
 export class Frontend {
-  constructor({ cents = 0 } = {}) {
-    this.ffts = WINS.map((W) => new FFT(W));
-    this.wins = WINS.map((W) => hann(W));
-    this.frames = WINS.map((W) => new Float32Array(W));
-    this.mags = WINS.map((W) => new Float64Array(W / 2 + 1));
+  // wins: the STFT window lengths, longest first (the weights file says which)
+  constructor({ cents = 0, wins = WINS } = {}) {
+    this.W = wins.slice();
+    this.ffts = this.W.map((W) => new FFT(W));
+    this.wins = this.W.map((W) => hann(W));
+    this.frames = this.W.map((W) => new Float32Array(W));
+    this.mags = this.W.map((W) => new Float64Array(W / 2 + 1));
     this.setTuning(cents);
     this.ring = new Float32Array(4096);
     this.rmask = this.ring.length - 1;
     this.n = 0; // 16 kHz samples received
     this.nextEnd = HOP; // end sample of the next frame
-    this.out = new Float32Array(2 * NB);
+    this.out = new Float32Array(this.W.length * NB);
   }
 
   setTuning(cents) {
     this.cents = cents;
-    this.fbs = WINS.map((W) => filterbank(W, cents));
+    this.fbs = this.W.map((W) => filterbank(W, cents));
   }
 
   reset() {
@@ -276,7 +278,7 @@ export class Frontend {
     this.nextEnd = HOP;
   }
 
-  // Push 16 kHz samples; calls onFrame(features Float32Array(2 * NB), endSample) for every frame.
+  // Push 16 kHz samples; calls onFrame(features Float32Array(nwin * NB), endSample) per frame.
   push(x, onFrame) {
     for (let i = 0; i < x.length; i++) {
       this.ring[this.n & this.rmask] = x[i];
@@ -291,8 +293,8 @@ export class Frontend {
 
   compute(end) {
     const out = this.out;
-    for (let w = 0; w < WINS.length; w++) {
-      const W = WINS[w],
+    for (let w = 0; w < this.W.length; w++) {
+      const W = this.W[w],
         fr = this.frames[w],
         win = this.wins[w],
         ring = this.ring,

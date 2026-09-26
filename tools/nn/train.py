@@ -152,7 +152,10 @@ def augment(rng, piano, noise, *, p_noise=0.8):
     return mix.astype(np.float32)
 
 
-def targets(notes, T, k_on=K_ONSET):
+BASS = 48  # keys below C3 may get a longer onset window (k_bass)
+
+
+def targets(notes, T, k_on=K_ONSET, k_bass=0):
     """notes [m, 4] (midi, onset s, end s, vel) -> onset [T, 88], age [T, 88] (-1 = none), frame [T, 88]"""
     onset = np.zeros((T, NKEY), dtype=np.float32)
     age = np.full((T, NKEY), -1, dtype=np.int64)
@@ -163,7 +166,7 @@ def targets(notes, T, k_on=K_ONSET):
             continue
         s_on = on * SR
         t0 = int(np.ceil(s_on / HOP)) - 1  # first frame whose window ends at/after the attack
-        for a in range(k_on):
+        for a in range(k_bass if (k_bass and midi < BASS) else k_on):
             t = t0 + a
             if 0 <= t < T:
                 onset[t, k] = 1
@@ -175,13 +178,16 @@ def targets(notes, T, k_on=K_ONSET):
     return onset, age, frame
 
 
+K_BASS = 0
+
+
 def batch(rng, clips, noise, fe, B, T, p_noise=0.8):
     n = (T + WARM) * HOP
     X, O, A, Fr = [], [], [], []
     for _ in range(B):
         piano, nt, _ = clips.crop(rng, n)
         X.append(augment(rng, piano, noise, p_noise=p_noise))
-        o, a, f = targets(nt, T + WARM)
+        o, a, f = targets(nt, T + WARM, k_bass=K_BASS)
         O.append(o), A.append(a), Fr.append(f)
     x = torch.from_numpy(np.stack(X))
     with torch.no_grad():
@@ -273,6 +279,43 @@ def evaluate(model, fe, clips, noise, n=48, T=700, seed=12345, thr=(0.3, 0.4, 0.
     return out
 
 
+def init_from(model, path, wins):
+    """Warm start from an earlier checkpoint whose configuration may lack STFT windows or age
+    classes: shared weights are copied, the new input channels start at zero (so the network
+    starts out computing exactly what it did), new age outputs keep their fresh init."""
+    from model import HARM
+    ck = torch.load(path, map_location='cpu')
+    old, ocfg = ck['model'], ck['cfg']
+    owins = list(ocfg.get('wins') or [2048, 512])
+    wins = list(wins)
+    H = len(HARM)
+    sd = model.state_dict()
+    for k, v in old.items():
+        if k not in sd:
+            continue
+        if sd[k].shape == v.shape:
+            sd[k] = v.clone()
+        elif k in ('mu', 'sd'):
+            for i, W in enumerate(owins):
+                if W in wins:
+                    sd[k][wins.index(W)] = v[i]
+        elif k == 'a.weight':
+            new = torch.zeros_like(sd[k])
+            for i, W in enumerate(owins):
+                if W in wins:
+                    j = wins.index(W)
+                    new[:, j * H:(j + 1) * H] = v[:, i * H:(i + 1) * H]
+            if ocfg.get('diff'):
+                new[:, len(wins) * H:] = v[:, len(owins) * H:]
+            sd[k] = new
+        elif k.startswith('head.'):
+            new = sd[k].clone()
+            new[: v.shape[0]] = v
+            sd[k] = new
+    model.load_state_dict(sd)
+    print(f'warm start from {path} (step {ck.get("step")}, windows {owins} -> {wins})', flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--steps', type=int, default=3000)
@@ -286,20 +329,28 @@ def main():
     ap.add_argument('--eval-every', type=int, default=250)
     ap.add_argument('--resume', default='')
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--wins', default='2048,512', help='STFT windows, longest first')
+    ap.add_argument('--k-bass', type=int, default=0, help='onset window (frames) below C3 (0: same as above)')
+    ap.add_argument('--init-from', default='', help='warm start from a checkpoint of a smaller configuration')
     a = ap.parse_args()
+    global K_BASS
+    K_BASS = a.k_bass
+    wins = tuple(int(w) for w in a.wins.split(','))
     torch.set_num_threads(2)
     os.makedirs(a.out, exist_ok=True)
     rng = np.random.default_rng(a.seed)
     torch.manual_seed(a.seed)
     train, val = Clips('train'), Clips('val')
     noise = NoiseBank()
-    fe = TorchFrontend()
-    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','))
+    fe = TorchFrontend(wins)
+    model = Model(c1=a.c1, c2=a.c2, blocks=a.blocks.split(','), wins=wins, k_bass=a.k_bass or None)
     # fixed input normalisation from a few batches
     with torch.no_grad():
         fs = torch.cat([batch(rng, train, noise, fe, 8, 200)[0] for _ in range(4)])
         model.mu.copy_(fs.mean(dim=(0, 2, 3)))
         model.sd.copy_(fs.std(dim=(0, 2, 3)))
+    if a.init_from:
+        init_from(model, a.init_from, wins)
     step0 = 0
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
     if a.resume:

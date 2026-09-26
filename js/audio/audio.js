@@ -703,7 +703,7 @@ export class AudioEngine {
   }
 
   _makeNode(WNode) {
-    const node = new WNode(this.ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, processorOptions: { chunk: 512 } });
+    const node = new WNode(this.ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, processorOptions: { chunk: 256 } });
     node.port.onmessage = (e) => this._onWorklet(e.data);
     node.onprocessorerror = () => {
       this._nodeBroken = true;

@@ -6,7 +6,7 @@
 //
 // Environment:
 //   QUICK=1          quick mode (iteration)                 OUT=docs/x   report path (no ext.)
-//   TRANSCRIBER=path another transcriber.js to measure     CHUNK=512    samples per push()
+//   TRANSCRIBER=path another transcriber.js to measure     CHUNK=256    samples per push()
 //   BASELINE=file    earlier JSON report: adds a "before" column and the regression checks
 //   ONLY=regex       only jobs whose "instrument|condition|material" matches
 //   NOISE=0 / BROWSER=0  skip the noise-only table / the in-browser pipeline latency
@@ -387,7 +387,7 @@ function mdTable(head, rows) {
 
 async function main() {
   const quick = !!process.env.QUICK;
-  const chunk = Number(process.env.CHUNK || 512);
+  const chunk = Number(process.env.CHUNK || 256); // what the capture worklet sends (was 512 before)
   const threads = Number(process.env.THREADS || Math.max(1, os.cpus().length));
   const outBase = process.env.OUT || path.join(here, '../docs/listening-bench');
   const t0 = Date.now();

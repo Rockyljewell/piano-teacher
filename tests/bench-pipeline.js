@@ -12,7 +12,7 @@
 //
 // Two runs: free play (no hints) and lesson (the page follows the recording and calls
 // setExpected with the notes due within -0.25..+0.35 s, synchronised on the first note).
-// The same audio also goes through the Transcriber offline (512-sample chunks) so the
+// The same audio also goes through the Transcriber offline (worklet-sized chunks) so the
 // difference between the two is the pipeline itself (worklet chunk, worker hops, scheduling).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +45,8 @@ function testNotes() {
 }
 
 // The same recording through the Transcriber in Node, at the page's sample rate, in the
-// worklet's 512-sample chunks: analysis + chunking only.
+// worklet's chunks (CHUNK, default 256): analysis + chunking only.
+const CHUNK = Number(process.env.CHUNK || 256);
 async function offline(audio48, notes, mode, trPath, sr) {
   const { Transcriber } = await import(pathToFileURL(trPath).href);
   let audio = audio48;
@@ -65,7 +66,7 @@ async function offline(audio48, notes, mode, trPath, sr) {
   let cal = false,
     key = '';
   const range = [Math.min(...notes.map((n) => n.midi)), Math.max(...notes.map((n) => n.midi))];
-  for (let i = 0; i + 512 <= audio.length; i += 512) {
+  for (let i = 0; i + CHUNK <= audio.length; i += CHUNK) {
     const t = i / sr;
     if (canCal && !cal && t > 1.2) {
       tr.finishCalibration();
@@ -79,8 +80,8 @@ async function offline(audio48, notes, mode, trPath, sr) {
         tr.setExpected(due, range);
       }
     }
-    at = i + 512;
-    tr.push(audio.subarray(i, i + 512), i);
+    at = i + CHUNK;
+    tr.push(audio.subarray(i, i + CHUNK), i);
   }
   return ev;
 }

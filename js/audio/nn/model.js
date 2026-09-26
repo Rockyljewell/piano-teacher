@@ -160,9 +160,10 @@ export class Model {
     this.NB = header.frontend.nb;
     this.H = c.shifts.length;
     this.diff = c.diff || 0; // extra input: short-window rise over `diff` frames
-    this.NF = this.diff ? 3 : 2; // feature maps: long, short (, short rise)
+    this.nspec = header.frontend.wins.length; // spectra, longest window first
+    this.NF = this.nspec + (this.diff ? 1 : 0); // feature maps: spectra (, rise of the shortest)
     this.CIN = this.NF * this.H;
-    this.KO = 2 + c.k_onset;
+    this.KO = 2 + Math.max(c.k_onset, c.k_bass || 0);
     // per-tap weight vectors (contiguous over channels) for the depthwise convolutions
     this.bTap = Array.from({ length: 9 }, (_, q) => Float32Array.from({ length: C1 }, (_, ch) => T.b_w[ch * 9 + q]));
     // key layer: reorder the input columns from (channel, position) to (position, channel) so
@@ -192,7 +193,7 @@ export class Model {
         h: 0,
       };
     });
-    this.xn = new Float32Array(3 * this.NB);
+    this.xn = new Float32Array((this.nspec + 1) * this.NB);
     this.sHist = Array.from({ length: Math.max(1, this.diff) }, () => new Float32Array(this.NB)); // normalised short spectra, t-1 .. t-diff
     this.sIdx = 0;
     this.S = new Float32Array(NP * this.CIN);
@@ -222,7 +223,7 @@ export class Model {
     this.frames = 0;
   }
 
-  // One frame of features (Float32Array(2 * NB)) -> logits [88 keys][2 + K] (onset, frame, age...).
+  // One frame of features (Float32Array(nspec * NB)) -> logits [88 keys][2 + K] (onset, frame, age...).
   step(f) {
     const T = this.T,
       NB = this.NB,
@@ -233,17 +234,18 @@ export class Model {
       H = this.H,
       CIN = this.CIN;
     const xn = this.xn;
-    for (let w = 0; w < 2; w++) {
+    const ns = this.nspec;
+    for (let w = 0; w < ns; w++) {
       const mu = T.mu[w],
         isd = 1 / T.sd[w];
       for (let k = 0; k < NB; k++) xn[w * NB + k] = (f[w * NB + k] - mu) * isd;
     }
     if (this.diff) {
-      // rise of the short-window spectrum since `diff` frames ago (zeros before the start)
+      // rise of the shortest window's spectrum since `diff` frames ago (zeros before the start)
       const old = this.sHist[this.sIdx];
       for (let k = 0; k < NB; k++) {
-        const v = xn[NB + k];
-        xn[2 * NB + k] = v - old[k];
+        const v = xn[(ns - 1) * NB + k];
+        xn[ns * NB + k] = v - old[k];
         old[k] = v;
       }
       this.sIdx = (this.sIdx + 1) % this.diff;

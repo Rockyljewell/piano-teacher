@@ -122,8 +122,11 @@ export class Transcriber {
     this.dec = { ...DEC, ...(w.header.decoder || {}), ...(this.opts.decoder || {}) };
     this.model = new Model(w);
     this.KO = this.model.KO;
-    this.K = this.KO - 2;
-    this.fe = new Frontend({ cents: this.tuningCents });
+    const cfg = w.header.cfg;
+    // onset window per key (frames): longer below C3 if the model was trained so
+    this.Kk = Uint8Array.from({ length: 88 }, (_, k) => (cfg.k_bass && k + MIDI_MIN < 48 ? cfg.k_bass : cfg.k_onset));
+    this.K = cfg.k_onset;
+    this.fe = new Frontend({ cents: this.tuningCents, wins: w.header.frontend.wins });
     this.rs = new Resampler(this.sr);
     this.armed = new Uint8Array(88).fill(1);
     this.lastFire = new Int32Array(88).fill(-1000);
@@ -402,11 +405,11 @@ export class Transcriber {
     if (this.tunePending.length) this._measureTuning();
     if (this.frame < this.dec.warm) return;
     const KO = this.KO,
-      K = this.K,
       D = this.dec;
     const tNow = this._time(end);
     for (let k = 0; k < 88; k++) {
       const midi = k + MIDI_MIN;
+      const K = this.Kk[k];
       const p = sigmoid(out[k * KO]);
       const pf = sigmoid(out[k * KO + 1]);
       const expected = this.expected.has(midi);
