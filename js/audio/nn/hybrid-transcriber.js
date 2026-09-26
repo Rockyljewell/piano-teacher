@@ -26,6 +26,12 @@ export class Transcriber {
     this.rescue = opts.rescue ?? (ENV.HYBRID_RESCUE != null ? ENV.HYBRID_RESCUE !== '0' : true);
     this.rescueConf = opts.rescueConf ?? 0.7; // DSP confidence needed to add a note the network missed
     this.gateWait = opts.gateWait ?? (ENV.HYBRID_WAIT != null ? Number(ENV.HYBRID_WAIT) : 0.06); // s an unexpected note may wait for the DSP's evidence
+    // evidence the DSP must show for an unexpected note: 'detect' (an attack in its flux and the
+    // key among its harmonic detections), 'pending' (it is judging or has reported that key, for
+    // an attack within 40 ms), 'emit' (it reported the key within 80 ms)
+    this.gateMode = opts.gateMode ?? ENV.HYBRID_MODE ?? 'pending';
+    this.trustP = opts.trustP ?? (ENV.HYBRID_TRUST != null ? Number(ENV.HYBRID_TRUST) : 0.97); // network probability that needs no second opinion
+    this.dspNotes = []; // [{midi, t}] notes the DSP reported
     this.recent = []; // [{midi, t}] reported notes of the last ~1.5 s
     this.held = []; // unexpected network notes waiting for evidence
     this.stats = { emitted: 0, rejected: 0, restrikes: 0, rescued: 0, gated: 0 };
@@ -48,7 +54,7 @@ export class Transcriber {
   }
 
   _nnNote(midi, t, vel, info = {}) {
-    if (!this.gate || info.expected || this.nn.engine !== 'nn' || !this.dsp.lastDetected) return this._report(midi, t, vel, info);
+    if (!this.gate || info.expected || this.nn.engine !== 'nn' || !this.dsp.lastDetected || (info.p ?? 0) >= this.trustP) return this._report(midi, t, vel, info);
     this.held.push({ midi, t, vel, info, until: this.nn.pos / this.sr + this.gateWait });
     this._checkHeld();
   }
@@ -57,6 +63,14 @@ export class Transcriber {
   _evidence(midi, t) {
     const d = this.dsp;
     const near = (o) => Math.abs(o.t - t) <= 0.04;
+    if (this.dspNotes.some((e) => e.midi === midi && Math.abs(e.t - t) <= 0.08)) return true;
+    if (this.gateMode === 'emit') return false;
+    if (this.gateMode === 'pending') {
+      const p = d.pending && d.pending.get(midi);
+      if (p && p.attack && near(p.attack)) return true;
+      const a = d.active && d.active.get(midi);
+      return !!(a && Math.abs(a.on - t) <= 0.04);
+    }
     const flux = (d.onsets || []).some(near) || (d.weakPeaks || []).some((o) => o.medium && near(o));
     if (!flux) return false;
     return (d.lastDetected || []).some((x) => x.midi === midi) || (d.pending && d.pending.has(midi)) || (d.active && d.active.has(midi));
@@ -75,8 +89,11 @@ export class Transcriber {
   }
 
   _dspNote(midi, t, vel, info = {}) {
-    if (!this.rescue) return;
     const now = this.nn.pos / this.sr;
+    this.dspNotes = this.dspNotes.filter((e) => now - e.t < 1.5);
+    this.dspNotes.push({ midi, t });
+    this._checkHeld();
+    if (!this.rescue) return;
     this.recent = this.recent.filter((e) => now - e.t < 1.5);
     if (info.restrike) return;
     if (this.recent.some((e) => e.midi === midi && Math.abs(e.t - t) <= 0.08)) return;
