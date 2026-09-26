@@ -18,43 +18,53 @@ export const MIDI0 = 20;
 export const BPS = 3;
 export const EPS = 3e-5;
 
-// ---- FFT (radix-2, complex, in place) ------------------------------------------------------------
+// ---- FFT ----------------------------------------------------------------------------------------
+// Real-input FFT of size n through one complex radix-2 FFT of size n / 2.
 export class FFT {
   constructor(n) {
     this.n = n;
+    const m = (this.m = n >> 1);
     let lg = 0;
-    while (1 << lg < n) lg++;
-    if (1 << lg !== n) throw new Error('FFT size must be a power of two');
-    this.rev = new Uint32Array(n);
-    for (let i = 0; i < n; i++) {
+    while (1 << lg < m) lg++;
+    if (1 << lg !== m || m < 2) throw new Error('FFT size must be a power of two >= 4');
+    this.rev = new Uint32Array(m);
+    for (let i = 0; i < m; i++) {
       let r = 0;
       for (let b = 0; b < lg; b++) if (i & (1 << b)) r |= 1 << (lg - 1 - b);
       this.rev[i] = r;
     }
-    this.cos = new Float64Array(n / 2);
-    this.sin = new Float64Array(n / 2);
-    for (let i = 0; i < n / 2; i++) {
-      this.cos[i] = Math.cos((2 * Math.PI * i) / n);
-      this.sin[i] = -Math.sin((2 * Math.PI * i) / n);
+    this.cos = new Float64Array(m / 2);
+    this.sin = new Float64Array(m / 2);
+    for (let i = 0; i < m / 2; i++) {
+      this.cos[i] = Math.cos((2 * Math.PI * i) / m);
+      this.sin[i] = -Math.sin((2 * Math.PI * i) / m);
     }
-    this.re = new Float64Array(n);
-    this.im = new Float64Array(n);
+    // split twiddles e^{-2 pi i k / n}
+    this.wc = new Float64Array(m + 1);
+    this.ws = new Float64Array(m + 1);
+    for (let k = 0; k <= m; k++) {
+      this.wc[k] = Math.cos((2 * Math.PI * k) / n);
+      this.ws[k] = -Math.sin((2 * Math.PI * k) / n);
+    }
+    this.re = new Float64Array(m);
+    this.im = new Float64Array(m);
   }
 
   // Magnitude spectrum (bins 0..n/2) of a real frame, times `scale`.
   magnitude(frame, out, scale = 1) {
-    const n = this.n,
+    const m = this.m,
       re = this.re,
       im = this.im,
       rev = this.rev;
-    for (let i = 0; i < n; i++) {
-      re[rev[i]] = frame[i];
-      im[i] = 0;
+    for (let i = 0; i < m; i++) {
+      const r = rev[i];
+      re[r] = frame[2 * i];
+      im[r] = frame[2 * i + 1];
     }
-    for (let size = 2; size <= n; size <<= 1) {
+    for (let size = 2; size <= m; size <<= 1) {
       const half = size >> 1,
-        step = n / size;
-      for (let i = 0; i < n; i += size) {
+        step = m / size;
+      for (let i = 0; i < m; i += size) {
         for (let j = 0, k = 0; j < half; j++, k += step) {
           const a = i + j,
             b = a + half;
@@ -69,7 +79,24 @@ export class FFT {
         }
       }
     }
-    for (let k = 0; k <= n / 2; k++) out[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]) * scale;
+    const wc = this.wc,
+      ws = this.ws;
+    for (let k = 0; k <= m; k++) {
+      const k1 = k === m ? 0 : k,
+        k2 = k === 0 ? 0 : m - k;
+      const zr = re[k1],
+        zi = im[k1],
+        cr = re[k2],
+        ci = -im[k2];
+      const er = 0.5 * (zr + cr),
+        ei = 0.5 * (zi + ci);
+      // odd part: (Z - conj Z') / 2i
+      const orr = 0.5 * (zi - ci),
+        oi = -0.5 * (zr - cr);
+      const xr = er + wc[k] * orr - ws[k] * oi;
+      const xi = ei + wc[k] * oi + ws[k] * orr;
+      out[k] = Math.sqrt(xr * xr + xi * xi) * scale;
+    }
     return out;
   }
 }
