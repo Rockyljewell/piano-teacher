@@ -96,6 +96,10 @@ function setup(root) {
   $('#diag-restart').addEventListener('click', restartMic);
   $('#diag-test').addEventListener('click', startNoteTest);
   $('#diag-record').addEventListener('click', startRecording);
+  $('#diag-listentest').addEventListener('click', () => {
+    closeDiagnostics();
+    if (app.startListeningTest) app.startListeningTest();
+  });
   $('#diag-rec').addEventListener('click', (e) => {
     if (e.target.closest('#diag-share')) shareFiles();
   });
@@ -363,6 +367,19 @@ function renderStatus() {
   renderNotes();
 }
 
+// A recording made elsewhere (the listening test): show it here, ready to share.
+export function showRecording(r, log, base, message) {
+  revoke();
+  const files = [
+    new File([encodeWav(r.samples, r.sampleRate)], `${base}.wav`, { type: 'audio/wav' }),
+    new File([JSON.stringify(log, null, 1)], `${base}.json`, { type: 'application/json' }),
+  ];
+  rec = { state: 'done', files, urls: files.map((f) => URL.createObjectURL(f)), noAudio: false, message };
+  openDiagnostics();
+  renderRec();
+}
+app.showRecording = showRecording;
+
 function renderRec() {
   const box = $('#diag-rec');
   const btn = $('#diag-record');
@@ -392,7 +409,7 @@ function renderRec() {
   const links = rec.files
     .map((f, i) => `<a class="btn btn-sm" href="${rec.urls[i]}" download="${esc(f.name)}">${f.type === 'audio/wav' ? 'Sound' : 'Log'} · ${kb(f.size)}</a>`)
     .join('');
-  box.innerHTML = `<div class="diag-rec-top"><span class="rec-ok" aria-hidden="true">${icon('check', 18)}</span><b>Saved! Send ${rec.files.length === 1 ? 'this file' : 'both files'} to the developer.</b></div>
+  box.innerHTML = `<div class="diag-rec-top"><span class="rec-ok" aria-hidden="true">${icon('check', 18)}</span><b>${rec.message ? esc(rec.message) : `Saved! Send ${rec.files.length === 1 ? 'this file' : 'both files'} to the developer.`}</b></div>
     ${rec.noAudio ? '<p class="fine">No sound came from the microphone, so there is only the log. That is useful too!</p>' : ''}
     <div class="row">${canShare ? '<button id="diag-share" class="btn btn-primary btn-sm">Share…</button>' : ''}${links}</div>`;
 }

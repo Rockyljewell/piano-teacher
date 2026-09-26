@@ -176,6 +176,7 @@ export function startSession(mode) {
   S.session = session;
   S.startedAt = audio.now();
   session.start();
+  if (app.listenTestStart) app.listenTestStart(session, piece, S.activity); // (records the mic for the listening test)
   sfx('countin');
   loop();
 }
@@ -272,6 +273,7 @@ function onSessionEvent(ev) {
     // A short flourish across the keys, then the results.
     const result = ev.result;
     const piece = S.piece;
+    if (app.listenTestFinish && S.activity && S.activity.listenTest) app.listenTestFinish(result);
     stage.finale();
     clearTimeout(S.finishTimer);
     S.finishTimer = setTimeout(() => {
