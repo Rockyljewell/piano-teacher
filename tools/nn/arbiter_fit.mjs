@@ -4,6 +4,8 @@
 //
 //   node tools/nn/arbiter_fit.mjs fit [--write]     fit on sal + valmix + noise, print, write
 //                                                   js/audio/nn/arbiter-model.js
+//   node tools/nn/arbiter_fit.mjs thr <model.json> <out.json>  search only the thresholds
+//   node tools/nn/arbiter_fit.mjs write <model.json>      write that model as the shipped one
 //   node tools/nn/arbiter_fit.mjs eval <set> [model.json|legacy|dsp|current]
 //   node tools/nn/arbiter_fit.mjs diag <set> [...]  what the false notes / misses are
 //
@@ -519,6 +521,68 @@ if (!isMainThread && workerData && workerData.evalWorker) {
   parentPort.on('message', (model) => parentPort.postMessage(evalAll(data, model)));
 }
 
+// thresholds: coordinate search on the objective
+async function searchThr(P, model, ref) {
+  let best = objective(await P.run(model), ref);
+  console.log(`  start: ${fmtO(best)}`);
+  const grid = { dsp: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], nn: [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.96, 0.98], nnOct: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] };
+  for (let round = 0; round < 2; round++)
+    for (const kind of ['dsp', 'nn', 'nnOct'])
+      for (let r = 0; r < (kind === 'nnOct' ? 1 : 3); r++) {
+        const set1 = (v) => (kind === 'nnOct' ? v : model.thr[kind].map((x, i) => (i === r ? v : x)));
+        const cur = kind === 'nnOct' ? model.thr.nnOct : model.thr[kind][r];
+        const ms = grid[kind].filter((v) => v !== cur).map((v) => ({ ...model, thr: { ...model.thr, [kind]: set1(v) } }));
+        const os = (await Promise.all(ms.map((m) => P.run(m)))).map((E) => objective(E, ref));
+        os.forEach((o, i) => {
+          if (o.J > best.J) {
+            best = o;
+            model = ms[i];
+            console.log(`  thr ${kind}[${r}] = ${JSON.stringify(model.thr[kind])}: ${fmtO(o)}`);
+          }
+        });
+      }
+  return { best, model };
+}
+
+// only the thresholds, for a given model (e.g. after changing a fixed rule such as octRule)
+async function thrOnly(file, out) {
+  const P = pool(Number(process.env.THREADS || 3));
+  const ref = objective(await P.run('legacy'));
+  console.log('legacy   ', fmtO(ref));
+  const { best, model } = await searchThr(P, JSON.parse(fs.readFileSync(file, 'utf8')), ref);
+  console.log(`chosen: thr ${JSON.stringify(model.thr)} ${fmtO(best)}`);
+  fs.writeFileSync(out, JSON.stringify({ ...model, feats: FEATS }));
+  console.log('wrote', out);
+  P.close();
+}
+
+// refit only the octave-partner model (e.g. with a longer deadline for octave partners), then the
+// thresholds
+async function refitOct(file, out) {
+  const base = JSON.parse(fs.readFileSync(file, 'utf8'));
+  base.deadlineOct = Number(process.env.DEADLINE_OCT || 0.4);
+  delete base.octRule;
+  let DO;
+  {
+    const all = FIT_SETS.flatMap((k) => load(k));
+    // as the first pass of fit(): every DSP note reported, no network note, so every candidate is
+    // watched to its deadline
+    const D = collect(all, { deadlineOct: base.deadlineOct }, { sal: 0.5, inst: 1, valmix: 1, noise: 3 });
+    DO = D.nn.filter((s) => s.partner);
+    D.nn = D.dsp = null;
+  }
+  base.nnOct = fitLogistic(DO, { l2: 1, hidden: Number(process.env.HIDDEN || 8) });
+  console.log(`${DO.length} octave-partner snapshots (${DO.filter((s) => s.y).length} true), logloss ${logloss(base.nnOct, DO).toFixed(4)}`);
+  DO = null;
+  fs.writeFileSync(out + '.pre', JSON.stringify(base));
+  const P = pool(Number(process.env.THREADS || 3));
+  const ref = objective(await P.run('legacy'));
+  const { best, model } = await searchThr(P, base, ref);
+  console.log(`chosen: thr ${JSON.stringify(model.thr)} ${fmtO(best)}`);
+  fs.writeFileSync(out, JSON.stringify({ ...model, feats: FEATS }));
+  P.close();
+}
+
 async function fit(write) {
   const P = pool(Number(process.env.THREADS || 3));
   const data = {};
@@ -541,24 +605,9 @@ async function fit(write) {
     console.log(`pass ${pass}: ${D.dsp.length} DSP decisions (${D.dsp.filter((s) => s.y).length} true), ${D.nn.length} network snapshots (${D.nn.filter((s) => s.y).length} true), ${DO.length} octave partners (${DO.filter((s) => s.y).length} true); logloss dsp ${logloss(md, D.dsp).toFixed(4)} nn ${logloss(mn, D.nn).toFixed(4)} oct ${logloss(mo, DO).toFixed(4)} (general model ${logloss(mn, DO).toFixed(4)})`);
     const prevThr = model && model.thr;
     model = { dsp: md, nn: mn, nnOct: mo, thr: prevThr || { dsp: [0.3, 0.3, 0.3], nn: [0.9, 0.9, 0.9], nnOct: 0.7 }, deadline: [0.3, 0.25, 0.25] };
-    // thresholds: coordinate search on the objective
-    let best = objective(await P.run(model), ref);
-    const grid = { dsp: [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], nn: [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.96, 0.98], nnOct: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] };
-    for (let round = 0; round < 2; round++)
-      for (const kind of ['dsp', 'nn', 'nnOct'])
-        for (let r = 0; r < (kind === 'nnOct' ? 1 : 3); r++) {
-          const set1 = (v) => (kind === 'nnOct' ? v : model.thr[kind].map((x, i) => (i === r ? v : x)));
-          const cur = kind === 'nnOct' ? model.thr.nnOct : model.thr[kind][r];
-          const ms = grid[kind].filter((v) => v !== cur).map((v) => ({ ...model, thr: { ...model.thr, [kind]: set1(v) } }));
-          const os = (await Promise.all(ms.map((m) => P.run(m)))).map((E) => objective(E, ref));
-          os.forEach((o, i) => {
-            if (o.J > best.J) {
-              best = o;
-              model = ms[i];
-              console.log(`  thr ${kind}[${r}] = ${JSON.stringify(model.thr[kind])}: ${fmtO(o)}`);
-            }
-          });
-        }
+    const r0 = await searchThr(P, model, ref);
+    let best = r0.best;
+    model = r0.model;
     if (!bestAll || best.J > bestAll.J) (bestAll = best), (bestModel = model);
     fs.writeFileSync((process.env.MODEL_OUT || path.join(ARB, 'model.json')) + `.pass${pass}`, JSON.stringify({ ...model, feats: FEATS }));
     console.log(`pass ${pass} best: thr ${JSON.stringify(model.thr)} ${fmtO(best)}`);
@@ -588,6 +637,9 @@ export const ARBITER_MODEL = ${JSON.stringify(r(model))};
 async function main() {
   const [cmd, set, m] = process.argv.slice(2);
   if (cmd === 'fit') return fit(process.argv.includes('--write'));
+  if (cmd === 'thr') return thrOnly(set, m);
+  if (cmd === 'refit-oct') return refitOct(set, m);
+  if (cmd === 'write') return writeModule(JSON.parse(fs.readFileSync(set, 'utf8')));
   if (cmd === 'eval' || cmd === 'diag') {
     const recs = set.split(',').flatMap(load);
     let model = loadModel(m);
