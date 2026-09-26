@@ -1,27 +1,54 @@
 // Real-time polyphonic piano transcription, hardened against room noise.
 //
-// Pipeline (all in the audio clock domain, times are in seconds of AudioContext time):
-//  1. Onset detector: 1024-sample frames, 256 hop, log-compressed spectral flux with adaptive
-//     threshold. Gives precise attack times (~5 ms resolution) for rhythm grading.
-//  2. Noise floor: per-bin minimum statistics over ~2.5 s (frozen under sounding notes), so fans,
+// Two paths run on the audio clock (all times are seconds of AudioContext time):
+//
+// Fast path (_look*): decides at the attack.
+//  1. Onset detector: 1024-sample frames, 256 hop, log-compressed spectral flux with an adaptive
+//     threshold (~5 ms resolution); softer "medium" flux peaks are examined too.
+//  2. At every attack, a ladder of short Hann windows that start at the attack (21, 32, 43, 64,
+//     85 ms at 48 kHz) is compared with the same window just before it: the power spectrum
+//     difference holds only what the attack added, so notes that were already ringing (legato,
+//     pedal, repeated chords, the lower note of an octave) cancel out. Each window resolves notes
+//     down to some register: treble after ~21 ms, the bass later, the bottom octave not at all.
+//     A lower note the window cannot resolve yet ("blocker") makes it wait for a longer one.
+//  3. Candidates - notes found in the difference spectrum (iterative detection with
+//     cancellation), expected notes, sounding notes - get evidence features: harmonic salience
+//     and its contrast with the neighbouring keys, energy rise at the partials but not between
+//     them, unique partials vs. partials explained by other notes, octave/twelfth excess,
+//     tonality, pitch against this piano's tuning, level vs. the piano's recent level...
+//     LOOK_MODEL (two small MLPs, fitted by tests/look-fit.js on the Salamander grand and the
+//     synth only) gives the probability that the key was struck at this attack. Expected notes
+//     fire at p >= ~0.93; unexpected ones only in free play, only once the piano's level is
+//     known (never on noise alone), after two windows, at p >= ~0.88. Everything else is left
+//     to the long-window path.
+//  4. Lesson hints beyond "which notes are due": the order they are due in (when each joined
+//     the expected notes - a chord's notes join together, an arpeggio's one after the other). A
+//     due note that joined clearly after a note struck at this attack is the next note of the
+//     passage, not part of this attack, however well the struck note's partials (its octave,
+//     fifth, third) fit it; it also waits while an earlier due bass note is still unresolved.
+//     The lower note of a due octave is told from the upper one's partials by its odd partials.
+//     A soft due bass attack (a flux peak too weak to count on its own) is examined too.
+//
+// Long-window path (as before; it also decides the bass, soft and doubtful notes):
+//  5. Noise floor: per-bin minimum statistics over ~2.5 s (frozen under sounding notes), so fans,
 //     hum and traffic are tracked continuously - start-up calibration is only the first guess.
-//  3. Pitch analysis: 8192-sample Hann window (zero padded x2) every `hop` samples.
+//  6. Pitch analysis: 8192-sample Hann window (zero padded x2) every `hop` samples.
 //     Noise-floor subtraction -> spectral whitening -> harmonic salience for all 88 keys using a
 //     piano model (string inharmonicity, stretch tuning, register-dependent spectral envelope)
 //     -> iterative "pick the strongest note, cancel its partials using spectral smoothness"
 //     (after Klapuri 2006) to find every sounding note.
-//  4. Note hypotheses: a candidate note must be explained by an attack and is then watched for a
+//  7. Note hypotheses: a candidate note must be explained by an attack and is then watched for a
 //     few frames. Evidence that it is a piano string and not the room is combined into a
-//     confidence (0..1): partials are sharp stable sinusoids (voices glide and wobble), at the
-//     piano's pitch, rising together at the attack and then only decaying (voices and pads
-//     swell, claps/taps/footsteps vanish within tens of ms), loud enough relative to the noise
-//     floor and to how loud the piano has been played. Clearly piano-like notes are reported at
-//     once; doubtful ones only after ~0.2 s of evidence, or never. Expected notes (setExpected)
-//     need less evidence than unexpected ones.
-//  5. Note tracking: notes switch off with hysteresis; each new note is back-dated to its attack.
+//     confidence (0..1, CONF_MODEL). Clearly piano-like notes are reported at once; doubtful
+//     ones only after ~0.2 s of evidence, or never. During a piece, an unexpected note that the
+//     fast path examined at the same attack and found unlikely is a ghost of the notes that are
+//     due (octave, twelfth, neighbour) and is dropped.
+//  8. Note tracking: notes switch off with hysteresis; each new note is back-dated to its attack.
 //     Re-struck notes are found by checking which sounding notes gained harmonic (not broadband)
 //     energy right after an attack and kept it.
 import { FFT, hann } from './fft.js';
+
+export const ENGINE = { name: 'maestro-dsp', version: '3.1' };
 
 export const MIDI_MIN = 21; // A0
 export const MIDI_MAX = 108; // C8
@@ -78,6 +105,10 @@ export const CONF_MODEL = {
   b2: -3.256,
   expected: 1, // logit bonus for notes the score says are due
 };
+
+// Fast-path model (see _lookDecide): probability that a look candidate's key was struck at
+// this attack. Fitted by tests/look-fit.js on the Salamander grand and the synth piano only.
+export let LOOK_MODEL = {"exp":{"keys":["look","found","sc","rank","relSal","rise","riseLow","harm","snr","rel","relKnown","sub","uniqN","uniqFrac","under","excess","share","active","prev","ampRatio","onset","f0","nsig","tonal","flat","dev","ddev","ctr1","ctr2","expNbr","resid","residSc","blk","weak"],"W1":[[-1.046,0.086,1.813,-0.449,-0.19,0.602,0.291,-0.59,0.304,-0.635,-0.536,1.155,0.244,-1.109,1.274,0.078,-0.302,-0.411,0.686,0.542,1,-0.108,-0.59,-0.882,-0.947,-0.125,-0.286,0.415,-0.269,-1.266,-0.305,-0.084,-0.184,1.077],[-0.466,-0.456,1.22,-0.963,-0.471,1.182,1.555,-0.327,-0.227,1.006,-0.423,-1.483,0.783,-0.571,-0.016,0.291,-0.431,0.167,-0.58,1.184,-0.027,1.127,0.338,-0.763,0.498,-0.174,0.071,0.129,-0.158,-1.922,0.358,0.051,0.551,-0.146],[2.58,0.794,-0.454,-0.571,0.103,-0.139,0.077,0.006,0.021,0.581,-0.359,-0.148,-0.282,0.154,-0.418,-0.128,1.188,0.301,1.34,-0.01,-0.36,-0.277,0.648,0.135,-1.614,0.282,1.103,0.397,0.054,0.604,-0.491,0.276,0.557,-1.373],[0.325,-0.134,0.45,0.304,-0.1,-0.129,-0.702,0.232,0.002,0.418,0.687,-0.192,-0.201,0.515,-0.091,1.274,2.091,0.076,0.547,-0.766,-0.038,-1.053,0.196,-0.57,-0.437,0.727,1.744,0.436,-0.199,1.195,-0.415,0.458,1.434,-1.486],[-1.883,0.102,0.749,0.684,1.93,-0.745,0.419,-0.146,-0.641,-0.307,0.604,-0.099,0.682,0.023,-0.664,-0.227,-0.174,-2.068,0.589,0.484,-0.029,-1.096,-0.55,1.067,-0.492,-0.226,-0.05,0.073,0.034,0.926,0.259,-0.454,-0.394,0.618],[-0.429,-0.199,0.739,0.974,0.114,-0.54,1.011,-0.066,-0.131,0.649,1.071,-0.059,-0.095,0.832,-3.536,-0.758,0.053,0.527,0.265,1.442,-1.653,-0.298,0.155,0.101,-0.703,-0.071,0.128,0.079,0.059,-0.727,0.175,-0.075,0.114,-0.122],[-1.26,-0.676,-0.634,0.713,1.467,-0.727,0.434,-0.315,-0.487,-0.266,-0.592,0.94,0.659,1.221,-0.934,-0.073,-0.048,1.094,0.769,1.919,-0.185,0.855,-0.338,-0.887,-1.27,0.033,0.106,-0.084,0.041,0.26,0.511,-0.055,-1.239,0.271],[-0.725,-0.545,1.327,-0.527,-0.23,0.559,0.606,-0.222,-0.614,0.029,-0.68,0.154,-0.601,0.935,1.465,-0.912,1.498,-1.493,0.117,1.346,0.221,-0.394,1.325,-0.122,-0.182,0.212,0.294,-0.078,0.493,0.259,-0.593,0.064,0.849,-0.309],[-1.149,-0.242,-1.058,-0.72,-1.113,0.419,-0.067,0.74,0.418,0.315,-0.149,0.016,0.405,-1.139,-0.951,1.218,-1.041,1.256,1.142,-0.538,0.243,0.565,-0.213,-0.438,-1.534,-0.034,0.099,-0.191,0.062,1.263,-1.192,0.023,0.093,0.369],[2.363,-0.898,0.292,-0.029,-0.655,0.041,0.543,0.411,0.046,-0.115,-0.941,-0.103,0.362,-2.913,-1.353,-0.767,-0.158,0.27,-1.688,0.323,-0.658,-0.315,0.756,-0.527,0.33,-0.022,0.087,0.048,-0.073,1.89,-0.044,-0.002,0.386,-1.007]],"b1":[-0.358,-0.938,0.203,0.294,1.186,0.573,0.419,-0.677,-0.584,-0.753],"w2":[0.955,1.175,-2.109,1.646,-1.74,2.044,-1.532,1.19,1.735,-1.787],"b2":0.395},"free":{"keys":["look","found","sc","rank","relSal","rise","riseLow","harm","snr","rel","relKnown","sub","uniqN","uniqFrac","under","excess","share","active","prev","ampRatio","onset","f0","nsig","tonal","flat","dev","ddev","ctr1","ctr2","expNbr","resid","residSc","blk","weak"],"W1":[[0.174,-0.488,1.338,-0.32,-2.588,0.048,1.209,0.551,0.259,0.36,1.046,1.173,-0.223,-0.129,1.274,0.854,0.714,-0.559,0.401,-0.131,-0.396,-0.713,-0.711,0.845,0.232,0.155,0.246,0.134,0.258,-0.426,1.228,0.936,0.441,-0.513],[-0.523,0.845,0.074,0.036,0.079,0.869,0.52,1.361,-1.367,1.127,-2.62,-0.085,-0.362,1.13,-0.185,0.435,1.831,1.242,0.118,-0.538,0.45,0.598,0.617,-0.575,0.865,-0.341,-0.12,0.381,0.252,-0.369,-0.403,0.296,0.912,-1.17],[2.324,1.977,1.473,-0.851,0.956,0.746,1.213,-0.397,-0.793,-0.649,0.512,-1.253,1.944,-1.312,-0.292,0.281,0.721,-0.614,-0.76,-0.473,0.639,0.621,0.549,-0.022,-1.152,-0.985,-0.421,-0.342,0.18,2.529,-0.163,-0.166,-0.344,-0.897],[0.521,-1.116,0.596,0.731,-0.569,1.039,-0.341,1.19,1.699,-0.584,-2.102,0.372,-1.138,0.604,-1.084,0.148,1.523,0.273,-0.216,0.147,-0.218,-0.557,-0.324,-0.723,2.27,-0.163,0.116,0.573,0.132,-0.648,-0.898,0.197,0.38,-0.44],[-0.446,-0.927,-2.152,0.107,-0.11,0.172,0.743,1.525,-0.355,-0.755,-1.322,0.846,-0.161,0.943,-1.17,-0.225,0.482,-1.472,0.802,-0.412,-0.58,0.423,1.177,-0.939,-0.624,0.679,-0.307,0.856,-0.366,0.532,-0.245,-1.237,-0.429,-0.231],[-0.995,0.79,0.575,0.833,-2.203,-0.504,0.035,0.537,0.298,-0.266,-0.865,0.4,1.092,-2.201,-0.75,0.494,0.379,1.119,-1.404,0.477,0.012,-1.096,-0.212,-0.332,-0.724,0.069,0.263,1.026,-0.404,-1.068,0.101,-0.874,-0.038,0.309],[-2.759,-0.279,0.869,0.511,1.848,-0.377,-0.061,0.576,0.031,-0.427,0.327,1.467,0.42,-2.025,-0.206,-0.5,-1.7,-0.17,0.47,-0.398,-0.118,0.047,-0.188,0.112,-0.253,0.467,-0.269,0.005,0.219,0.547,0.472,-0.522,-2.059,1.754],[-0.476,0.181,0.991,-0.094,-0.173,0.747,0.812,-0.196,0.793,-0.2,1.47,-0.002,0.706,0.15,0.926,-0.135,1.629,0,0.679,-0.17,-1.241,-0.954,0.765,-1.202,0.251,-0.331,-0.04,0.262,-0.046,-0.282,1.505,1.149,-1.558,-0.337],[0.754,-0.105,0.507,-0.741,-1.72,1.25,-0.277,0.013,0.424,0.106,-0.449,-0.21,-0.618,1.904,-1.631,-0.504,0.174,1.353,0.864,-0.243,1.285,2.19,0.991,0.031,0.027,-0.258,-0.326,-1.355,-0.286,-1.343,-0.788,0.69,1.335,0.842],[1.117,0.254,0.331,0.014,-0.338,1.569,-0.241,0.548,-0.131,-0.262,0.201,0.253,-0.401,-1.375,0.03,0.576,1.91,1.512,-0.594,-0.701,0.728,0.237,-0.782,-0.593,3.571,-0.089,0.306,-0.468,-1.55,1.928,-0.112,0.517,0.519,1.314]],"b1":[-1.199,-0.287,0.803,-1.057,-0.433,1.177,1.215,-0.721,-0.67,-1.189],"w2":[1.352,1.061,-1.806,0.706,-0.734,1.721,-1.236,1.152,0.855,-1.965],"b2":0.2}};
 
 // Model output (logit). Either linear ({bias, <feature>: weight}) or a one-hidden-layer MLP
 // ({keys, W1, b1, w2, b2}, tanh units).
@@ -182,6 +213,11 @@ export class Transcriber {
     this.tuningCents = 0;
     this.tuneSamples = [];
     this.autoTune = opts.autoTune ?? true;
+    // Fast path: every attack is examined right away with short windows that start at the
+    // attack (see _look). `fast: false` leaves only the long-window path.
+    this.fast = opts.fast ?? true;
+    this.opts = opts;
+    this._lookInit();
     this._buildBands();
     this._buildCandidates();
 
@@ -192,6 +228,15 @@ export class Transcriber {
     this.rejected = new Map(); // midi -> attack time already rejected
     this.emittedAt = new Map(); // midi -> attack time of the last emitted note-on
     this.expected = new Set();
+    this.expEntry = new Map(); // midi -> when it joined the expected notes (s)
+    this.struckEntry = new Map(); // midi -> { at: attack time it was last struck, entry: when it had joined the expected notes }
+    // Lesson hints (fitted on the Salamander grand and the synth only):
+    this.dueGap = opts.dueGap ?? 0.04; // s: notes that joined the expected ones this far apart are due one after the other (_dueLater)
+    this.dueRise = opts.dueRise ?? 2; // a due note may start at a soft flux peak its partials rose 2x after (_attackFor)...
+    this.dueLook = opts.dueLook ?? true; // ... that the fast path then examines too
+    // an octave's lower note (_octaveLow): its odd partials vs its even ones and vs the gaps
+    // between partials
+    this.octLow = { odd: 0.2, gap: 1.5, ...opts.octLow };
     this.range = null;
     this.calibrating = null;
     this.frameRms = 0;
@@ -201,6 +246,10 @@ export class Transcriber {
     this.pianoLevelBase = null; // dBFS of recent confident notes
     this.pianoLevelT = 0;
     this.levels = [];
+    this.pianoSeen = []; // times of notes that prove the piano is being played (_pianoKnown)
+    this.pianoAll = [];
+    this.pianoOpen = false;
+    this.fastAt = new Map(); // midi -> attack time of the last note the fast path emitted
     this.stats = { emitted: 0, rejected: 0, restrikes: 0 };
     this._tmp = { amp: new Float64Array(40), bin: new Int32Array(40) };
   }
@@ -225,7 +274,49 @@ export class Transcriber {
   // (MIDI) of the piece: unexpected notes far outside it need more evidence.
   setExpected(midis, range) {
     this.expected = new Set(midis);
+    // when each note joined the expected notes: the app adds them as they come within reach,
+    // so this gives the order they are due in (the notes of a chord join together)
+    const now = Math.max(0, this.pos) / this.sr;
+    const entry = new Map();
+    for (const m of this.expected) entry.set(m, this.expEntry.get(m) ?? now);
+    this.expEntry = entry;
+    if (this.expected.size) this.lessonT = Math.max(0, this.pos) / this.sr;
     if (range !== undefined) this.range = range;
+  }
+
+  // A due note that joined the expected notes clearly after another one that was struck at
+  // the attack at time `at` is a later note of the passage (arpeggio, broken chord, scale), not
+  // part of this attack: the partials it shares with the note just struck (octave, fifth,
+  // third...) are no evidence that it was struck too. (The struck note may have left the
+  // expected notes since: what counts is when it had joined them.)
+  _dueLater(m, at) {
+    const e = this.expEntry.get(m);
+    if (e == null) return false;
+    for (const [n, r] of this.struckEntry) if (n !== m && r.at === at && r.entry < e - this.dueGap) return true;
+    return false;
+  }
+
+  // ... or than a due note for which `pred` holds (at the fast path's windows).
+  _dueAfter(m, pred) {
+    const e = this.expEntry.get(m);
+    if (e == null) return false;
+    for (const [n, en] of this.expEntry) if (n !== m && en < e - this.dueGap && pred(n)) return true;
+    return false;
+  }
+
+  // Has the due note `n` been heard since it joined the expected notes?
+  _heard(n) {
+    const e = this.expEntry.get(n);
+    if (e == null) return false;
+    const at = this.emittedAt.get(n);
+    if (at != null && at >= e) return true;
+    const st = this.active.get(n);
+    return !!st && st.lastStrike >= e;
+  }
+
+  // A piece is being played: the app gave its range, or notes were due in the last 3 s.
+  _inLesson() {
+    return !!this.range || (this.lessonT != null && this.pos / this.sr - this.lessonT < 3);
   }
 
   setRange(lo, hi) {
@@ -349,6 +440,40 @@ export class Transcriber {
         flank2: Math.max(7, Math.min(14, Math.floor(spacing * 0.48))),
       });
     }
+    if (this.lookF) for (const F of this.lookF) this.lookCands[F] = this._lookTable(this.sr / F, F / 2 - 2);
+  }
+
+  // Candidate partials for the fast path's short windows (zero padded to an F-point FFT).
+  _lookTable(binHz, maxBin) {
+    const out = [];
+    const fmax = Math.min(6000, maxBin * binHz);
+    for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
+      const st = stretchCents(m);
+      const f0 = this.a4 * Math.pow(2, (this.tuningCents + st) / 1200) * Math.pow(2, (m - 69) / 12);
+      const etRatio = Math.pow(2, -st / 1200);
+      const B = inharmonicity(m);
+      const partials = [];
+      let eSum = 0;
+      for (let h = 1; h <= 16; h++) {
+        const f = h * f0 * Math.sqrt(1 + B * h * h);
+        if (f > fmax) break;
+        const c = f / binHz;
+        const cLo = Math.min(c, c * etRatio),
+          cHi = Math.max(c, c * etRatio);
+        const stretch = B * h * h;
+        const tol = 0.0145 + (m < 30 || m > 96 ? 0.004 : 0);
+        const lo = Math.max(1, Math.min(Math.round(c) - 1, Math.floor(cLo * (1 - tol - Math.min(0.008, 0.15 * stretch)))));
+        const hi = Math.min(maxBin, Math.max(Math.round(c) + 1, Math.ceil(cHi * (1 + tol + Math.min(0.015, 0.35 * stretch)))));
+        if (lo >= hi) break;
+        const e = partialWeight(h, f0);
+        if (h <= 8) eSum += e;
+        // between this partial and the next: where a string puts no energy
+        const q = Math.round((f + 0.5 * f0) / binHz);
+        partials.push({ h, lo, hi, f, g: (f0 + ALPHA) / (h * f0 + BETA), e, q: q < maxBin ? q : -1 });
+      }
+      out.push({ midi: m, f0, partials, eSum: eSum || 1 });
+    }
+    return out;
   }
 
   // Per-note energy (partials and the gaps between them) from a short (~43 ms) window.
@@ -418,6 +543,7 @@ export class Transcriber {
       this._onsetFrame(this.nextOnsetStart);
       this.nextOnsetStart += this.onsetHop;
     }
+    if (this.looks.length) this._runLooks();
     while (this.nextAnalysisEnd <= this.pos) {
       if (this.pos - this.nextAnalysisEnd > this.hop * 8) {
         // We fell behind (tab was in background etc.) - skip ahead.
@@ -491,7 +617,11 @@ export class Transcriber {
       this.weakPeaks.push(w);
       if (this.weakPeaks.length > 48) this.weakPeaks.shift();
       // re-striking a ringing string adds little new flux: let medium peaks be checked too
-      if (medium && w.t - this.lastOnsetTime > 0.045) this.pendingRestrike.push(w);
+      if (medium && w.t - this.lastOnsetTime > 0.045) {
+        this.pendingRestrike.push(w);
+        // a soft note (after a loud one, or a bass note's soft hammer) may start here
+        if (this.fast && !this.calibrating) this._lookStart(w);
+      }
     }
     if (p1 > p2 && p1 >= flux && p1 > thresh) {
       const ot = this.fluxPrevTime;
@@ -502,6 +632,7 @@ export class Transcriber {
         if (this.onsets.length > 32) this.onsets.shift();
         this.pendingRestrike.push(o);
         this.onOnset(ot, p1);
+        if (this.fast && !this.calibrating) this._lookStart(o);
       }
     }
     this.fluxPrev = [flux, p1];
@@ -1093,6 +1224,28 @@ export class Transcriber {
     return out;
   }
 
+  // The piano has been heard for sure: several notes that the long-window path was confident
+  // about, or that were due in the lesson. (Fast-path guesses never count, or one
+  // false note in a noisy room could open the door to the next.)
+  _pianoKnown() {
+    const now = this.pos / this.sr;
+    const S = this.pianoSeen;
+    while (S.length && S[0] < now - 20) S.shift();
+    const A = this.pianoAll;
+    while (A.length && A[0] < now - 20) A.shift();
+    if (this.pianoLevel == null) return (this.pianoOpen = false);
+    // opens on >= 6 notes the long window was sure of (or that were due) within 15 s, stays
+    // open while notes keep coming (fast ones included); a pause of 1.5 s closes it, and it has
+    // to be earned again (the room goes on when the student stops)
+    if (this.pianoOpen) {
+      if (!A.length || now - A[A.length - 1] > 1.5) {
+        this.pianoOpen = false;
+        S.length = 0;
+      }
+    } else this.pianoOpen = S.filter((v) => v >= now - 15).length >= 6;
+    return this.pianoOpen;
+  }
+
   _thresholds(expected, midi) {
     const s = this.strictness;
     const sens = Math.sqrt(this.sensitivity);
@@ -1105,9 +1258,20 @@ export class Transcriber {
   }
 
   _emit(midi, t, conf, sal, level, restrike = false) {
+    if (conf >= 0.8) {
+      const now = this.pos / this.sr;
+      if (conf >= 0.85 && (this.emitPath !== 'fast' || this.expected.has(midi))) this.pianoSeen.push(now);
+      this.pianoAll.push(now);
+      if (this.pianoSeen.length > 32) this.pianoSeen.shift();
+      if (this.pianoAll.length > 32) this.pianoAll.shift();
+    }
+    if (this.emitPath === 'fast' && !restrike) this.fastAt.set(midi, t);
+    if (this.expEntry.has(midi)) this.struckEntry.set(midi, { at: t, entry: this.expEntry.get(midi) });
+    else this.struckEntry.delete(midi);
     if (!restrike) {
       this.active.set(midi, { on: t, missing: 0, sal, lastStrike: t, conf, fresh: true });
       this.emittedAt.set(midi, t);
+      this.pending.delete(midi);
       this.stats.emitted++;
     } else this.stats.restrikes++;
     // Remember how loud the piano is being played: upper quartile of the last confident notes.
@@ -1119,7 +1283,8 @@ export class Transcriber {
       this.pianoLevelBase = sorted[Math.floor(sorted.length * 0.75)];
       this.pianoLevelT = this.pos / this.sr;
     }
-    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike });
+    // path: which analysis decided (the hybrid listener weighs them differently)
+    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike, path: this.emitPath || 'long' });
   }
 
   _track(detected, t, mag) {
@@ -1147,6 +1312,10 @@ export class Transcriber {
       }
       // already decided for this attack (a note that dropped out for a moment is not new)
       if (this.rejected.get(d.midi) === attack.t || this.emittedAt.get(d.midi) === attack.t) continue;
+      // the fast path reported this key moments ago: the long window lost it for a few frames,
+      // a later (noise) attack did not strike it again
+      const fa = this.fastAt.get(d.midi);
+      if (fa != null && attack.t > fa && attack.t - fa < 0.1 && !this.expected.has(d.midi)) continue;
       let p = this.pending.get(d.midi);
       if (!p || p.attack !== attack) {
         p = { midi: d.midi, attack, feats: [], miss: 0 };
@@ -1187,7 +1356,10 @@ export class Transcriber {
   _decide(p, t, final = false) {
     const nf = p.feats.length;
     if (nf < 2) return;
-    const expected = this.expected.has(p.midi);
+    let expected = this.expected.has(p.midi);
+    // due later than a note struck at this attack: not due yet (see _dueLater)
+    const notYet = expected && this._inLesson() && this._dueLater(p.midi, p.attack.t);
+    if (notYet) expected = false;
     const age = t - p.attack.t;
     const env = this._envelope(p.midi, p.attack.t, t);
     let conf = this._confidence(p, env, expected);
@@ -1207,6 +1379,12 @@ export class Transcriber {
     let decision = null;
     if (age >= minAge && conf >= fast && !this.collect) decision = 'emit';
     else if (final || age >= maxAge || nf >= (expected ? 9 : 14)) decision = score >= emit ? 'emit' : 'reject';
+    // During a piece, an unexpected note the fast path examined at this attack - in a register
+    // its windows resolve - and found unlikely is a ghost of the notes that are due (their
+    // octaves, twelfths, neighbours), not a wrong key.
+    if (decision === 'emit' && !expected && this._inLesson() && (notYet || this._lookVeto(p.midi, p.attack))) decision = 'reject';
+    // In free play only a clear "no" from the fast path counts (it may miss soft notes).
+    else if (decision === 'emit' && !expected && !this._inLesson() && this.vetoFree && this._lookVeto(p.midi, p.attack, this.vetoFree)) decision = 'reject';
     if (this.collect && this.onCandidate) this.onCandidate({ midi: p.midi, t, attackT: p.attack.t, age, nf, conf, decision: decision || 'observe', expected, x: { ...p.x }, raw: { ...p.raw } });
     if (!decision) return;
     if (this.onCandidate && !this.collect) this.onCandidate({ midi: p.midi, t, attackT: p.attack.t, age, conf, decision, expected, x: p.x, env, feats: p.feats });
@@ -1226,6 +1404,14 @@ export class Transcriber {
       this.rejected.set(p.midi, p.attack.t);
       this.stats.rejected++;
     }
+  }
+
+  _lookVeto(midi, attack, pmin = this.vetoP) {
+    const lk = attack && attack.look;
+    if (!lk || !lk.fminDone || this.cands[midi - MIDI_MIN].f0 < lk.fminDone) return false;
+    const r = lk.notes.get(midi);
+    if (pmin < 0) return !r || !r.n; // never found in what the attack added
+    return !r || (r.pmax || 0) < pmin;
   }
 
   // Re-strikes. For every attack, once things have settled:
@@ -1266,7 +1452,9 @@ export class Transcriber {
         // A note that just started at this attack a (twelfth, octave...) below explains energy
         // gains at all of this note's partials (a new note above only explains some of them -
         // see _hiddenAbove below).
-        if (fresh.some((f) => Math.abs(f - midi) <= 2 || [12, 19, 24, 28, 31, 36].includes(midi - f))) continue;
+        // Likewise a new note above whose partials are all partials of this one (octave,
+        // twelfth, double octave, ...): it raised every 2nd / 3rd / 4th... partial of this note.
+        if (fresh.some((f) => Math.abs(f - midi) <= 2 || [12, 19, 24, 28, 31, 36].includes(Math.abs(midi - f)))) continue;
         const b = beforeH.e[midi] + 1e-12;
         const ratio = peakE[midi] / b;
         const lateRatio = lateE[midi] / nLate / b;
@@ -1292,6 +1480,9 @@ export class Transcriber {
           if (sorted.length && (sorted.length === 1 || sorted[0].lateRatio > sorted[1].lateRatio * 1.5)) hits = [sorted[0]];
         }
       }
+      // during a piece, only the notes that are due are struck again (a sounding bass note
+      // whose high partial a new note shares is not)
+      if (this._inLesson()) hits = hits.filter((c) => this.expected.has(c.midi) && !this._dueLater(c.midi, ot));
       // Which partials rose? All of them: the note was struck again. Only the even ones: the
       // octave above was struck (a new note hiding in this one's spectrum); only every third:
       // the twelfth above.
@@ -1307,6 +1498,7 @@ export class Transcriber {
         return false;
       });
       for (const m of hidden) {
+        if (this._inLesson() && !this.expected.has(m)) continue;
         this.pending.delete(m);
         const conf = this.expected.has(m) ? 0.9 : 0.75;
         this._emit(m, ot, conf, 1, -200);
@@ -1388,16 +1580,23 @@ export class Transcriber {
     if (best) return best;
     // deep bass notes take longer to emerge from under the previous one
     const wspan = midi < 40 ? 0.45 : span;
+    // a due note not heard yet may start at a softer flux peak (a bass melody's hammer is soft
+    // and its partials rise out of the previous note's, a semitone or two away)
+    const due = this.expected.has(midi) && this._inLesson() && !this._heard(midi);
+    const need = (o) => (due ? Math.min(this.dueRise, o.medium ? 2.5 : 8) : o.medium ? 2.5 : 8);
     for (let i = this.weakPeaks.length - 1; i >= 0; i--) {
       const o = this.weakPeaks[i];
       if (o.t > t - 0.03) continue;
       if (o.t < t - wspan) break;
       const r = this._riseAfter(midi, o.t, t);
-      if (r >= (o.medium ? 2.5 : 8) && r > bestR * 2) {
+      if (r >= need(o) && r > bestR * 2) {
         best = o;
         bestR = r;
       }
     }
+    // the fast path did not look at that soft attack: let it (it resolves the bass, and an
+    // octave's lower note, better than the long window)
+    if (best && due && !best.look && this.fast && !this.calibrating && this.dueLook) this._lookStart(best);
     return best;
   }
 
@@ -1410,14 +1609,677 @@ export class Transcriber {
     return (after + 1e-12) / (before + 1e-12);
   }
 
+  // --- fast path: decide at the attack --------------------------------------------------------
+  // Every attack is examined with a ladder of short windows that start at the attack (21, 32,
+  // 43, 64, 85 ms at 48 kHz). The power spectrum after the attack minus the one just before it
+  // holds only what the attack added, so notes that were already ringing (legato, pedal,
+  // repeated chords) cancel out. Each window resolves notes down to some register (partials
+  // must be about two main-lobe widths apart): treble notes can be decided ~21 ms after the
+  // attack, the bass later; the bottom octave is left to the long window.
+  // At every look the candidates are: the notes found in the difference spectrum (iterative
+  // detection with cancellation, as the long window does), the expected notes and the sounding
+  // notes (struck again?) this window resolves. A small fitted model (LOOK_MODEL,
+  // tests/look-fit.js) turns their evidence into a probability that the key was struck at this
+  // attack; clear cases are emitted at once, the rest go on to the long-window path as before.
+  _lookInit() {
+    const k = this.sr > 60000 ? 2 : 1;
+    this.lookSizes = [1024, 1536, 2048, 3072, 4096].map((L) => L * k);
+    this.lookF = [4096 * k, 8192 * k];
+    this.lookMargin = 1.6; // resolvable: f0 >= margin * two main-lobe half-widths
+    this.lookModel = this.opts.lookModel || LOOK_MODEL;
+    this.vetoP = 0.3; // see _lookVeto
+    this.freeNeed = this.opts.freeNeed ?? 0.8;
+    this.restrikeNeed = this.opts.restrikeNeed ?? 0.85; // + 0.2 * strictness: a sounding note struck again // + 0.15 * strictness: an unexpected note in free play
+    this.vetoFree = this.opts.vetoFree ?? 0;
+    this.lookCollect = this.opts.lookCollect || null; // fitting: every look candidate's features
+    this.lookFFT = {};
+    this.lookCands = {};
+    this.lookWin = {};
+    this.lookBands = {};
+    for (const F of this.lookF) {
+      this.lookFFT[F] = new FFT(F);
+      const bh = this.sr / F;
+      const centers = [];
+      for (let f = 40; f < 7000; f *= Math.pow(2, 1 / 3)) centers.push(f / bh);
+      this.lookBands[F] = centers;
+    }
+    for (const L of this.lookSizes) this.lookWin[L] = hann(L);
+    const nb = this.lookF[1] / 2 + 1;
+    this.lookFrame = new Float32Array(this.lookSizes[this.lookSizes.length - 1]);
+    this.lookA = new Float64Array(nb);
+    this.lookB = new Float64Array(nb);
+    this.lookY = new Float64Array(nb);
+    this.lookD = new Float64Array(nb);
+    this.lookR = new Float64Array(nb);
+    this.lookNP = new Float64Array(nb);
+    this.lookSig = new Float64Array(64);
+    this.looks = [];
+  }
+
+  _lookStart(o) {
+    const s0 = Math.round(o.t * this.sr) - Math.round(0.002 * this.sr);
+    // an attack ends the examination windows of the previous ones (a weak peak does not)
+    if (!o.weak) for (const l of this.looks) if (l.end > s0) l.end = s0;
+    const l = { o, s0, k: 0, end: Infinity, notes: new Map(), done: new Set(), fminDone: 0, emitted: [] };
+    // (a soft attack examined after the fact: its windows end at the next attack)
+    for (const n of this.onsets) if (n.t > o.t) l.end = Math.min(l.end, Math.round(n.t * this.sr) - Math.round(0.002 * this.sr));
+    o.look = l;
+    this.looks.push(l);
+  }
+
+  _runLooks() {
+    const n = this.lookSizes.length;
+    for (const l of this.looks) {
+      while (l.k < n) {
+        const L = this.lookSizes[l.k];
+        if (l.s0 + L > this.pos) break;
+        if (l.s0 + L > l.end + 0.004 * this.sr) {
+          l.k = n;
+          break;
+        }
+        this._look(l, L, l.k);
+        l.k++;
+      }
+    }
+    this.looks = this.looks.filter((l) => l.k < n);
+  }
+
+  _look(l, L, li) {
+    const F = L <= this.lookSizes[2] ? this.lookF[0] : this.lookF[1];
+    const fft = this.lookFFT[F];
+    const nb = F / 2;
+    const binHz = this.sr / F;
+    const w = this.lookWin[L];
+    const mask = this.ringSize - 1;
+    const fr = this.lookFrame.subarray(0, L);
+    const s0 = l.s0;
+    for (let i = 0; i < L; i++) fr[i] = this.ring[(s0 + i) & mask] * w[i];
+    const A = fft.magnitude(fr, this.lookA); // after the attack
+    for (let i = 0; i < L; i++) fr[i] = this.ring[(s0 - L + i) & mask] * w[i];
+    const B = fft.magnitude(fr, this.lookB); // just before it
+    const maxK = Math.min(nb - 1, Math.floor(6500 / binHz));
+    // noise power per bin for this window, from the tracked long-window floor
+    const NP = this.lookNP;
+    const nE = this.floorWarm || this.hasNoise ? this.nEff : null;
+    const scale = (1.27 * L) / this.win;
+    const r = binHz / this.binHz;
+    for (let k = 0; k <= maxK; k++) {
+      const v = nE ? nE[Math.min(this.maxBin, Math.round(k * r))] : 0;
+      NP[k] = v * v * scale + 1e-14;
+    }
+    // what the attack added (power), above the noise's fluctuations; magnitude-like
+    const D = this.lookD;
+    const Y = this.lookY;
+    let raw = 0;
+    for (let k = 0; k <= maxK; k++) {
+      const d = k < 3 ? 0 : A[k] * A[k] - B[k] * B[k] - 3 * NP[k];
+      D[k] = d > 0 ? Math.sqrt(d) : 0;
+      Y[k] = D[k];
+      if (D[k] > raw) raw = D[k];
+    }
+    if (raw * (4 / L) < 2.5e-4 / this.sensitivity) {
+      l.fminDone = (this.lookMargin * 2 * this.sr) / L;
+      return; // nothing new stands out
+    }
+    // spectral flatness of what was added (dB): ~0 for a broadband burst (clap, knock),
+    // strongly negative for strings
+    let lg = 0,
+      ar = 0,
+      nf = 0;
+    for (let k = Math.ceil(100 / binHz); k <= Math.min(maxK, Math.floor(5000 / binHz)); k++) {
+      const v = D[k] * D[k] + 1e-3 * raw * raw;
+      lg += Math.log(v);
+      ar += v;
+      nf++;
+    }
+    const flat = nf ? 10 * Math.log10(Math.exp(lg / nf) / (ar / nf)) : 0;
+    this._whitenLook(Y, F, maxK);
+    const cands = this.lookCands[F];
+    const fmin = (this.lookMargin * 2 * this.sr) / L;
+    const all = this._lookDetect(Y, cands, fmin, F, L, maxK);
+    const found = all.filter((f) => !f.blocker);
+    // an unresolved bass note dominates what was added: decide nothing at this window
+    let best = 0,
+      bestBlk = 0;
+    for (const f of all) {
+      if (f.blocker) bestBlk = Math.max(bestBlk, f.score);
+      else best = Math.max(best, f.score);
+    }
+    const defer = bestBlk >= 0.7 * best && bestBlk >= 1;
+    // candidates: found, plus expected and sounding notes this window resolves
+    const byMidi = new Map(found.map((f) => [f.midi, f]));
+    const extra = (m) => {
+      if (byMidi.has(m) || l.done.has(m) || m < MIDI_MIN || m > MIDI_MAX) return;
+      const c = cands[m - MIDI_MIN];
+      if (c.f0 < fmin || !c.partials.length) return;
+      const f = { midi: m, salience: 0, ratio: 0, score: 0, rank: 9, found: false };
+      found.push(f);
+      byMidi.set(m, f);
+    };
+    for (const m of this.expected) extra(m);
+    for (const m of this.active.keys()) extra(m);
+    const salY = new Float64Array(130).fill(-1);
+    const x = { l, L, li, F, A, B, NP, D, Y, maxK, fmin, binHz, cands, found, byMidi, all, flat, salY, defer, blk: bestBlk / (best + 1e-9) };
+    this._lookRelate(x);
+    l.fminDone = fmin;
+    // new notes first: a sounding note is not "struck again" by a new note whose partials it shares
+    for (const f of found) if (!this.active.has(f.midi)) this._lookDecide(f, x);
+    for (const f of found) if (this.active.has(f.midi)) this._lookDecide(f, x);
+  }
+
+  _whitenLook(Y, F, maxK) {
+    const C = this.lookBands[F];
+    const nb = C.length;
+    const sig = this.lookSig;
+    let maxSig = 0;
+    for (let b = 0; b < nb; b++) {
+      const c = C[b];
+      const lo = b > 0 ? C[b - 1] : c / 1.26;
+      const hi = b < nb - 1 ? C[b + 1] : c * 1.26;
+      let s = 0,
+        w = 0;
+      for (let k = Math.max(1, Math.floor(lo)); k <= Math.min(maxK, Math.ceil(hi)); k++) {
+        const tri = k < c ? (k - lo) / (c - lo) : (hi - k) / (hi - c);
+        if (tri <= 0) continue;
+        s += tri * Y[k] * Y[k];
+        w += tri;
+      }
+      sig[b] = w > 0 ? Math.sqrt(s / w) : 0;
+      if (sig[b] > maxSig) maxSig = sig[b];
+    }
+    const floor = maxSig * 0.01 + 1e-12;
+    let b = 0;
+    for (let k = 0; k <= maxK; k++) {
+      while (b < nb - 2 && C[b + 1] < k) b++;
+      if (Y[k] === 0) continue;
+      const c0 = C[b],
+        c1 = C[b + 1];
+      let s;
+      if (k <= c0) s = sig[b];
+      else if (k >= c1) s = sig[b + 1];
+      else s = sig[b] + ((sig[b + 1] - sig[b]) * (k - c0)) / (c1 - c0);
+      Y[k] *= Math.pow(Math.max(s, floor), -0.67);
+    }
+    let ymax = 0;
+    for (let k = 3; k <= maxK; k++) if (Y[k] > ymax) ymax = Y[k];
+    if (ymax > 0) for (let k = 0; k <= maxK; k++) Y[k] /= ymax;
+  }
+
+  // Iterative "strongest note, cancel its partials" (as _iterativeDetect) over the notes this
+  // window resolves.
+  _lookDetect(Y, cands, fmin, F, L, maxK) {
+    // Notes down to fmin / 2.5 take part as "blockers": this window cannot resolve them (their
+    // partials merge), but a bass note sounding there must explain its own partials before a
+    // higher note may claim them. Blockers are never decided at this window.
+    const fblk = Math.max(26, fmin / 2.5);
+    const R = this.lookR;
+    for (let k = 0; k <= maxK; k++) R[k] = Y[k];
+    const found = [];
+    const baseT = 0.44 / this.sensitivity;
+    const refT = 0.5 / this.sensitivity;
+    const tmp = this._tmp;
+    const taken = new Uint8Array(128);
+    const half = Math.ceil((2 * F) / L); // main-lobe half width in bins
+    let first = 0;
+    for (let iter = 0; iter < 8; iter++) {
+      let best = null,
+        bestScore = 0,
+        bestSal = 0;
+      for (const c of cands) {
+        if (c.f0 < fblk || taken[c.midi] || !c.partials.length) continue;
+        const s = this._salience(c, R, null);
+        let thr = baseT;
+        if (this.expected.has(c.midi) && c.f0 >= fmin) thr *= 0.7;
+        const score = s / thr;
+        if (score > bestScore) {
+          bestScore = score;
+          best = c;
+          bestSal = s;
+        }
+      }
+      if (!best || bestScore < 0.7) break;
+      if (iter === 0) first = bestSal;
+      taken[best.midi] = 1;
+      found.push({ midi: best.midi, salience: bestSal, ratio: bestSal / refT, score: bestScore, rank: iter, relSal: first > 0 ? bestSal / first : 1, found: true, blocker: best.f0 < fmin });
+      this._salience(best, R, tmp);
+      const np = best.partials.length;
+      for (let i = 0; i < np; i++) {
+        const a = tmp.amp[i];
+        if (a <= 0) continue;
+        let sm = 0,
+          cnt = 0;
+        for (let j = Math.max(0, i - 2); j <= Math.min(np - 1, i + 2); j++) {
+          sm += tmp.amp[j];
+          cnt++;
+        }
+        sm /= cnt;
+        const keep = a > sm * 1.15 ? 1 - (sm * 1.15) / a : 0;
+        const k0 = tmp.bin[i];
+        for (let k = Math.max(0, k0 - half); k <= Math.min(maxK, k0 + half); k++) R[k] *= keep;
+      }
+    }
+    return found;
+  }
+
+  // What the attack added at a note's odd partials, at its even partials and halfway between
+  // partials (rms of the peak magnitudes, partials 1-10 above 60 Hz). A note an octave above
+  // puts energy only at the even ones: odd partials standing out of the gaps are the note's own.
+  _oddEven(c, D, maxK, binHz) {
+    const P = c.partials;
+    let so = 0,
+      no = 0,
+      se = 0,
+      ne = 0,
+      sg = 0,
+      ng = 0;
+    for (let i = 0; i < P.length && P[i].h <= 10; i++) {
+      const p = P[i];
+      if (p.hi > maxK) break;
+      if (p.f < 60) continue;
+      let m = 0;
+      for (let k = p.lo; k <= p.hi; k++) if (D[k] > m) m = D[k];
+      if (p.h % 2) {
+        so += m * m;
+        no++;
+      } else {
+        se += m * m;
+        ne++;
+      }
+      const nx = P[i + 1];
+      if (!nx) continue;
+      const k = Math.round((p.f + nx.f) / 2 / binHz);
+      if (k + 1 > maxK) continue;
+      const g = Math.max(D[k - 1], D[k], D[k + 1]);
+      sg += g * g;
+      ng++;
+    }
+    return { odd: no ? Math.sqrt(so / no) : 0, even: ne ? Math.sqrt(se / ne) : 0, gap: ng ? Math.sqrt(sg / ng) : 0 };
+  }
+
+  // Amplitudes (difference spectrum) of a note's first partials; 0 where out of range.
+  _lookAmps(c, D, maxK) {
+    const out = new Float64Array(13);
+    const P = c.partials;
+    for (let i = 0; i < P.length && P[i].h <= 12; i++) {
+      const p = P[i];
+      if (p.hi > maxK) break;
+      let m = 0;
+      for (let k = p.lo; k <= p.hi; k++) if (D[k] > m) m = D[k];
+      out[p.h] = m;
+    }
+    return out;
+  }
+
+  // Relations between the candidates of one look:
+  //  - unique support: energy at partials that no other found note explains (a ghost made of
+  //    other notes' partials has none);
+  //  - a note whose partials are all partials of a lower found note (octave, twelfth, double
+  //    octave above) is only there if those partials stand out of the lower note's envelope.
+  _lookRelate(x) {
+    const { D, maxK, cands, found, byMidi, L } = x;
+    const tolHz = this.sr / L;
+    for (const f of found) f.amps = this._lookAmps(cands[f.midi - MIDI_MIN], D, maxK);
+    let gmax = 0;
+    for (let k = 3; k <= maxK; k++) if (D[k] > gmax) gmax = D[k];
+    const real = found.filter((g) => g.found);
+    for (const f of found) {
+      const c = cands[f.midi - MIDI_MIN];
+      f.under = 0;
+      f.excess = 1;
+      for (const [iv, k] of [
+        [12, 2],
+        [19, 3],
+        [24, 4],
+      ]) {
+        const low = byMidi.get(f.midi - iv);
+        if (low && low.found) {
+          f.under = iv;
+          f.excess = this._excess(low.amps, k);
+          break;
+        }
+      }
+      let nu = 0,
+        np = 0,
+        mx = 0;
+      for (let h = 1; h <= 8; h++) mx = Math.max(mx, f.amps[h]);
+      for (const p of c.partials) {
+        if (p.h > 8 || p.hi > maxK || p.f < 60) continue;
+        let shared = false;
+        for (const g of real) {
+          if (g === f || g.midi === f.midi) continue;
+          const gc = cands[g.midi - MIDI_MIN];
+          for (const q of gc.partials) {
+            if (q.f > p.f + tolHz) break;
+            if (Math.abs(q.f - p.f) <= tolHz) {
+              shared = true;
+              break;
+            }
+          }
+          if (shared) break;
+        }
+        if (shared) continue;
+        nu++;
+        const a = f.amps[p.h];
+        if (a >= 0.2 * mx && a >= 0.03 * gmax) np++;
+      }
+      f.uniq = nu;
+      f.uniqPresent = np;
+      f.share = mx / (gmax + 1e-12); // strength of the note's strongest partial in what was added
+    }
+  }
+
+  // How much the partials that are multiples of k stand out of the envelope of the others:
+  // geometric mean of a[h] / sqrt(a[h-1] a[h+1]) over h = k, 2k, ... (1 = no sign of a note
+  // above). 1 when it cannot be told.
+  _excess(a, k) {
+    let s = 0,
+      n = 0;
+    for (let h = k; h <= 12; h += k) {
+      const lo = a[h - 1],
+        hi = h + 1 <= 12 ? a[h + 1] : 0;
+      const env = hi > 0 && lo > 0 ? Math.sqrt(lo * hi) : lo > 0 ? lo : 0;
+      if (!(env > 0)) continue;
+      s += Math.log(Math.max(0.05, Math.min(20, a[h] / env)));
+      n++;
+    }
+    return n ? Math.exp(s / n) : 1;
+  }
+
+  // Evidence that a candidate is a string that was just struck: its partials rose at the attack
+  // (and the gaps between them did not), how far above the noise, how loud.
+  _lookEvidence(c, A, B, NP, L, F) {
+    const P = c.partials;
+    const rises = [];
+    let sig = 0,
+      nz = 0,
+      dP = 0,
+      dO = 0,
+      mx = 0,
+      nsig = 0;
+    const n = Math.min(P.length, 10);
+    const pk = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = P[i];
+      let k = p.lo;
+      for (let j = p.lo + 1; j <= p.hi; j++) if (A[j] > A[k]) k = j;
+      pk[i] = k;
+      if (p.f >= 60 && A[k] * A[k] > mx) mx = A[k] * A[k];
+    }
+    for (let i = 0; i < n; i++) {
+      const p = P[i];
+      if (p.f < 60) continue;
+      const k = pk[i];
+      const a = A[k] * A[k];
+      const b = B[k] * B[k];
+      const nn = NP[k];
+      sig += a;
+      nz += nn;
+      if (a < 4 * nn || a < mx * 0.02) continue;
+      nsig++;
+      rises.push((a + 1e-14) / (b + 1e-14 + a * 1e-3));
+      dP += Math.max(0, a - b);
+      if (p.q > 0) dO += Math.max(0, A[p.q] * A[p.q] - B[p.q] * B[p.q]);
+    }
+    rises.sort((u, v) => u - v);
+    const amp = (4 / L) * Math.sqrt(sig);
+    // tonality (peak over flanks just outside the main lobe) and pitch (cents from where this
+    // piano puts the partial) of the strongest partials
+    const lobe = Math.round((2 * F) / L); // main-lobe half width in bins
+    const top = F / 2;
+    let wT = 0,
+      tsum = 0,
+      wD = 0,
+      dsum = 0;
+    const binHz = this.sr / F;
+    for (let i = 0; i < n && i < 6; i++) {
+      const p = P[i];
+      if (p.f < 60) continue;
+      const k = pk[i];
+      const a = A[k];
+      if (a * a < 4 * NP[k] || a * a < mx * 0.02 || k < 2 || k + 1 >= top) continue;
+      let fs = 0,
+        fn = 0;
+      for (let d = Math.round(lobe * 1.25); d <= Math.round(lobe * 2); d++) {
+        if (k - d > 0) {
+          fs += A[k - d];
+          fn++;
+        }
+        if (k + d < top) {
+          fs += A[k + d];
+          fn++;
+        }
+      }
+      const w = a * a;
+      const isPk = a >= A[k - 1] && a >= A[k + 1];
+      tsum += w * (isPk ? clamp(20 * Math.log10(a / (fs / Math.max(1, fn) + 1e-12)), 0, 40) : 0);
+      wT += w;
+      if (!isPk || i > 3) continue;
+      const lA = Math.log(A[k - 1] + 1e-12),
+        lB = Math.log(a + 1e-12),
+        lC = Math.log(A[k + 1] + 1e-12);
+      const den = lA - 2 * lB + lC;
+      const off = den < 0 ? clamp((0.5 * (lA - lC)) / den, -0.5, 0.5) : 0;
+      const fm = (k + off) * binHz;
+      const et = p.f * Math.pow(2, -stretchCents(c.midi) / 1200);
+      const c1 = 1200 * Math.log2(fm / p.f),
+        c2 = 1200 * Math.log2(fm / et);
+      const ce = c1 * c2 <= 0 ? 0 : Math.abs(c1) < Math.abs(c2) ? c1 : c2;
+      wD += w;
+      dsum += w * ce;
+    }
+    return {
+      tonal: wT > 0 ? tsum / wT : 0,
+      dev: wD > 0 ? dsum / wD : 0,
+      hasDev: wD > 0,
+      riseMed: rises.length ? rises[(rises.length - 1) >> 1] : 1,
+      riseLow: rises.length ? rises[Math.floor((rises.length - 1) / 4)] : 1,
+      harm: (dP + 1e-14) / (dO + 1e-14 + dP * 0.01),
+      snr: 10 * Math.log10((sig + 1e-20) / (nz + 1e-20)),
+      level: 10 * Math.log10((amp * amp) / 2 + 1e-20),
+      amp,
+      nsig,
+    };
+  }
+
+  // New energy at the half / third of f0 that a lower note this window cannot resolve yet
+  // would put there: the candidate may be that note's partial, not a note.
+  _lookSub(c, Y, binHz, maxK, fmin) {
+    let own = 0;
+    for (let i = 0; i < c.partials.length && i < 4; i++) {
+      const p = c.partials[i];
+      let m = 0;
+      for (let k = p.lo; k <= p.hi; k++) if (Y[k] > m) m = Y[k];
+      own = Math.max(own, m);
+    }
+    let worst = 0;
+    for (const d of [2, 3]) {
+      const fl = c.f0 / d;
+      if (fl >= fmin || fl < 25) continue;
+      let e = 0;
+      let n = 0;
+      for (let j = 1; j < 3 * d; j++) {
+        if (j % d === 0) continue;
+        const k0 = Math.round((fl * j) / binHz);
+        if (k0 >= maxK) break;
+        let m = 0;
+        for (let k = Math.max(1, k0 - 1); k <= Math.min(maxK, k0 + 1); k++) if (Y[k] > m) m = Y[k];
+        e += m;
+        n++;
+      }
+      if (n) worst = Math.max(worst, e / n / (own + 1e-9));
+    }
+    return worst;
+  }
+
+  // Harmonic salience of a key in this look's (whitened) difference spectrum, cached.
+  _lookSal(x, m) {
+    if (m < MIDI_MIN || m > MIDI_MAX) return 0;
+    if (x.salY[m] < 0) {
+      const c = x.cands[m - MIDI_MIN];
+      x.salY[m] = c.partials.length ? this._salience(c, x.Y, null) : 0;
+    }
+    return x.salY[m];
+  }
+
+  // Features of a look candidate for LOOK_MODEL (all roughly in -3..3).
+  _lookFeatures(f, x, ev, rec, sub, exp, act) {
+    const m = f.midi;
+    const s0 = this._lookSal(x, m) + 1e-6;
+    const n1 = Math.max(this._lookSal(x, m - 1), this._lookSal(x, m + 1)) + 1e-6;
+    const n2 = Math.max(this._lookSal(x, m - 2), this._lookSal(x, m + 2)) + 1e-6;
+    let expNbr = 0;
+    for (const e of this.expected) if (e !== m && Math.abs(e - m) <= 2) expNbr = 1;
+    const c = x.cands[m - MIDI_MIN];
+    const sr = c.partials.length ? this._salience(c, this.lookR, null) : 0;
+    const thr = (0.44 / this.sensitivity) * (this.expected.has(m) ? 0.7 : 1);
+    const rel = this.pianoLevel != null ? ev.level - this.pianoLevel : null;
+    const o = x.l.o;
+    return {
+      look: x.li / 4,
+      found: f.found ? 1 : 0,
+      sc: f.found ? clamp(Math.log2(f.score), -1, 3) : -1.5,
+      rank: f.found ? clamp(f.rank / 3, 0, 2) : 2.5,
+      relSal: f.found ? clamp(f.relSal, 0, 1) : 0,
+      rise: clamp(Math.log10(ev.riseMed), -1, 3),
+      riseLow: clamp(Math.log10(ev.riseLow), -1, 3),
+      harm: clamp(Math.log10(ev.harm), -1, 2),
+      snr: clamp((ev.snr - 20) / 10, -3, 3),
+      rel: rel == null ? 0 : clamp(rel / 10, -4, 1),
+      relKnown: rel == null ? 0 : 1,
+      sub: clamp(sub, 0, 2),
+      uniqN: clamp(f.uniq / 4, 0, 2),
+      uniqFrac: f.uniq ? f.uniqPresent / f.uniq : 0.5,
+      under: f.under ? 1 : 0,
+      excess: f.under ? clamp(Math.log2(f.excess), -2, 3) : 0,
+      share: clamp(Math.log10(f.share + 1e-6), -3, 0),
+      exp: exp ? 1 : 0,
+      active: act ? 1 : 0,
+      prev: rec.n > 1 ? 1 : 0,
+      ampRatio: rec.n > 1 && rec.prevAmp > 0 ? clamp(Math.log2(rec.amp / rec.prevAmp), -3, 3) : 0,
+      onset: clamp(Math.log2(o.strength / (o.thresh || 0.07)), -2, 4),
+      f0: clamp(Math.log2(this.lookCands[x.F][f.midi - MIDI_MIN].f0 / 262), -3, 3),
+      nsig: clamp(ev.nsig / 5, 0, 2),
+      tonal: clamp(ev.tonal / 10, 0, 4),
+      flat: clamp(x.flat / 10, -4, 0),
+      dev: ev.hasDev ? clamp(Math.abs(ev.dev) / 10, 0, 4) : 1,
+      ddev: ev.hasDev && rec.hasDev ? clamp(Math.abs(ev.dev - rec.dev) / 10, 0, 4) : 0,
+      ctr1: clamp(Math.log2(s0 / n1), -3, 3),
+      ctr2: clamp(Math.log2(s0 / n2), -3, 3),
+      expNbr,
+      resid: f.found ? 0 : clamp(Math.log2((sr + 1e-6) / s0), -4, 1),
+      residSc: f.found ? 0 : clamp(Math.log2(sr / thr + 1e-3), -4, 2),
+      blk: clamp(x.blk, 0, 2),
+      weak: o.weak ? 1 : 0,
+    };
+  }
+
+  // The lower note of a due octave whose upper note was struck at this attack: every partial of
+  // the upper note is an even partial of this one, so the model cannot tell - its odd partials
+  // can (the upper note puts nothing there). Needs a window that resolves the partials.
+  _octaveLow(m, c, x) {
+    const K = this.octLow;
+    if (x.li < 3 || !this._inLesson()) return false;
+    const up = m + 12;
+    if (!this.expected.has(up)) return false;
+    const r = this.struckEntry.get(up);
+    const f = x.byMidi.get(up);
+    if (!(x.l.emitted.includes(up) || (r && r.at === x.l.o.t) || (f && f.found))) return false;
+    const o = this._oddEven(c, x.D, x.maxK, this.sr / x.F);
+    return o.odd >= K.odd * o.even && o.odd >= K.gap * o.gap;
+  }
+
+  _lookDecide(f, x) {
+    const { l, L, F, A, B, NP, Y, maxK, fmin, cands } = x;
+    const m = f.midi;
+    if (l.done.has(m)) return;
+    const c = cands[m - MIDI_MIN];
+    const ev = this._lookEvidence(c, A, B, NP, L, F);
+    let rec = l.notes.get(m);
+    if (!rec) l.notes.set(m, (rec = { n: 0, amp: 0, prevAmp: 0 }));
+    if (f.found) rec.n++;
+    rec.prevAmp = rec.amp;
+    rec.amp = ev.amp;
+    const exp = this.expected.has(m);
+    const st = this.active.get(m);
+    const sub = this._lookSub(c, Y, this.sr / F, maxK, fmin);
+    const feats = this._lookFeatures(f, x, ev, rec, sub, exp, !!st);
+    if (ev.hasDev) {
+      rec.hasDev = true;
+      rec.dev = ev.dev;
+    }
+    const M = this.lookModel;
+    const p = 1 / (1 + Math.exp(-evalModel(exp ? M.exp || M : M.free || M, feats)));
+    rec.pmax = Math.max(rec.pmax || 0, p);
+    if (this.lookCollect) this.lookCollect({ look: x.li, midi: m, attackT: l.o.t, exp, active: !!st, found: f.found, n: rec.n, x: feats, p, defer: x.defer, range: this._inLesson() });
+    if (this.onCandidate && this.debugLook) this.onCandidate({ look: L, midi: m, attackT: l.o.t, exp, active: !!st, f, ev, sub, x: feats, p, defer: x.defer });
+    if (x.defer) return;
+    const sens = Math.sqrt(this.sensitivity);
+    const s = this.strictness;
+    if (st) {
+      // sounding already: struck again?
+      if (l.o.t - st.lastStrike < 0.08) return;
+      if (!exp && (this._inLesson() || !this._pianoKnown())) return; // a wrong / unknown key struck again can wait
+      let need = (exp ? this.restrikeNeed + 0.2 * s : this.restrikeNeed + 0.05 + 0.1 * s) / sens;
+      // a note just struck above whose partials are all partials of this one (octave, twelfth,
+      // double octave...) or right next to it raises this one's partials too
+      if (l.emitted.some((n) => Math.abs(n - m) <= 2 || [12, 19, 24, 28, 31, 34, 36].includes(n - m))) need = Math.max(need, 0.97);
+      if (p < need) return;
+      l.done.add(m);
+      st.lastStrike = l.o.t;
+      st.missing = 0;
+      this.stats.fastRestrikes = (this.stats.fastRestrikes || 0) + 1;
+      this.emitPath = 'fast';
+      this._emit(m, l.o.t, Math.min(0.97, Math.max(st.conf, p)), st.sal, -200, true);
+      this.emitPath = null;
+      return;
+    }
+    if (this.emittedAt.get(m) === l.o.t) {
+      l.done.add(m);
+      return;
+    }
+    if (exp && this._inLesson()) {
+      // due later than a note struck at this attack: not due yet, leave it to the long window
+      if (this._dueLater(m, l.o.t)) return;
+      // ... or than a note not heard yet that this window finds strongest or cannot resolve
+      // yet (a bass note): wait for a longer window
+      if (this._dueAfter(m, (n) => n >= MIDI_MIN && n <= MIDI_MAX && !this._heard(n) && (cands[n - MIDI_MIN].f0 < fmin || x.all.some((g) => g.midi === n && g.score >= 1 && g.rank === 0)))) return;
+    }
+    let need;
+    if (exp) need = this.expNeed ?? 0.85 + 0.15 * s;
+    else {
+      // an unexpected note is only trusted this early when the listener knows how loud the
+      // piano is (never on noise alone) and the note was seen in two windows (not a click)
+      if (!this._pianoKnown() || rec.n < 2) return;
+      // during a piece (lesson hints), a wrong note can wait for the long window: it must not
+      // be a ghost of the notes that are due
+      if (this._inLesson()) return;
+      need = this.freeNeed + 0.15 * s;
+      if (this.range && (m < this.range[0] - 5 || m > this.range[1] + 5)) need = Math.min(0.99, need + 0.05);
+    }
+    if (p < need / sens && !(exp && this._octaveLow(m, c, x))) return;
+    l.done.add(m);
+    this.stats.fast = (this.stats.fast || 0) + 1;
+    l.emitted.push(m);
+    if (l.o.weak && !l.o.reported) {
+      l.o.reported = true;
+      this.onOnset(l.o.t, l.o.strength);
+    }
+    this.emitPath = 'fast';
+    this._emit(m, l.o.t, exp ? Math.max(0.6, p) : p, f.salience || 1, -200);
+    this.emitPath = null;
+  }
+
+
   reset() {
     for (const [midi] of this.active) this.onNoteOff(midi, this.pos / this.sr);
     this.active.clear();
     this.pending.clear();
     this.rejected.clear();
     this.emittedAt.clear();
+    this.struckEntry.clear();
     this.pendingRestrike = [];
     this.onsets = [];
     this.weakPeaks = [];
+    this.looks = [];
   }
 }

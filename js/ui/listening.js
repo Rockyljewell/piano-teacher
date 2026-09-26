@@ -59,7 +59,7 @@ export function openSetup() {
   ensureExtras();
   stopWatch();
   hideProblem();
-  ['#step-mic', '#step-quiet', '#step-c'].forEach((s) => setStep(s, null));
+  ['#step-mic', '#step-quiet', '#step-c', '#step-chord'].forEach((s) => setStep(s, null));
   setStep('#step-mic', 'doing');
   $('#setup-msg').textContent = '';
   $('#setup-room').textContent = '';
@@ -177,16 +177,94 @@ async function setupSteps() {
       stopWatch();
       hideProblem();
       setStep('#step-c', 'done');
-      msg.textContent = '✓ Perfect! I can hear you clearly.';
+      msg.textContent = '✓ I hear you! Now a chord.';
       sfx('success');
       coach.s.micChecked = true;
       coach.save();
-      say('Perfect! I can hear you clearly.').then(() => setTimeout(finishSetup, 300));
+      chordStep();
     } else {
       msg.textContent = `I heard ${noteName(ev.midi)}. Middle C is the white key just left of the two black keys in the middle.`;
     }
   });
   offNote = off;
+}
+
+// Step 4: a C major chord (C4 E4 G4) played together. Checks that the microphone hears every
+// note of a chord where the iPad stands; if a note goes missing, says which one and what helps
+// (from how loud the piano is against the room). Never blocks: after three tries, carry on.
+const CHORD = [60, 64, 67];
+function chordStep() {
+  const msg = $('#setup-msg');
+  const go = $('#btn-setup-go');
+  setStep('#step-chord', 'doing');
+  msg.textContent = 'Now play C, E and G together';
+  go.textContent = 'Waiting for the chord…';
+  say('Now play C, E and G together, like a chord.');
+  audio.setExpected(CHORD);
+  let tries = 0;
+  let got = null; // {first, notes:Set}
+  let timer = 0;
+  const judge = () => {
+    const heard = got ? got.notes : new Set();
+    got = null;
+    const missing = CHORD.filter((m) => !heard.has(m));
+    if (!missing.length) return success();
+    tries++;
+    const names = (ms) => ms.map((m) => noteName(m).replace(/\d+$/, '')).join(' and ');
+    const found = CHORD.filter((m) => heard.has(m));
+    const tip = placementTip();
+    if (tries >= 3) {
+      off();
+      offNote = null;
+      audio.setExpected([]);
+      setStep('#step-chord', 'done');
+      msg.textContent = `I hear most notes. ${tip}`;
+      showLine(`Good enough to start! ${tip}`);
+      go.textContent = 'Continue';
+      go.disabled = false;
+      go.onclick = finishSetup;
+      return;
+    }
+    msg.textContent = found.length ? `I heard ${names(found)}, but not ${names(missing)}. ${tip} Try again!` : `I didn't catch that. ${tip} Try again!`;
+    sfx('tap');
+  };
+  const success = () => {
+    off();
+    offNote = null;
+    clearTimeout(timer);
+    audio.setExpected([]);
+    stopWatch();
+    setStep('#step-chord', 'done');
+    msg.textContent = '✓ Perfect! I can hear every note.';
+    sfx('success');
+    coach.s.micChord = true;
+    coach.save();
+    say('Perfect! I can hear every note of your chords.').then(() => setTimeout(finishSetup, 300));
+  };
+  const off = audio.on('noteon', (ev) => {
+    if (S.screen !== 'setup') return off();
+    if (!got) {
+      got = { notes: new Set() };
+      clearTimeout(timer);
+      timer = setTimeout(judge, 450); // notes of one chord arrive within a few hundred ms
+    }
+    got.notes.add(ev.midi);
+    if (CHORD.every((m) => got.notes.has(m))) {
+      clearTimeout(timer);
+      got = null;
+      success();
+    }
+  });
+  offNote = off;
+}
+
+// Advice from how loud the piano is compared with the room.
+function placementTip() {
+  const piano = audio.pianoLevel;
+  const room = audio.noiseLevel;
+  if (piano != null && room != null && piano - room < 20) return 'Move the iPad closer to the strings (open the lid if you can) and play a little louder.';
+  if (room != null && room > -45) return 'Your room is noisy: turning off TV or music helps.';
+  return 'Press all three keys at the same moment, a little firmly.';
 }
 
 // While waiting for middle C: notice when the microphone delivers nothing at all.

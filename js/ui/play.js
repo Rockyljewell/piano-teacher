@@ -176,6 +176,7 @@ export function startSession(mode) {
   S.session = session;
   S.startedAt = audio.now();
   session.start();
+  if (app.listenTestStart) app.listenTestStart(session, piece, S.activity); // (records the mic for the listening test)
   sfx('countin');
   loop();
 }
@@ -241,6 +242,11 @@ function onSessionEvent(ev) {
     const want = ev.wait && ev.expected && ev.expected.length ? ` · try ${noteName(ev.expected[0], S.piece.key)}` : '';
     stage.chip(ev.midi, `Oops · ${noteName(ev.midi, S.piece.key)}${want}`, GRADE_COLORS.wrong, { grade: 'wrong' });
     sfx('wrong');
+  } else if (ev.type === 'octave') {
+    // The hand is in the wrong octave (not a one-off microphone slip): say so, kindly.
+    S.combo = 0;
+    const high = ev.dir > 0;
+    flash(`${icon(high ? 'down' : 'up', 18)} One octave too ${high ? 'high' : 'low'}: move your hand ${high ? 'down' : 'up'} to ${noteName(ev.expected, S.piece.key)}`, 'info', 3600);
   } else if (ev.type === 'beat') {
     const dots = $$('#hud-beats i');
     const unit = S.piece.ts.compound ? 1.5 : 1;
@@ -272,6 +278,7 @@ function onSessionEvent(ev) {
     // A short flourish across the keys, then the results.
     const result = ev.result;
     const piece = S.piece;
+    if (app.listenTestFinish && S.activity && S.activity.listenTest) app.listenTestFinish(result);
     stage.finale();
     clearTimeout(S.finishTimer);
     S.finishTimer = setTimeout(() => {
