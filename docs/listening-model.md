@@ -104,7 +104,31 @@ noise seeds). Each training step sees 16 x 4.5 s.
 
 ## Integration plan
 
-INTEGRATION_PLACEHOLDER
+How `js/audio/listener.js` should use it (the lead integrates; nothing is wired in yet):
+
+1. **Engine choice.** `listener.js` imports `Transcriber` from `./nn/nn-transcriber.js` (or
+   `./nn/hybrid-transcriber.js`, see the recommendation above) instead of `./transcriber.js`.
+   Both are drop-in: same constructor, `push()`, callbacks, setters, getters, `pos`,
+   `sensitivity`, `noiseRms`. A config flag (e.g. `config.engine: 'dsp' | 'nn' | 'hybrid'`, from
+   Settings or a URL parameter) should choose, so the DSP stays one switch away.
+2. **Loading and fallback.** `nn-transcriber.js` starts fetching
+   `assets/models/piano-nn.bin` (~26 KB) when the module loads (`ready` is a promise). An
+   instance created before the weights arrive runs the DSP transcriber internally and switches
+   itself to the network as soon as they are there (it ends the DSP's sounding notes; the network
+   needs ~0.3 s of audio before it reports anything). If the fetch fails (offline, first visit),
+   the DSP keeps listening: nothing breaks. The service worker's network-first rule already caches
+   the file for offline use; adding `bin` to its `MEDIA` pattern would make it cache-first.
+3. **Worker.** Everything runs in the listener Web Worker as today; the module uses `fetch` and
+   `import.meta.url` only. The listener's `status` can report `tr.engine` ('nn', 'hybrid' or
+   'dsp') for the Listening check.
+4. **Lesson hints** are used as with the DSP: `setExpected(due, range)` lowers the thresholds of
+   due notes (they are reported at the network's latency) and raises them far outside the range.
+5. **Confidence** keeps its meaning for the practice engine (`minWrongConfidence = 0.55`):
+   calibrated precision of unexpected notes.
+6. **Speed.** One network step is ~0.7 ms on this machine (x86, V8), i.e. the whole engine runs
+   at ~10x real time on one core; an iPad's single-core speed is similar. If a slower device
+   needs headroom, the matrix products in `model.js` are the place for WASM SIMD (4-wide) -
+   about 3x.
 
 ## Credits
 
