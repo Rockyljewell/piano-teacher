@@ -64,6 +64,10 @@ class Model(nn.Module):
             m.bn = nn.BatchNorm2d(c2)
             self.blocks.append(m)
         self.head = nn.Conv2d(c2, 2 + k_onset, 1)
+        sel = torch.zeros(len(XOFF) + 1, 53)
+        for j, o in enumerate([0] + XOFF):
+            sel[j, 24 + o] = 1
+        self.register_buffer('xsel', sel)
 
     def rf(self):
         return 2 + sum(2 * m.d for m in self.blocks if m.kind == 't')
@@ -92,10 +96,9 @@ class Model(nn.Module):
             if m.kind == 't':
                 y = m.dw(F.pad(x, (0, 0, 2 * m.d, 0)))
             else:
-                xp = F.pad(x, (24, 28))
-                y = m.dw[:, 0].view(1, -1, 1, 1) * x
-                for j, o in enumerate(XOFF):
-                    y = y + m.dw[:, j + 1].view(1, -1, 1, 1) * xp[:, :, :, 24 + o: 24 + o + NKEY]
+                # depthwise across keys at the offsets 0, XOFF: one masked 1x53 kernel
+                w = (m.dw @ self.xsel).view(-1, 1, 1, 53)
+                y = F.conv2d(F.pad(x, (24, 28)), w, groups=w.shape[0])
             y = m.pw(y)
             if m.kind == 'x':
                 gctx = torch.cat([x.mean(dim=3), x.amax(dim=3)], dim=1).transpose(1, 2)  # [B, T, 2C]
