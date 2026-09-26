@@ -4,3 +4,4 @@ _site/
 tests/.cache/
 tools/nn/.data/
 tools/nn/.venv/
+__pycache__/
