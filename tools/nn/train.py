@@ -352,7 +352,7 @@ def main():
     K_ON = a.k_onset
     POS_W = a.pos_weight
     wins = tuple(int(w) for w in a.wins.split(','))
-    torch.set_num_threads(2)
+    torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "2")))
     os.makedirs(a.out, exist_ok=True)
     rng = np.random.default_rng(a.seed)
     torch.manual_seed(a.seed)
