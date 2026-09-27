@@ -26,8 +26,21 @@ export class Transcriber {
   constructor(sampleRate, opts = {}) {
     this.sr = sampleRate;
     this.onNoteOn = opts.onNoteOn || (() => {});
+    // Every note reported on is released exactly once, when neither engine still hears it: the
+    // DSP ends its notes, the network ends the ones only it heard. (Before, only DSP note-offs
+    // were passed on, so notes only the network heard stayed lit on the keyboard for ever.)
+    this.onNoteOff = opts.onNoteOff || (() => {});
+    this.held = new Map(); // midi -> time reported on
+    this.dspOn = new Set(); // keys the DSP has sounding (reported or not)
     this.expP = opts.expP ?? num(ENV.HYBRID_EXP, 0.5); // lessons: a due note the DSP missed
-    this.reP = opts.reP ?? num(ENV.HYBRID_REP, 1.1); // lessons: a due note struck again (>1: never)
+    // lessons: a due key struck again while it still sounds (repeated notes, trills, repeated
+    // chords), or a due note the network is less sure of: judged on the network's onset
+    // probability averaged over the frame it fired and the next reN - 1 (a re-attack keeps it up;
+    // a sustained note's beating or a neighbour's attack only flicks it) - see _nnFrame
+    this.reP = opts.reP ?? num(ENV.HYBRID_REP, 1.1);
+    this.reNbr = opts.reNbr ?? num(ENV.HYBRID_RENBR, 0.6); // ... when a key <= 2 semitones away was reported at that attack
+    this.reN = opts.reN ?? num(ENV.HYBRID_REN, 3);
+    this.pend = []; // network notes waiting for their next frames
     this.lesson = false; // setExpected / setRange seen: the app knows what should be played
     this.stats = { emitted: 0, rejected: 0, restrikes: 0, nnAdded: 0, nnDropped: 0, dspDropped: 0 };
     // free play: the arbiter; its list of reported notes (the last ~1.5 s) serves lessons too
@@ -39,7 +52,14 @@ export class Transcriber {
     this.nnOff = opts.engine === 'dsp';
     this.dsp = new DspTranscriber(sampleRate, {
       ...opts,
-      onNoteOn: (midi, t, vel, info) => this._dspNote(midi, t, vel, info),
+      onNoteOn: (midi, t, vel, info) => {
+        this.dspOn.add(midi);
+        this._dspNote(midi, t, vel, info);
+      },
+      onNoteOff: (midi, t) => {
+        this.dspOn.delete(midi);
+        if (!this._nnHears(midi)) this._release(midi, t);
+      },
       onOnset: (t, s) => {
         this.arb.onset(t, s);
         if (opts.onOnset) opts.onOnset(t, s);
@@ -65,8 +85,11 @@ export class Transcriber {
       // (and a low firing threshold: the rules here decide, on the probability's peak)
       decoder: { ghostP: 0, thrReg: null, thr: 0.3, confirm: 1, ...(o.nnDecoder || {}) },
       onNoteOn: (midi, t, vel, info) => this._nnNote(midi, t, vel, info),
-      onNoteOff: () => {},
+      onNoteOff: (midi, t) => {
+        if (!this.dspOn.has(midi)) this._release(midi, t);
+      },
       onOnset: () => {},
+      onFrame: (P) => this.pend.length && this._nnFrame(P),
     });
     // settings made before the network joined
     const st = this.set;
@@ -83,6 +106,8 @@ export class Transcriber {
     this.nnOff = true;
     this.nn = null;
     this.arb.cands = [];
+    this.pend = [];
+    this._sweep();
   }
 
   get reported() {
@@ -95,12 +120,34 @@ export class Transcriber {
 
   _report(midi, t, vel, info, src) {
     this.arb.reported.push({ midi, t, src, at: this.at });
-    this.onNoteOn(midi, t, vel, info);
+    this._on(midi, t, vel, info);
   }
 
   _freeNote(midi, t, vel, info, src) {
     if (src === 'nn') this.stats.nnAdded++;
+    this._on(midi, t, vel, info);
+  }
+
+  _on(midi, t, vel, info) {
+    this.held.set(midi, t);
     this.onNoteOn(midi, t, vel, info);
+  }
+
+  _release(midi, t) {
+    if (!this.held.has(midi)) return;
+    this.held.delete(midi);
+    this.onNoteOff(midi, t);
+  }
+
+  _nnHears(midi) {
+    const nn = this.nn;
+    return !!(nn && nn.engine === 'nn' && nn.on && nn.on[midi - 21]);
+  }
+
+  // A reported key neither engine hears any more (a network note reported on the arbiter's or a
+  // lesson's say-so that the network's own decoder never switched on, a dropped network): off.
+  _sweep() {
+    for (const [midi, t0] of this.held) if (this.at - t0 > 0.3 && !this.dspOn.has(midi) && !this._nnHears(midi)) this._release(midi, this.at);
   }
 
   _dspNote(midi, t, vel, info = {}) {
@@ -111,7 +158,8 @@ export class Transcriber {
       if (this.arb.dropped.length > before) this.stats.dspDropped++;
       return;
     }
-    if (!info.restrike && this.reported.some((e) => e.midi === midi && e.src === 'nn' && Math.abs(e.t - t) <= 0.08)) return;
+    // the network already reported this attack (a new note or a re-attack)
+    if (this.reported.some((e) => e.midi === midi && e.src === 'nn' && Math.abs(e.t - t) <= 0.08)) return;
     this._report(midi, t, vel, info, 'dsp');
   }
 
@@ -119,12 +167,38 @@ export class Transcriber {
     if (!this.lesson) return this.arb.nn(midi, t, vel, info, this.at);
     if (this._has(midi, t)) return;
     // lessons: the DSP is excellent; the network only adds due notes it is fairly sure of
-    // (a due key struck again while it still sounds - repeated notes, trills - needs more)
-    if (info.expected && (info.p ?? 0) >= (info.restrike ? this.reP : this.expP)) {
+    if (info.expected && !info.restrike && (info.p ?? 0) >= this.expP) {
       this.stats.nnAdded++;
       return this._report(midi, t, vel, info, 'nn');
     }
-    this.stats.nnDropped++;
+    // ... and a due key struck again while it still sounds, or a due note it is less sure of,
+    // once the next frames confirm it (_nnFrame)
+    if (info.expected && this.reP <= 1) this.pend.push({ midi, t, vel, info, ps: [] });
+    else this.stats.nnDropped++;
+  }
+
+  // Every network frame (lessons): the notes waiting for confirmation. The frame a note fired in
+  // counts as the first.
+  _nnFrame(P) {
+    const keep = [];
+    for (const c of this.pend) {
+      c.ps.push(P[c.midi - 21]);
+      if (c.ps.length < this.reN) {
+        keep.push(c);
+        continue;
+      }
+      if (this._has(c.midi, c.t)) continue; // the DSP reported it meanwhile
+      const m = c.ps.reduce((a, b) => a + b, 0) / c.ps.length;
+      // a key right next to one struck at this attack (a trill's other note) shares its hammer
+      // noise and the beating of close partials
+      const nbr = this.reported.some((e) => e.midi !== c.midi && Math.abs(e.midi - c.midi) <= 2 && Math.abs(e.t - c.t) <= 0.04);
+      if (m >= (nbr ? this.reNbr : this.reP)) {
+        this.stats.nnAdded++;
+        this.stats.nnRestrikes = (this.stats.nnRestrikes || 0) + 1;
+        this._report(c.midi, c.t, c.vel, { ...c.info, p: m }, 'nn');
+      } else this.stats.nnDropped++;
+    }
+    this.pend = keep;
   }
 
   get pos() {
@@ -173,6 +247,7 @@ export class Transcriber {
         this.arb.frame(this.at, nn.lastP, nn.lastPf);
       }
     }
+    if (this.held.size) this._sweep();
     const s = this.dsp.stats;
     this.stats.emitted = s.emitted + this.stats.nnAdded;
     this.stats.restrikes = s.restrikes;
@@ -219,9 +294,12 @@ export class Transcriber {
     return this.dsp.finishCalibration();
   }
   reset() {
-    this.dsp.reset();
+    this.dsp.reset(); // (ends the DSP's notes)
+    this.dspOn.clear();
+    for (const midi of [...this.held.keys()]) this._release(midi, this.at);
     if (this.nn) this.nn.reset();
     this.arb.reset();
     this.nnFrame = -1;
+    this.pend = [];
   }
 }
