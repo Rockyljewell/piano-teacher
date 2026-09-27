@@ -308,11 +308,62 @@ def bass(rng, length):
     return notes, pedal
 
 
+def repeats(rng, length):
+    """Keys struck again while they still sound: repeated notes (slow to fast, legato and
+    detached, crescendo and diminuendo), melodies with repeated notes ("Twinkle"), repeated
+    chords and dyads, trills and tremolos - often under the pedal, sometimes over a held bass.
+    The listener's weakest case: a new attack on a string that is already ringing."""
+    h = human(rng)
+    notes = []
+    t = rng.uniform(0.2, 0.6)
+    while t < length - 0.5:
+        kind = rng.choice(['note', 'note', 'melody', 'chord', 'chord', 'trill', 'tremolo'])
+        dt = rng.uniform(0.1, 0.5)  # 2..10 strikes per second
+        legato = rng.uniform(0.5, 0.98)
+        n = int(rng.integers(3, 12))
+        root = int(rng.integers(36, 88))
+        if kind == 'note':
+            seq = [[root]] * n
+        elif kind == 'melody':
+            MEL = [[0, 0, 7, 7, 9, 9, 7], [5, 5, 4, 4, 2, 2, 0], [0, 0, 2, 0, 5, 4], [4, 4, 5, 7, 7, 5, 4, 2]]
+            steps = MEL[rng.integers(len(MEL))]
+            seq = [[root + x] for x in steps]
+            dt = rng.uniform(0.25, 0.6)
+        elif kind == 'chord':
+            shape = [[0, 4, 7], [0, 3, 7], [0, 7], [0, 12], [0, 4, 7, 12], [0, 3, 8], [0, 5, 9]][rng.integers(7)]
+            seq = [[root + x for x in shape]] * n
+            dt = rng.uniform(0.15, 0.5)
+        elif kind == 'trill':
+            b = root + int(rng.choice([1, 2]))
+            seq = [[root] if i % 2 == 0 else [b] for i in range(int(rng.integers(8, 20)))]
+            dt = rng.uniform(0.06, 0.14)
+        else:  # tremolo: octave or broken chord alternating
+            a, b = [root], [root + int(rng.choice([12, 7, 4]))]
+            seq = [a if i % 2 == 0 else b for i in range(int(rng.integers(8, 20)))]
+            dt = rng.uniform(0.06, 0.15)
+        ramp = rng.uniform(-0.25, 0.25)
+        for i, ms in enumerate(seq):
+            if t > length - 0.3:
+                break
+            acc = ramp * (i / max(1, len(seq) - 1) - 0.5)
+            tt = t + rng.normal(0, h['jit'] * 0.5)
+            for m in ms:
+                if LO <= m <= HI:
+                    notes.append(dict(midi=clampm(m), t=tt + rng.uniform(-1, 1) * h['spread'], dur=dt * legato, vel=vel_of(rng, h, acc)))
+            t += dt
+        t += rng.uniform(0.2, 1.0)
+    if rng.random() < 0.35:  # a held bass note or chord under it
+        for m in ms_hold(rng):
+            notes.append(dict(midi=m, t=rng.uniform(0.1, 0.4), dur=rng.uniform(1.5, length), vel=vel_of(rng, h)))
+    pedal = bar_pedal(rng, rng.uniform(1.0, 3.0), 0.0, length) if rng.random() < 0.5 else []
+    return notes, pedal
+
+
 def silence(rng, length):
     return [], []
 
 
-GENERATORS = dict(app=from_app, chords=block_chords, runs=runs, pedal=pedal_texture, soup=soup, extremes=extremes, bass=bass, silence=silence)
+GENERATORS = dict(app=from_app, chords=block_chords, runs=runs, pedal=pedal_texture, soup=soup, extremes=extremes, bass=bass, repeats=repeats, silence=silence)
 WEIGHTS = dict(app=0.34, chords=0.2, runs=0.14, pedal=0.08, soup=0.14, extremes=0.04, silence=0.06)
 
 

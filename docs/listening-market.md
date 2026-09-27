@@ -4,22 +4,26 @@ How well the market's leading apps hear an acoustic piano through the device mic
 
 Approximate numbers (marked ≈) come from public reviews and vendor help pages, not from our own measurements. They describe different pianos, rooms and devices, so read them as orientation, not as a like-for-like comparison.
 
-| | Simply Piano / Yousician / flowkey (published) | Maestro before (baseline) | Maestro after (maestro-dsp 3.1) |
+| | Simply Piano / Yousician / flowkey (published) | Maestro before (baseline) | Maestro now (hybrid: DSP 3.1 + learned network) |
 | --- | --- | --- | --- |
-| Reaction time, attack → note on screen (median) | ≈ 47 ms | 99 ms in lessons, 297 ms in free play (in-browser, headless Chromium) · 86 ms / 148 ms offline (notes ≥ C3) | 31 ms in lessons (p90 43), 79 ms in free play (in-browser) · 22 ms / 64 ms offline (notes ≥ C3) |
-| Single notes, acoustic piano, mic | ≈ 85–90% recognised | 77% recall / 81% precision in free play · 91% / 90% in lessons | 83% recall / 78% precision in free play · 95% / 94% in lessons |
-| Chords | weak ("the same chord played identically would sometimes register incorrectly") | 75% of chords complete in lessons · triads 83% / 80% in free play | 96% of chords complete in lessons (triads 99%) · triads 83% / 77% in free play |
-| Octaves | weak | 49% of octaves complete in lessons · 19% in free play | 92% of octaves complete in lessons (octave dyads 100%, bass octave melodies 85%) · 26% in free play |
-| Fast passages | weak | 65% recall in lessons · 16th scales 46% in free play | 83% recall in lessons (arpeggios 93% / 92% precision) · 16th scales 77% in free play |
+| Reaction time, attack → note on screen (median) | ≈ 47 ms | 99 ms in lessons, 297 ms in free play (in-browser) · 86 ms / 148 ms offline (notes ≥ C3) | **31 ms in lessons** (in-browser, p90 43) · **22 ms in lessons / 38 ms in free play** offline (notes ≥ C3; free-play p90 132 ms) |
+| Single notes, acoustic piano, mic | ≈ 85–90% recognised | 77% recall / 81% precision in free play · 91% / 90% in lessons | **86% / 83% in free play** · **93% / 95% in lessons** |
+| Chords | weak ("the same chord played identically would sometimes register incorrectly") | 75% of chords complete in lessons · triads 83% / 80% in free play | **100% of chords complete in lessons** · triads 95% / 76% in free play |
+| Octaves | weak | 49% of octaves complete in lessons · 19% in free play | **100% complete in lessons · 86–91% in free play** |
+| Fast passages | weak | 65% recall in lessons · 16th scales 46% in free play | **96% recall in lessons** (repeated eighths 90%, trills 100%) · **16th scales 95% in free play** |
+| Stuck or phantom notes from room noise | not published | 22 false notes/min summed over 11 noise types | 12–17 false notes/min (speech ≈ 0) |
 
-Maestro's numbers are measured on the held-out pianos (Upright KW, YDP grand) in the `stand` condition: an iPad on the music stand, with room reverb and room tone. Free play means the app gives the listener no hints; in lessons it knows which notes are due.
+Maestro's numbers are measured on the held-out pianos (Upright KW, YDP grand) in the `stand` condition: an iPad on the music stand, with room reverb and room tone. Free play means the app gives the listener no hints; in lessons it knows which notes are due (and, as in the app, drops notes it has already matched). "Now" is the QUICK benchmark of the shipped hybrid ([listening-bench-hybrid-quick.md](listening-bench-hybrid-quick.md)) with the retrained network.
 
-**Targets derived from this table** (checked in the benchmark's summary; both still fail after this round, see below):
-- Single notes in free play: ≥ 98% recall at ≥ 98% precision (held-out pianos, `stand`).
-- Fast passages in lessons (16th scales, repeated notes, trills, arpeggios): ≥ 90% recall.
-- Plus the latency, chord and octave targets in [listening-bench.md](listening-bench.md), which are all stricter than "weak".
+**Targets derived from this table:**
+- Reaction ≤ 40 ms median in lessons: **met** (22 ms offline, 31 ms in the browser).
+- Chords ≥ 95% and octaves ≥ 90% complete in lessons: **met** (100% / 100%).
+- Fast passages in lessons ≥ 90%: **met** (96%).
+- Free-play octaves ≥ 80% and 16th scales ≥ 85%: **met** (86% / 95%).
+- Single notes in free play ≥ 98% recall at ≥ 98% precision: **not met** (86% / 83%).
+- Free-play triad precision ≥ 90% and latency p90 ≤ 120 ms: **not met** (76%, 132 ms).
 
-**Where Maestro stands after this round:** in lessons, where the app knows which notes are due, it now reports notes faster than the ≈ 47 ms figure (31 ms median in the browser), with complete chords and octave dyads. Without hints (free play), single notes (83% / 78%), chords, octaves and fast passages are still at or below what reviews report for the competition. The weakest spots are the bottom octave and notes an octave above a sounding note.
+**Where Maestro stands:** on everything a lesson grades (speed, chords, octaves, fast passages, repeated notes) it is now measured at or beyond what reviews report for the leading apps, whose weak spots are exactly chords, octaves and fast passages. Without hints (free play) single notes are at the top of the ≈ 85–90% range the competitors are credited with, but not yet at the 98% target, and chords in free play still report one extra note in four. These are lab numbers on sampled pianos; a Listening-test recording from a real iPad and piano is the check that matters next.
 
 ## Sources
 
