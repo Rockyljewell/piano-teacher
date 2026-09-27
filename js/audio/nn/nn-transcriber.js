@@ -95,6 +95,7 @@ export class Transcriber {
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.onNoteOff = opts.onNoteOff || (() => {});
     this.onOnset = opts.onOnset || (() => {});
+    this.onFrame = opts.onFrame || null; // (lastP) after every network frame (the hybrid listener)
     this.sensitivity = opts.sensitivity ?? 1;
     this._baseStrictness = clamp(opts.strictness ?? 0.5, 0, 1);
     this.noisyRoom = !!opts.noisyRoom;
@@ -507,6 +508,7 @@ export class Transcriber {
         } else this.offCount[k] = 0;
       }
     }
+    if (this.onFrame) this.onFrame(this.lastP);
   }
 }
 
