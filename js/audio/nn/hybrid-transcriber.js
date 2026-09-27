@@ -37,7 +37,7 @@ export class Transcriber {
     // chords), or a due note the network is less sure of: judged on the network's onset
     // probability averaged over the frame it fired and the next reN - 1 (a re-attack keeps it up;
     // a sustained note's beating or a neighbour's attack only flicks it) - see _nnFrame
-    this.reP = opts.reP ?? num(ENV.HYBRID_REP, 1.1);
+    this.reP = opts.reP ?? num(ENV.HYBRID_REP, 0.35); // (fitted on Salamander, app-style hints)
     this.reNbr = opts.reNbr ?? num(ENV.HYBRID_RENBR, 0.6); // ... when a key <= 2 semitones away was reported at that attack
     this.reN = opts.reN ?? num(ENV.HYBRID_REN, 3);
     this.pend = []; // network notes waiting for their next frames
