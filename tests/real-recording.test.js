@@ -5,9 +5,10 @@
 //
 // Two replays of the hybrid listener (js/audio/nn/hybrid-transcriber.js), calibrated on the room
 // tone before the first note (as the app does at start-up) and fed 256-sample chunks:
-//   - wait mode, with the app's hints: the notes of the current step not heard yet are expected
-//     (setExpected), the step moves on once all were heard. Live, on the iPad, the app heard all
-//     24 notes; so must the replay.
+//   - wait mode, with the app's hints: the notes of the piece's current step not heard yet are
+//     expected (setExpected), the step moves on once all were heard. Live, on the iPad, the app
+//     moved on twice with no key struck (G3 at 34.17 s and C4 at 37.22 s: the release of the keys
+//     held before, heard with the lesson's hint); the replay must only move on for keys struck.
 //   - free play: no hints. Scored against the notes that were really PLAYED, which are not quite
 //     the 24 the test asked for (checked on the spectra, see PLAYED below): the student added
 //     notes (A4 with the E4 at 23.70 s, E4 with the G4 at 25.46 s, D4 in the C-E-G chord at
@@ -22,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Transcriber } from '../js/audio/nn/hybrid-transcriber.js';
 import { weightsLoaded } from '../js/audio/nn/nn-transcriber.js';
+import { listeningTestPiece } from '../js/music/listentest.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BASE = path.join(here, 'fixtures/real/ipad-easy-2026-09-28');
@@ -58,6 +60,12 @@ const PLAYED = [
 ];
 // played or not, can't tell (A3's octave): neither a hit nor an extra
 const EITHER = [[69, 35.1]];
+const struck = (t) => PLAYED.some(([, pt]) => Math.abs(pt - t) <= 0.12);
+
+// wait mode: due notes accepted when a key was struck but not that one (floor, lower it as the
+// listener improves). Now 2, both the lower note of a struck octave / twelfth that was due: C3
+// with the C-E-G chord played again at 29.30 s, G3 with G4 (and A3) at 35.10 s.
+const WAIT_WRONG = 2;
 
 // free play floors (raise them as the listener improves). Before the level normalisation and
 // the tempo-independent fast-path gate: 27 hits, 0-1 extras, median 105 ms, p90 288 ms; after:
@@ -69,13 +77,15 @@ const CAL = [0.4, 1.4]; // s: room tone before the first note (the recording sta
 
 function replay(x, sr, { wait = null } = {}) {
   const ev = [];
+  const accepted = []; // wait mode: the due notes heard, when the step moved on
   let tr;
   let step = 0;
   let pending = wait ? new Set(wait[0].midis) : null;
   tr = new Transcriber(sr, {
     onNoteOn: (midi, t, vel, info) => {
       ev.push({ midi, t, at: tr.pos / sr, conf: info?.confidence ?? 1 });
-      if (pending && pending.has(midi)) {
+      if (pending && step < wait.length && pending.has(midi)) {
+        accepted.push({ midi, t });
         pending.delete(midi);
         if (!pending.size && ++step < wait.length) pending = new Set(wait[step].midis);
       }
@@ -101,7 +111,7 @@ function replay(x, sr, { wait = null } = {}) {
     }
     tr.push(x.subarray(i, i + 256), i);
   }
-  return { ev, steps: step, tr };
+  return { ev, accepted, steps: step, tr };
 }
 
 function score(ev, notes, tol, ignore = []) {
@@ -128,19 +138,22 @@ function score(ev, notes, tol, ignore = []) {
 let rec = null;
 const load = () => (rec ||= { ...readWav(BASE + '.wav'), J: JSON.parse(fs.readFileSync(BASE + '.json', 'utf8')) });
 
-test('real iPad recording, wait mode with the app\'s hints: all 24 notes heard', { skip }, () => {
-  const { x, sr, J } = load();
-  const exp = J.expected.filter((e) => e.t != null);
-  assert.equal(exp.length, 24);
-  // the test's steps: notes asked for together (the app times them when each was heard)
-  const steps = [];
-  for (const e of [...exp].sort((a, b) => a.t - b.t)) {
-    const s = steps.find((g) => Math.abs(g.t - e.t) < 0.6 && !g.midis.includes(e.midi));
-    if (s) s.midis.push(e.midi);
-    else steps.push({ t: e.t, midis: [e.midi] });
-  }
-  const { ev, steps: done } = replay(x, sr, { wait: steps });
-  assert.equal(done, steps.length, `wait mode stuck at step ${done} (${steps[done]?.midis} @ ${steps[done]?.t}); heard ${ev.map((e) => e.midi + '@' + e.t.toFixed(2)).join(' ')}`);
+test('real iPad recording, wait mode with the app\'s hints: moves on only for keys struck', { skip }, () => {
+  const { x, sr } = load();
+  // the piece's steps: the notes due together (a chord, both hands)
+  const byBeat = new Map();
+  for (const e of listeningTestPiece().events) byBeat.set(e.beat, [...(byBeat.get(e.beat) || []), ...e.midis]);
+  const steps = [...byBeat.keys()].sort((a, b) => a - b).map((b) => ({ midis: byBeat.get(b) }));
+  assert.equal(steps.reduce((n, s) => n + s.midis.length, 0), 24);
+  const { accepted, steps: done } = replay(x, sr, { wait: steps });
+  const heard = accepted.filter((e) => e.t > 3); // (the recording starts on a note's tail)
+  const say = (l) => l.map((e) => `${e.midi}@${e.t.toFixed(2)}`).join(' ') || '-';
+  const unstruck = heard.filter((e) => !struck(e.t));
+  assert.deepEqual(unstruck, [], `moved on with no key struck: ${say(unstruck)}`);
+  const wrong = heard.filter((e) => !PLAYED.some(([m, t]) => m === e.midi && Math.abs(t - e.t) <= 0.12));
+  assert.ok(wrong.length <= WAIT_WRONG, `due notes accepted for another key: ${say(wrong)}`);
+  // every due note that was struck is heard: up to G3 + G4 (the student played A3 for the G3)
+  assert.ok(done >= 15, `wait mode stuck at step ${done} (${steps[done]?.midis}); heard ${say(heard)}`);
 });
 
 test('real iPad recording, free play: hears what was played, quickly', { skip }, () => {
