@@ -318,6 +318,10 @@ function comboFlash(n) {
 // Audio events -> session
 audio.on('noteon', (ev) => {
   if (S.free) {
+    // the same key struck again while it still sounds: its previous bar ends here (otherwise the
+    // key's one note-off would close only the newest bar and the older one would stay lit)
+    for (let i = S.history.length - 1; i >= 0; i--)
+      if (S.history[i].midi === ev.midi && S.history[i].off === null) S.history[i].off = ev.time;
     S.history.push({ midi: ev.midi, on: ev.time, off: null });
     if (S.history.length > 400) S.history.shift();
     return;
@@ -755,6 +759,8 @@ function drawFree() {
   const heard = new Map();
   for (const [m] of audio.heard) heard.set(m, { kind: 'neutral' });
   const now = audio.now();
+  // (a bar still open after 12 s lost its note-off: close it rather than let it stay lit)
+  for (const n of S.history) if (n.off === null && now - n.on > 12) n.off = now;
   S.history = S.history.filter((n) => !n.off || now - n.off < 6);
   stage.draw({ nowBeat: 0, heard, history: S.history, nowSec: now });
   const notes = [...audio.heard.keys()].sort((a, b) => a - b);
