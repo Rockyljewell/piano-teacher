@@ -56,6 +56,7 @@ const HOLD_MAX_TOTAL = 180000; // even with renewals
 // would eat sustained piano tones (and switch iOS into voice-processing mode).
 const MIC_CONSTRAINTS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } };
 
+const MIC_MAX_HOLD = 12; // s
 const MIC_BAD = new Set(['ended', 'muted', 'no-data', 'silent', 'error']);
 
 // Transcriber-shaped handle on the listener (worker or main-thread Listener): the engine and
@@ -205,6 +206,7 @@ export class AudioEngine {
     this._tailWall = -Infinity; // performance.now(): when the tail really ends
     this._gates = []; // past gated intervals [{from, to}] on the audio clock
     this._micSounding = new Set(); // mic notes whose noteon was emitted
+    this._micOnAt = new Map(); // midi -> audio time of its latest mic noteon (the stuck-note guard)
     this._touch = new Map(); // midi -> {v, release}
     this._touchOffAt = new Map();
     this._lastMidiAt = -Infinity;
@@ -659,6 +661,7 @@ export class AudioEngine {
   // Stop listening and release the microphone.
   stopMic() {
     this._micWanted = false;
+    this.releaseMicNotes('mic-stopped');
     this._stopTracks();
     this._log('mic', { event: 'stopped' });
     this._check('stopMic');
@@ -961,6 +964,7 @@ export class AudioEngine {
       this._micSince = w;
       this._mutedSince = track && track.muted ? w : 0;
       this._epoch++;
+      this.releaseMicNotes('new-mic');
       this._gotChunk = false;
       this.st.zeroMs = 0;
       this.st.lastChunkWall = 0;
@@ -1119,6 +1123,7 @@ export class AudioEngine {
     this._workerNextAt = w + 5000;
     this._workerRestarting = true;
     this._log('worker', { event: 'restart', why });
+    this.releaseMicNotes('listener-restart');
     try {
       if (this.worker) {
         try {
@@ -1160,11 +1165,13 @@ export class AudioEngine {
         this._noteSeen(midi, t, confidence, gated);
         if (gated) return;
         this._micSounding.add(midi);
+        this._micOnAt.set(midi, t);
         this.heard.set(midi, { source: 'mic', t });
         this._emit('noteon', { midi, time: t, vel, source: 'mic', confidence, restrike: !!info?.restrike });
       },
       onNoteOff: (midi, t) => {
         if (!this._micSounding.delete(midi)) return;
+        this._micOnAt.delete(midi);
         if (this.heard.get(midi)?.source === 'mic') this.heard.delete(midi);
         this._emit('noteoff', { midi, time: t, source: 'mic' });
       },
@@ -1407,6 +1414,8 @@ export class AudioEngine {
   _check(why) {
     const ctx = this.ctx;
     if (!ctx) return;
+    // no microphone note stays on longer than this without a new attack (a lost note-off)
+    if (this._micSounding.size) this.releaseMicNotes('tick', MIC_MAX_HOLD);
     const w = perfNow();
     this._sampleClock(w);
     const visible = this._isVisible();
@@ -1707,9 +1716,25 @@ export class AudioEngine {
     if (source === 'mic') {
       if (this.micGated(t)) return;
       this._micSounding.add(midi);
+      this._micOnAt.set(midi, t);
     }
     this._emit('noteon', { midi, time: t, vel, source, confidence: 1 });
     this._emit('onset', { time: t, strength: 1, source });
+  }
+
+  // End every microphone note still on (a listener restart, a new or stopped microphone: the
+  // listener that would have sent their note-offs is gone), or, with olderThan, the ones whose
+  // last attack is that many seconds old - a guard so no key can stay lit for ever.
+  releaseMicNotes(why, olderThan = 0) {
+    const t = this.now();
+    let n = 0;
+    for (const midi of [...this._micSounding]) {
+      if (olderThan && t - (this._micOnAt.get(midi) ?? t) < olderThan) continue;
+      this.noteOff(midi, t, 'mic');
+      n++;
+    }
+    if (n && why !== 'tick') this._log('mic-notes-released', { why, n });
+    return n;
   }
 
   noteOff(midi, t = this.now(), source = 'touch') {
@@ -1717,7 +1742,10 @@ export class AudioEngine {
       if (this._touch.has(midi)) this._touchRelease(midi);
       else this._touchOffAt.set(midi, this.now());
     }
-    if (source === 'mic' && !this._micSounding.delete(midi)) return;
+    if (source === 'mic') {
+      if (!this._micSounding.delete(midi)) return;
+      this._micOnAt.delete(midi);
+    }
     if (this.heard.get(midi)?.source === source) this.heard.delete(midi);
     this._emit('noteoff', { midi, time: t, source });
   }
