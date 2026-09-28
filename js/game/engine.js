@@ -100,13 +100,44 @@ function quantile(a, q) {
 // Intervals (semitones above a played note) at which the listener may report a ghost partial.
 const GHOST_INTERVALS = new Set([12, 19, 24, 28, 31]);
 
+// Bar loop ("repeat bars I miss"), for lessons and practice. In tempo mode a bar the student
+// fails is stopped at its end and played again after a one-bar count-in, until it passes; after
+// a few failed tries the app offers to slow that bar down or learn it in wait mode. In wait mode
+// several wrong tries at one spot start the bar again (the app plays it first). A bar's notes
+// count once they are played correctly; the loops are reported in result().loops.
+export const LOOP_RULES = {
+  failFraction: 0.5, // a bar fails with at least this share of its notes missed or wrong...
+  missRun: 2, // ...or this many missed notes (a chord counts once) in a row
+  offerAfter: 3, // failed tries of one bar before offering "slower" or "learn it"
+  slowScale: 0.75, // tempo of a slowed bar
+  slowTries: 2, // failed slow tries before moving on anyway
+  waitWrong: 3, // wait mode: wrong tries at one spot before the bar starts again
+  waitRestarts: 2, // wait mode: restarts per bar
+};
+
 export class Session {
-  constructor(piece, { mode = 'tempo', clock, latency = 0, countInBeats, onEvent, level, profile, scoring, minWrongConfidence = 0.55 } = {}) {
+  constructor(piece, { mode = 'tempo', clock, latency = 0, countInBeats, onEvent, level, profile, scoring, minWrongConfidence = 0.55, barLoop = false } = {}) {
     this.piece = piece;
     this.mode = piece.waitOnly ? 'wait' : mode;
     this.clock = clock; // () => seconds (audio clock)
     this.latency = latency; // seconds to subtract from heard note times
-    this.spb = 60 / piece.bpm;
+    this.baseSpb = 60 / piece.bpm;
+    this.spb = this.baseSpb;
+    this.tempoScale = 1;
+    // Bar loop state (see LOOP_RULES).
+    this.barLoop = !!barLoop;
+    this.loops = new Map(); // bar -> {bar, fails, passed, slowed, slowFails, learned, gaveUp, restarts, mode}
+    this.rewinds = 0; // times the playhead jumped back to a bar line
+    this.replays = 0; // times a bar was played again (the loops)
+    this.loopWrong = 0; // wrong notes in tries that were played again (not counted in the score)
+    this.barChecked = 0; // tempo mode: bars up to this one have been judged
+    this.lead = null; // {from, to}: the short count-in before a bar played again
+    this.held = false; // waiting for the student to choose (slower / learn it / keep going)
+    this.offer = null; // {bar} while held
+    this.barWait = null; // {bar, from, to}: one bar learned in wait mode inside a tempo session
+    this.barNotes = new Map();
+    this.activeLoop = null; // the bar being played again (tempo mode)
+    this.leadEnd = null;
     this.countIn = countInBeats ?? piece.beatsPer;
     this.onEvent = onEvent || (() => {});
     this.level = level ?? piece.level ?? 1;
@@ -135,8 +166,15 @@ export class Session {
     }
     this.groups = [...groups.values()].sort((a, b) => a.beat - b.beat);
     this.groupIdx = 0;
-    // Per-note match window: the profile's "ok" window, but never so wide that it reaches
-    // halfway to the next note of the same pitch (or of any pitch in rhythm drills).
+    this._computeWindows();
+    this.lo = Math.min(...piece.notes.map((n) => n.midi));
+    this.hi = Math.max(...piece.notes.map((n) => n.midi));
+  }
+
+  // Per-note match window: the profile's "ok" window, but never so wide that it reaches
+  // halfway to the next note of the same pitch (or of any pitch in rhythm drills).
+  _computeWindows() {
+    const piece = this.piece;
     this.windowOf = new Map();
     const okSec = this.profile.ok / 1000;
     const byKey = new Map();
@@ -157,8 +195,256 @@ export class Session {
     }
     // Largest window, for "has this note passed" checks.
     this.window = okSec;
-    this.lo = Math.min(...piece.notes.map((n) => n.midi));
-    this.hi = Math.max(...piece.notes.map((n) => n.midi));
+  }
+
+  // The mechanics in force right now: a tempo session learning one bar in wait mode waits.
+  get playMode() {
+    return this.mode === 'wait' || this.barWait ? 'wait' : 'tempo';
+  }
+
+  // Current tempo (a slowed bar plays slower than the piece).
+  get bpm() {
+    return 60 / this.spb;
+  }
+
+  // ---- bars ---------------------------------------------------------------------------------
+  get beatsPerBar() {
+    return this.piece.beatsPer || 4;
+  }
+
+  barOf(beat) {
+    return Math.floor(beat / this.beatsPerBar + 1e-9) + 1; // as the play screen counts
+  }
+
+  barStart(bar) {
+    return (bar - 1) * this.beatsPerBar;
+  }
+
+  barEnd(bar) {
+    return Math.min(bar * this.beatsPerBar, Math.max(this.piece.totalBeats, this.barStart(bar) + 1e-6));
+  }
+
+  get lastBar() {
+    return this.barOf(Math.max(0, this.piece.totalBeats - 1e-6));
+  }
+
+  notesInBar(bar) {
+    if (!this.barNotes.has(bar)) {
+      const a = this.barStart(bar) - 1e-6;
+      const b = bar * this.beatsPerBar - 1e-6;
+      this.barNotes.set(bar, this.piece.notes.filter((n) => n.beat >= a && n.beat < b));
+    }
+    return this.barNotes.get(bar);
+  }
+
+  // The bar being played again, for the play screen: {bar, attempt, slowed, learning} or null.
+  get loopInfo() {
+    const bar = this.barWait ? this.barWait.bar : this.lead ? this.barOf(this.lead.to) : this.offer ? this.offer.bar : this.activeLoop;
+    const rec = bar && this.loops.get(bar);
+    if (!rec || rec.passed || rec.gaveUp) return null;
+    return { bar, attempt: rec.fails + (this.offer ? 0 : 1), held: !!this.offer, slowed: rec.slowed, learning: !!this.barWait, from: this.barStart(bar), to: this.barEnd(bar), mode: rec.mode };
+  }
+
+  // Did the student fail this bar? Missed or wrong on at least half its notes, or two misses in a
+  // row. Wrong keys usually replace a missed note, so a bar's problems are the larger of the two.
+  judgeBar(bar) {
+    const notes = this.notesInBar(bar);
+    if (!notes.length) return { pass: true, n: 0, missed: 0, wrong: 0, hit: 0, played: 0 };
+    const R = LOOP_RULES;
+    const from = this.barStart(bar);
+    const to = bar * this.beatsPerBar;
+    let missed = 0,
+      hit = 0;
+    const groups = new Map();
+    for (const n of notes) {
+      const st = this.status.get(n.id);
+      if (st && st.s === 'miss') missed++;
+      else if (st && st.s === 'hit') hit++;
+      const k = n.beat.toFixed(4);
+      groups.set(k, (groups.get(k) || false) || !!(st && st.s === 'miss'));
+    }
+    let run = 0,
+      maxRun = 0;
+    for (const k of [...groups.keys()].sort((a, b) => a - b)) {
+      run = groups.get(k) ? run + 1 : 0;
+      maxRun = Math.max(maxRun, run);
+    }
+    const wrong = this.wrong.filter((w) => w.beat >= from - 0.5 && w.beat < to).length;
+    const bad = Math.min(notes.length, Math.max(missed, wrong));
+    const byShare = bad >= Math.ceil(notes.length * R.failFraction - 1e-9);
+    const byRun = maxRun >= R.missRun;
+    const pass = !(byShare || byRun);
+    return { pass, n: notes.length, missed, wrong, hit, played: hit + wrong, reason: pass ? null : byRun && !byShare ? 'run' : missed >= wrong ? 'missed' : 'wrong' };
+  }
+
+  _loopRec(bar, mode = 'tempo') {
+    if (!this.loops.has(bar)) this.loops.set(bar, { bar, fails: 0, passed: false, slowed: false, slowFails: 0, learned: false, gaveUp: false, restarts: 0, mode });
+    return this.loops.get(bar);
+  }
+
+  _setTempoScale(f) {
+    if (this.tempoScale === f) return;
+    const t = this.clock();
+    this.tempoScale = f;
+    this.spb = this.baseSpb / f;
+    this._computeWindows();
+    this.startT = t - this.beat * this.spb;
+    this.onEvent({ type: 'tempo', bpm: Math.round(this.bpm), scale: f });
+  }
+
+  // Start again at beat `from` (a bar line) after a one-bar count-in: everything from there on is
+  // forgotten, and wrong notes of the try being repeated no longer count.
+  _rewind(from, { lead = true } = {}) {
+    const t = this.clock();
+    for (const n of this.piece.notes) if (n.beat >= from - 1e-6) this.status.delete(n.id);
+    const keep = [];
+    for (const w of this.wrong) {
+      if (w.beat >= from - 0.5) {
+        this.loopWrong++;
+        this.extras = Math.max(0, this.extras - 1);
+      } else keep.push(w);
+    }
+    this.wrong = keep;
+    Object.assign(this.octaveRun, { dir: 0, count: 0, warned: false });
+    const k = lead ? this.beatsPerBar : 1;
+    this.beat = from - k;
+    this.startT = t - this.beat * this.spb;
+    this.lastT = t;
+    this.lastBeatInt = Math.floor(this.beat) - 1;
+    this.lead = lead ? { from: from - k, to: from } : null;
+    this.barChecked = Math.max(0, this.barOf(from) - 1);
+    this.groupIdx = this.groups.findIndex((g) => g.beat >= from - 1e-6);
+    if (this.groupIdx < 0) this.groupIdx = this.groups.length;
+    this.rewinds++;
+  }
+
+  // Tempo mode: judge each bar once its notes are decided and the playhead has left it.
+  _checkBars() {
+    while (this.barChecked < this.lastBar && !this.held) {
+      const bar = this.barChecked + 1;
+      const notes = this.notesInBar(bar);
+      if (this.beat < this.barEnd(bar)) return;
+      if (notes.some((n) => !this.status.has(n.id))) return; // (a note's window is still open)
+      const v = this.judgeBar(bar);
+      this.barChecked = bar;
+      const rec = this.loops.get(bar);
+      if (v.pass) {
+        if (rec && !rec.passed && !rec.gaveUp) {
+          rec.passed = true;
+          this.activeLoop = null;
+          this.onEvent({ type: 'bar-pass', bar, tries: rec.fails + 1, slowed: rec.slowed });
+          if (this.tempoScale !== 1) {
+            // Passed slowly: back up to speed from the next bar, with a count-in.
+            this._setTempoScale(1);
+            if (bar < this.lastBar) {
+              this._rewind(this.barStart(bar + 1));
+              return;
+            }
+          }
+        }
+        continue;
+      }
+      const r = this._loopRec(bar);
+      r.fails++;
+      this.activeLoop = bar;
+      if (r.slowed) r.slowFails++;
+      if (r.slowed && r.slowFails >= LOOP_RULES.slowTries) {
+        // Enough for now: carry on (at tempo) and come back to it another time.
+        r.gaveUp = true;
+        this.activeLoop = null;
+        this._setTempoScale(1);
+        this.onEvent({ type: 'bar-move-on', bar, tries: r.fails });
+        if (bar < this.lastBar) this._rewind(this.barStart(bar + 1));
+        return;
+      }
+      if (!r.slowed && r.fails >= LOOP_RULES.offerAfter) {
+        this.held = true;
+        this.offer = { bar, played: v.played > 0 };
+        this.onEvent({ type: 'loop-offer', bar, tries: r.fails, played: v.played > 0 });
+        return;
+      }
+      this._rewind(this.barStart(bar));
+      this.replays++;
+      this.onEvent({ type: 'loop', bar, attempt: r.fails + 1, reason: v.reason, missed: v.missed, wrong: v.wrong, n: v.n, slowed: r.slowed, mode: 'tempo' });
+      return;
+    }
+  }
+
+  // The student's answer to a 'loop-offer': 'slower' (the bar again at LOOP_RULES.slowScale),
+  // 'learn' (the bar in wait mode, then on at tempo) or 'continue' (move on).
+  chooseLoop(choice) {
+    const o = this.offer;
+    if (!o || this.finished) return;
+    this.offer = null;
+    this.held = false;
+    const rec = this._loopRec(o.bar);
+    const from = this.barStart(o.bar);
+    if (choice === 'slower') {
+      rec.slowed = true;
+      this._setTempoScale(LOOP_RULES.slowScale);
+      this._rewind(from);
+      this.replays++;
+      this.onEvent({ type: 'loop', bar: o.bar, attempt: rec.fails + 1, slowed: true, mode: 'tempo' });
+    } else if (choice === 'learn') {
+      rec.learned = true;
+      this._rewind(from, { lead: false });
+      this.barWait = { bar: o.bar, from, to: o.bar * this.beatsPerBar };
+      this.replays++;
+      this.onEvent({ type: 'loop', bar: o.bar, attempt: rec.fails + 1, learning: true, mode: 'wait' });
+    } else {
+      rec.gaveUp = true;
+      this.activeLoop = null;
+      this.onEvent({ type: 'bar-move-on', bar: o.bar, tries: rec.fails });
+      if (o.bar < this.lastBar) this._rewind(this.barStart(o.bar + 1));
+      else {
+        const t = this.clock();
+        this.lastT = t;
+        this.startT = t - this.beat * this.spb;
+      }
+    }
+  }
+
+  // Freeze the clock without losing the place (e.g. while the app plays a bar to the student).
+  hold() {
+    this.held = true;
+  }
+
+  release() {
+    if (!this.held || this.offer) return;
+    this.held = false;
+    const t = this.clock();
+    this.lastT = t;
+    this.startT = t - this.beat * this.spb;
+    const wl = this.waitLog.get(this.groupIdx);
+    if (wl) wl.dueT = null;
+  }
+
+  // Wait mode: too many wrong tries at one spot. The bar starts again (the notes found so far in
+  // it are played again), and the app may play it first. Returns the loop event or null.
+  _restartWaitBar(wl) {
+    const g = this.waitGroup;
+    if (!g) return null;
+    const bar = this.barOf(Math.max(0, g.beat));
+    const rec = this._loopRec(bar, 'wait');
+    if (wl.wrong < (wl.loopAt ?? LOOP_RULES.waitWrong) || rec.restarts >= LOOP_RULES.waitRestarts) return null;
+    rec.restarts++;
+    rec.fails++;
+    wl.loopAt = wl.wrong + LOOP_RULES.waitWrong;
+    wl.dueT = null;
+    const stuck = this.groupIdx;
+    const from = this.barStart(bar);
+    const t = this.clock();
+    for (const n of this.piece.notes) if (n.beat >= from - 1e-6 && n.beat <= g.beat + 1e-6) this.status.delete(n.id);
+    for (const i of [...this.waitLog.keys()]) if (i !== stuck && this.groups[i] && this.groups[i].beat >= from - 1e-6 && this.groups[i].beat <= g.beat + 1e-6) this.waitLog.delete(i);
+    this.groupIdx = this.groups.findIndex((x) => x.beat >= from - 1e-6);
+    this.beat = Math.max(-1, from - 1);
+    this.lastT = t;
+    this.startT = t - this.beat * this.spb;
+    this.lastBeatInt = Math.floor(this.beat) - 1;
+    this.rewinds++;
+    this.replays++;
+    this.activeLoop = bar;
+    return { type: 'loop', bar, attempt: rec.fails + 1, mode: 'wait', from, to: bar * this.beatsPerBar, expected: g.notes.map((n) => n.midi) };
   }
 
   start() {
@@ -190,7 +476,7 @@ export class Session {
 
   // Beat position of an audio-clock time.
   beatAtTime(t) {
-    if (this.mode === 'tempo') return (t - this.startT) / this.spb;
+    if (this.playMode === 'tempo') return (t - this.startT) / this.spb;
     return this.beat - (this.lastT - t) / this.spb;
   }
 
@@ -204,11 +490,11 @@ export class Session {
   }
 
   update() {
-    if (!this.started || this.finished || this.paused) return;
+    if (!this.started || this.finished || this.paused || this.held) return;
     const t = this.clock();
     const dt = Math.max(0, t - this.lastT);
     this.lastT = t;
-    if (this.mode === 'tempo') {
+    if (this.playMode === 'tempo') {
       this.beat = (t - this.startT) / this.spb;
       // Mark notes that have passed their window as missed. The listener reports a note
       // ~70-150 ms after its attack (timestamped at the attack), so wait that long first.
@@ -219,10 +505,39 @@ export class Session {
           this.onEvent({ type: 'miss', note: n });
         }
       }
+      if (this.lead && this.beat >= this.lead.to) this.lead = null;
+      if (this.barLoop && this.mode === 'tempo') {
+        this._checkBars();
+        if (this.held) return;
+      }
     } else {
       let next = this.beat + dt / this.spb;
       // Skip over groups already satisfied.
       while (this.groupIdx < this.groups.length && this._groupDone(this.groups[this.groupIdx])) this.groupIdx++;
+      const bw = this.barWait;
+      if (bw && (this.groupIdx >= this.groups.length || this.groups[this.groupIdx].beat >= bw.to - 1e-6)) {
+        // The bar learned in wait mode is done: on at tempo from the next bar, after a count-in.
+        this.barWait = null;
+        const rec = this._loopRec(bw.bar);
+        rec.passed = true;
+        this.activeLoop = null;
+        this.onEvent({ type: 'bar-pass', bar: bw.bar, tries: rec.fails + 1, learned: true });
+        if (bw.bar < this.lastBar) this._rewind(bw.to);
+        else {
+          this.barChecked = bw.bar;
+          this.beat = Math.max(this.beat, this.piece.totalBeats);
+          this.startT = t - this.beat * this.spb;
+        }
+        return;
+      }
+      // Wait mode: a bar started again is done once the playhead waits beyond it.
+      const al = this.mode === 'wait' && this.activeLoop;
+      if (al && (this.groupIdx >= this.groups.length || this.groups[this.groupIdx].beat >= al * this.beatsPerBar - 1e-6)) {
+        const rec = this._loopRec(al, 'wait');
+        rec.passed = true;
+        this.activeLoop = null;
+        this.onEvent({ type: 'bar-pass', bar: al, tries: rec.fails + 1, mode: 'wait' });
+      }
       const g = this.groups[this.groupIdx];
       if (g && next >= g.beat - 1e-9) {
         next = g.beat;
@@ -236,9 +551,19 @@ export class Session {
     const bi = Math.floor(this.beat);
     if (bi !== this.lastBeatInt) {
       this.lastBeatInt = bi;
-      this.onEvent({ type: 'beat', beat: bi });
+      const ev = { type: 'beat', beat: bi };
+      // The count-in before a bar played again: how many beats to go, then "go".
+      if (this.lead && bi >= Math.floor(this.lead.from) && bi < this.lead.to) {
+        ev.lead = Math.round(this.lead.to - bi);
+        this.leadEnd = this.lead.to;
+      } else if (this.leadEnd != null && bi >= this.leadEnd) {
+        ev.go = bi === this.leadEnd;
+        this.leadEnd = null;
+      }
+      this.onEvent(ev);
     }
-    if (this.beat >= this.piece.totalBeats + 0.25 && (this.mode === 'tempo' || this.groupIdx >= this.groups.length)) {
+    const done = this.mode === 'tempo' ? !this.barLoop || this.barChecked >= this.lastBar : this.groupIdx >= this.groups.length;
+    if (this.beat >= this.piece.totalBeats + 0.25 && done && !this.barWait) {
       this.finished = true;
       this.onEvent({ type: 'finish', result: this.result() });
     }
@@ -266,7 +591,8 @@ export class Session {
   // Notes the listener should expect right now (for detection priors and key hints).
   expectedNotes(aheadBeats = 1) {
     const out = [];
-    if (this.mode === 'wait') {
+    if (this.held) return out;
+    if (this.playMode === 'wait') {
       const g = this.waitGroup;
       if (g) for (const n of g.notes) if (!this.status.has(n.id)) out.push(n);
       return out;
@@ -315,13 +641,15 @@ export class Session {
   }
 
   noteOn(midi, t, { anyPitch = false, confidence = 1 } = {}) {
-    if (!this.started || this.finished || this.paused) return null;
+    if (!this.started || this.finished || this.paused || this.held) return null;
     const tt = t - this.latency;
     const beat = this.beatAtTime(tt);
     if (beat < -0.5) return null; // during count-in
+    if (this.lead && beat < this.lead.to - 0.5) return null; // during the count-in before a bar again
     const rhythm = this.piece.rhythmOnly || anyPitch;
+    const waiting = this.playMode === 'wait';
     let res = null;
-    if (this.mode === 'wait') {
+    if (waiting) {
       const g = this.waitGroup;
       if (g) {
         let cand = g.notes.find((n) => !this.status.has(n.id) && (rhythm || n.midi === midi));
@@ -334,8 +662,9 @@ export class Session {
           const wl = this._waitLog(this.groupIdx);
           if (wl.dueT != null) wl.hesBeats = Math.max(wl.hesBeats, (tt - wl.dueT) / this.spb);
           const slow = this.groupIdx > 0 && wl.hesBeats > this.scoring.wait.graceBeats;
-          const grade = wl.wrong >= 2 ? 'ok' : wl.wrong === 1 ? 'good' : slow ? 'great' : 'perfect';
-          this.status.set(cand.id, { s: 'hit', err: 0, grade, t: tt, group: this.groupIdx });
+          // (a bar learned in wait mode inside a tempo piece counts, but not as on the beat)
+          const grade = this.barWait || wl.wrong >= 2 ? 'ok' : wl.wrong === 1 ? 'good' : slow ? 'great' : 'perfect';
+          this.status.set(cand.id, { s: 'hit', err: 0, grade, t: tt, group: this.groupIdx, learned: !!this.barWait });
           const label = grade === 'perfect' ? 'Nice!' : grade === 'great' ? 'Got it' : 'Found it!';
           res = { type: 'hit', note: cand, grade, err: 0, errMs: 0, timing: 'on', label, wait: true, tries: wl.wrong + 1, octave };
         }
@@ -379,26 +708,33 @@ export class Session {
         };
       }
     }
+    let restart = null;
     if (!res) {
       // Wait mode: the right next note, just played before the playhead got there, is not wrong.
-      const early = this.mode === 'wait' && this.waitGroup && this.waitGroup.notes.some((n) => n.midi === midi && !this.status.has(n.id));
+      const early = waiting && this.waitGroup && this.waitGroup.notes.some((n) => n.midi === midi && !this.status.has(n.id));
       if (rhythm || early || this._isGhost(midi, tt, confidence)) {
         this.ignored++;
         return null;
       }
-      this.extras++;
-      this.wrong.push({ midi, beat, t: tt });
+      // (wrong keys while learning a bar in wait mode don't cost the tempo piece anything)
+      if (this.barWait) this.loopWrong++;
+      else {
+        this.extras++;
+        this.wrong.push({ midi, beat, t: tt });
+      }
       res = { type: 'wrong', midi, beat };
-      if (this.mode === 'wait' && this.waitGroup) {
+      if (waiting && this.waitGroup) {
         // One try = one press (a chord or a quick re-strike within 0.25 s counts once).
         const wl = this._waitLog(this.groupIdx);
         if (tt - wl.lastWrongT > 0.25) wl.wrong++;
         wl.lastWrongT = tt;
         res.wait = true;
         res.expected = this.waitGroup.notes.filter((n) => !this.status.has(n.id)).map((n) => n.midi);
+        if (this.barLoop && this.mode === 'wait') restart = this._restartWaitBar(wl);
       }
     }
     this.onEvent(res);
+    if (restart) this.onEvent(restart);
     return res;
   }
 
@@ -444,7 +780,7 @@ export class Session {
         ev.hit++;
         ev.credit += c;
         byGrade[st.grade] = (byGrade[st.grade] || 0) + 1;
-        if (tempo) {
+        if (tempo && !st.learned) {
           errs.push(st.err * 1000);
           hands[h].errs.push(st.err * 1000);
           detail.push({ beat: n.beat, midi: n.midi, hand: h, errMs: Math.round(st.err * 1000), grade: st.grade });
@@ -567,6 +903,21 @@ export class Session {
       perHand, suggestedLatencyMs, timingSummary,
       missedByMidi: [...missedByMidi.entries()].sort((a, b) => b[1] - a[1]),
       bars: barList, worstBars, weakHand, tendency, sigSlips: [...slips.values()].sort((a, b) => b.count - a.count), waitStats,
+      ...this._loopSummary(),
     };
+  }
+
+  // Bars played again (bar loop): which, how many tries, and how each ended.
+  _loopSummary() {
+    const loops = [...this.loops.values()]
+      .filter((r) => r.fails > 0)
+      .map((r) => {
+        const notes = this.notesInBar(r.bar);
+        const clean = notes.length > 0 && notes.every((n) => (this.status.get(n.id) || {}).s === 'hit');
+        const passed = r.passed || (!r.gaveUp && clean);
+        return { bar: r.bar, tries: r.fails + (passed ? 1 : 0), passed, slowed: r.slowed, learned: r.learned, gaveUp: r.gaveUp, mode: r.mode };
+      })
+      .sort((a, b) => a.bar - b.bar);
+    return { loops, loopCount: this.replays, loopWrong: this.loopWrong };
   }
 }

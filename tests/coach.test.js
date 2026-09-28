@@ -52,20 +52,38 @@ test('a total beginner is placed at level 1 quickly', () => {
   assert.ok(tests.length <= 6);
 });
 
-test('mastery leads to level up, repeated failure to a retry in wait mode', () => {
+test('a failed piece at tempo is learned in wait mode, then retried; level up needs the whole plan and the check', () => {
   const c = new Coach(mem());
-  c.s.placed = true;
-  c.s.level = 5;
+  c.setLevel(5);
   c.markIntroSeen(5);
   const piece = { seed: 1, bpm: 70 };
-  const act = { kind: 'sight', level: 5 };
-  c.record(act, piece, { score: 40, mode: 'tempo', hits: 1 }, 30);
-  assert.deepEqual(c.nextActivity().mode, 'wait');
-  c.record({ ...act }, piece, { score: 95, mode: 'wait', hits: 5 }, 30);
-  assert.equal(c.nextActivity().mode, 'tempo');
-  let up = false;
-  for (let i = 0; i < 6 && !up; i++) up = c.record(act, piece, { score: 96, mode: 'tempo', hits: 8 }, 30).levelUp;
+  // Work up to a tempo sight-reading step and fail it: the same piece comes back in wait mode.
+  let a = c.nextActivity();
+  while (!(a.kind === 'sight' && a.mode === 'tempo')) {
+    c.record(a, { seed: 9, bpm: 70 }, { score: 90, mode: a.mode, hits: 12, stars: 2 }, 30);
+    a = c.nextActivity();
+  }
+  c.record(a, piece, { score: 40, mode: 'tempo', hits: 1 }, 30);
+  let r = c.nextActivity();
+  assert.equal(r.mode, 'wait');
+  assert.equal(r.seed, 1);
+  assert.ok(r.retry);
+  c.record(r, piece, { score: 95, mode: 'wait', hits: 5 }, 30);
+  r = c.nextActivity();
+  assert.equal(r.mode, 'tempo');
+  assert.equal(r.seed, 1);
+  c.record(r, piece, { score: 90, mode: 'tempo', hits: 8, stars: 2 }, 30);
+  assert.ok(!c.nextActivity().retry, 'back on the plan');
+  // Great scores alone don't jump a level: the plan is worked through, then the check.
+  let up = false,
+    n = 0;
+  for (; n < 40 && !up; n++) {
+    const act = c.nextActivity();
+    up = c.record(act, { seed: 100 + n, bpm: 70 }, { score: 96, mode: act.mode, hits: 12, stars: act.mode === 'wait' ? 0 : 3 }, 30).levelUp;
+    if (!up) assert.equal(c.level, 5);
+  }
   assert.ok(up);
+  assert.ok(n >= 8, `took ${n} more activities`);
   assert.equal(c.level, 6);
   assert.equal(c.nextActivity().kind, 'intro');
 });

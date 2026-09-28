@@ -5,6 +5,8 @@ import { icon, pip, pipFace, wordmark, reducedMotion } from './brand.js';
 import { levelInfo, LEVELS, STAGES } from '../music/curriculum.js';
 import { generate } from '../music/generator.js';
 import { isBlack } from '../music/theory.js';
+import { XP_MAX, PROGRESSION } from '../coach.js';
+import { planSegs } from './results.js';
 
 // Per-stage colour variables: full (--sc/--sce), softened (--scs/--scse) and ink (--sci).
 const STAGE_VARS = STAGES.map((_, i) => {
@@ -20,7 +22,8 @@ function inSentence(t) {
   return t.charAt(0).toLowerCase() + t.slice(1);
 }
 
-const MAX_XP = 19; // per exercise: score/10 + 3 per star (coach.record)
+const MAX_XP = XP_MAX; // per exercise (coach.xpFor)
+const XP_PER_EXERCISE = 10; // about, over a lesson plan (for "about N exercises")
 
 // Wake the audio context and speech on the first touch so UI sounds and Pip's voice work.
 document.addEventListener(
@@ -117,7 +120,8 @@ function renderPath() {
       const dist = Math.min(12, placed ? Math.abs(n - cur) : n);
       const at = `data-x="${p.x}" data-y="${p.y}"`;
       if (state === 'current') {
-        const m = coach.mastery();
+        const ps = coach.planStatus();
+        const m = Math.round((100 * (ps.lesson - 1)) / Math.max(1, ps.total - 1));
         const c = 2 * Math.PI * 58;
         nodes += `<div class="cur-ring" style="left:${p.x - 66}px;top:${p.y - 62}px"><svg width="132" height="132" viewBox="0 0 132 132"><circle cx="66" cy="66" r="58" fill="none" stroke="#DCD2FF" stroke-width="8"/><circle cx="66" cy="66" r="58" fill="none" stroke="var(--brand)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${((c * Math.max(4, m)) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 66 66)"/></svg></div>
           <div class="cur-ring pulse" style="left:${p.x - 66}px;top:${p.y - 62}px"></div><div class="cur-ring pulse p2" style="left:${p.x - 66}px;top:${p.y - 62}px"></div>
@@ -193,12 +197,12 @@ function nodePopHtml(n) {
       <div class="np-actions"><button class="btn btn-primary" data-np="place">${icon('play', 18)} Find my level</button></div>`];
   }
   if (n === cur) {
-    const next = coach.nextActivity();
-    const m = coach.mastery();
+    const ps = coach.planStatus();
+    const next = ps.next;
     const label = next && next.kind === 'intro' ? `Start Level ${n}` : 'Continue';
     const up = next && next.kind !== 'intro' && next.label ? `Up next: ${next.label}` : first;
     return ['cur', `${eb('play', `Level ${n} · you are here`)}<p>${esc(up)}</p>
-      <div class="np-prog">${m}% mastered<span class="bar"><i style="width:${Math.max(3, m)}%"></i></span></div>
+      <div class="np-prog">Lesson ${ps.lesson} of ${ps.total}${planSegs(ps, 'np')}</div>
       <div class="np-actions"><button class="btn btn-white" data-np="start">${icon('play', 20)} ${label}<span class="np-xp" title="Up to ${MAX_XP} XP per exercise">${icon('bolt', 14)}up to ${MAX_XP}</span></button></div>`];
   }
   if (n < cur) {
@@ -293,9 +297,11 @@ function renderHome() {
   const next = placed ? coach.nextActivity() : null;
   if (placed) {
     const concept = (lv.concept || '').split(/(?<=[.!?])\s/)[0];
-    const m = sm.mastery;
-    $('#today-level').innerHTML = `<div class="eyebrow">Up next · Level ${lv.n}</div><h1>${esc(lv.title)}</h1><p>${esc(concept)}</p>
-      <div class="prog">${m}% mastered<div class="bar"><i style="width:${Math.max(3, m)}%"></i></div></div>`;
+    const ps = sm.plan;
+    const upNext = next && next.kind !== 'intro' && next.label ? `Up next: ${next.label}` : concept;
+    $('#today-level').innerHTML = `<div class="eyebrow">Level ${lv.n} · Lesson ${ps.lesson} of ${ps.total}</div><h1>${esc(lv.title)}</h1><p>${esc(upNext)}</p>
+      <div class="prog plan"><span>${ps.lesson}/${ps.total}</span>${planSegs(ps, 'hero-segs')}</div>
+      <div class="hero-foot">${ps.atCheck && !ps.extra ? `${icon('target', 16)} Level check next: ${PROGRESSION.checkPass}% unlocks Level ${Math.min(40, lv.n + 1)}` : `${sm.mastery}% mastery · the level check comes at lesson ${ps.total}`}</div>`;
   } else {
     $('#today-level').innerHTML = `<div class="eyebrow">First step</div><h1>Find your level</h1><p>A few short pieces for both hands. They get harder or easier to match you.</p>`;
   }
@@ -305,7 +311,7 @@ function renderHome() {
   // daily goal: the ring fills and its number counts up from the last value shown
   const left = Math.max(0, sm.dailyGoal - sm.todayXp);
   const prevToday = Math.min(SEEN.today, sm.todayXp);
-  $('#today-goal').innerHTML = `${ring(sm.todayXp, sm.dailyGoal, prevToday)}<div><h3>Daily goal</h3><p>${left ? `${left} XP to go · about ${Math.max(1, Math.ceil(left / 15))} exercise${left > 15 ? 's' : ''}` : 'Goal reached today!'}</p><div class="week">${weekHtml(sm)}</div></div>`;
+  $('#today-goal').innerHTML = `${ring(sm.todayXp, sm.dailyGoal, prevToday)}<div><h3>Daily goal</h3><p>${left ? `${left} XP to go · about ${Math.max(1, Math.ceil(left / XP_PER_EXERCISE))} exercise${left > XP_PER_EXERCISE ? 's' : ''}` : 'Goal reached today!'}</p><div class="week">${weekHtml(sm)}</div></div>`;
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       for (const c of $$('#today-goal .ring-fg')) c.style.strokeDashoffset = c.dataset.to;
@@ -554,6 +560,8 @@ export function showIntro(level) {
   const facts = [];
   if (piece) facts.push([icon('note', 18), piece.key.name], [icon('levels', 18), `${piece.tsName} time`]);
   if (lv.bpm) facts.push([icon('metronome', 18), `${lv.bpm[0]}–${lv.bpm[1]} bpm`]);
+  const ps = coach.s.placed && level === coach.level ? coach.planStatus(level) : null;
+  if (ps) facts.push([icon('levels', 18), `${ps.total} lessons · level check last`]);
   $('#intro-facts').innerHTML = facts.map(([ic, t]) => `<span class="fact-chip">${ic}${esc(t)}</span>`).join('');
   const start = (demoFirst) => {
     // (no tap sound: entering the lesson plays the whoosh)
@@ -587,8 +595,9 @@ screen('map', {
         .map((l) => {
           const placed = coach.s.placed;
           const cls = placed && l.n === coach.level ? 'current' : !placed || l.n > coach.level ? 'locked' : 'done';
-          const m = cls === 'done' ? 100 : cls === 'current' ? coach.mastery() : 0;
-          const tag = cls === 'done' ? ' · done' : cls === 'current' ? ' · you are here' : '';
+          const ps = cls === 'current' ? coach.planStatus() : null;
+          const m = cls === 'done' ? 100 : ps ? Math.round((100 * (ps.lesson - 1)) / Math.max(1, ps.total - 1)) : 0;
+          const tag = cls === 'done' ? ' · done' : ps ? ` · lesson ${ps.lesson} of ${ps.total}` : '';
           const k = cls === 'done' ? levelStars(l.n) : 0;
           const ic = cls === 'done' ? (k ? [0, 1, 2].map((j) => icon(j < k ? 'star' : 'starOff', 16)).join('') : icon('check', 18)) : cls === 'current' ? icon('play', 18) : icon('lock', 16);
           return `<button class="lvl ${cls}" data-level="${l.n}"><span class="lvl-ic">${ic}</span><span class="n">LEVEL ${l.n}${tag.toUpperCase()}</span><b>${esc(l.title)}</b><div class="bar"><i style="width:${m}%"></i></div></button>`;
@@ -728,7 +737,7 @@ screen('progress', {
     const pct = (v) => `${v}%`;
     const cards = [
       ['Level', `${sm.level}`, sm.info.title, sm.level],
-      ['Mastery', `${sm.mastery}%`, `of level ${sm.level}`, sm.mastery, pct],
+      sm.plan ? ['Lesson', `${sm.plan.lesson} of ${sm.plan.total}`, `level ${sm.level} · ${sm.mastery}% mastery`] : ['Mastery', `${sm.mastery}%`, `of level ${sm.level}`, sm.mastery, pct],
       ['Stage', sm.info.stage, `${Math.round((100 * (sm.level - 1)) / 39)}% of the way`],
       ['Avg. score', sm.avg ? `${sm.avg}%` : '–', 'last 20 exercises', sm.avg || null, pct],
       ['Practice time', fmtTime(sm.stats.seconds), 'total'],

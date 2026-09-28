@@ -3,10 +3,62 @@
 import { LEVELS, MAX_LEVEL, levelInfo } from './music/curriculum.js';
 import { noteName, spokenPc } from './music/theory.js';
 import { musicalOffset } from './game/engine.js';
+import { songsForLevel } from './music/songs.js';
+import { generate } from './music/generator.js';
 import * as P from './placement.js';
 
-const STORE = 'maestro.progress.v1';
+const STORE = 'maestro.progress.v1'; // (the key stays; the data inside carries its own version)
+const VERSION = 2;
 export const PASS_SCORE = 75;
+
+// ---- progression --------------------------------------------------------------------------
+// Every level is a lesson plan (lessonPlan): meet the idea, learn pieces step by step in wait
+// mode, play them with the beat, rhythm drills, warm-ups, a song, a look back at the level
+// before, and a level check. Moving up takes working through the plan AND passing the check at
+// tempo. Mastery (0-100, shown as stars on finished levels) grows slowly and only from playing
+// with the beat: wait mode is for learning.
+export const PROGRESSION = {
+  checkPass: 80, // the level check: this score at tempo...
+  checkMaxLoops: 1, // ...with at most this many bars played again
+  minDone: 12, // plan activities completed (not skipped) before the level check
+  retryBelow: 60, // a piece below this at tempo is learned in wait mode, then tried again
+  placementHeadStart: 20, // mastery for a level placement put you in (from level 2)
+  gain: [[90, 10], [80, 7], [70, 4], [60, 2]], // tempo pieces: score -> mastery
+  loss: -2, // tempo piece below the lowest band
+  waitGain: [[90, 1]], // wait mode: next to nothing
+  checkBonus: 15,
+};
+
+// XP pays for work done: the notes played correctly, measured against a typical piece at the
+// level (so a short warm-up earns less than a full piece), worth more when played well. Wait mode
+// earns a third and no star bonus.
+export const XP_RULES = { full: 12, maxWork: 1.25, perStar: 2, waitFactor: 1 / 3 };
+export const XP_MAX = Math.round(XP_RULES.full * XP_RULES.maxWork + 3 * XP_RULES.perStar);
+const typical = new Map();
+export function typicalNotes(level = 1) {
+  const L = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+  if (!typical.has(L)) {
+    let n = 12;
+    try {
+      const c = [1, 2, 3].map((seed) => generate(L, { seed: 9000 + seed }).notes.length).sort((a, b) => a - b);
+      n = Math.max(4, c[1]);
+    } catch {
+      /* keep the default */
+    }
+    typical.set(L, n);
+  }
+  return typical.get(L);
+}
+export function xpFor(result, level = result.level || 1) {
+  const R = XP_RULES;
+  const hits = Math.max(0, result.hits || 0);
+  const work = Math.min(R.maxWork, hits / typicalNotes(level));
+  const q = 0.5 + (0.5 * Math.max(0, Math.min(100, result.score || 0))) / 100;
+  let xp = R.full * work * q;
+  if (result.mode === 'wait') xp *= R.waitFactor;
+  else xp += (result.stars || 0) * R.perStar * Math.min(1, work);
+  return Math.max(1, Math.round(xp));
+}
 
 // Automatic microphone-delay correction. A steady offset in every note (tight spread, both
 // hands agreeing, the same across pieces) is input latency, not the player. The measured
@@ -47,7 +99,8 @@ export const DEFAULT_SETTINGS = {
   prep: true, // "get ready" step before each exercise (js/ui/prep.js)
   autoAdvance: true,
   lookaheadSec: 3,
-  dailyGoal: 50, // XP
+  dailyGoal: 50, // XP (about 10-12 lesson activities)
+  repeatBars: true, // bar loop: a missed bar is played again before moving on (engine LOOP_RULES)
   voice: true,
   sounds: true,
   noteColors: 'auto', // colour-coded notes for beginners
@@ -73,6 +126,50 @@ export function warmupKinds(level) {
   return k;
 }
 
+// The lesson plan of a level: 15 steps. `same` replays the piece of the step before (learn it in
+// wait mode, then play it with the beat). Song steps fall back to a sight-reading piece when no
+// song fits the level.
+export function lessonPlan(level) {
+  const wk = warmupKinds(level);
+  const S = (type, extra = {}) => ({ type, ...extra });
+  return [
+    S('intro'),
+    S('warmup', { warm: wk[0] }),
+    S('learn'),
+    S('play', { same: true }),
+    S('rhythm'),
+    level > 1 ? S('review') : S('practice'),
+    S('learn'),
+    S('play', { same: true }),
+    S('warmup', { warm: wk[1 % wk.length] }),
+    S('song-learn'),
+    S('song-play', { same: true }),
+    S('rhythm'),
+    S('practice'),
+    S('practice'),
+    S('check'),
+  ];
+}
+
+// What each kind of step is for, in Pip's words (shown before it starts).
+const STEP_LINE = {
+  warmup: 'A quick warm-up to wake up your fingers.',
+  learn: 'Wait mode waits for you: find each note, then play it. No rush.',
+  play: 'The same piece again, now with the beat. Keep going even if you slip.',
+  rhythm: 'Only the timing counts here. Any key works.',
+  review: 'A quick look back at the level before, to keep it fresh.',
+  'song-learn': 'A real song! Learn it step by step first.',
+  'song-play': 'Now the song with the beat.',
+  practice: 'A fresh piece at tempo. Read ahead and keep the beat.',
+  check: 'Play it with the beat. Score 80% to move up.',
+  extra: 'A little more practice before the level check.',
+  retry: "Let's learn this one step by step, then try it again.",
+};
+
+function freshPlan() {
+  return { step: 0, done: 0, skipped: 0, seeds: {}, song: null, checks: 0, checkFails: 0, extra: 0 };
+}
+
 export class Coach {
   constructor(storage = globalThis.localStorage) {
     this.storage = storage;
@@ -94,6 +191,8 @@ export class Coach {
       streak: { last: null, days: 0 },
       settings: { ...DEFAULT_SETTINGS },
       placement: null,
+      version: VERSION,
+      plan: {},
     };
   }
 
@@ -103,12 +202,37 @@ export class Coach {
       if (raw) {
         const s = JSON.parse(raw);
         const f = this._fresh();
-        return { ...f, ...s, settings: { ...f.settings, ...(s.settings || {}) }, stats: { ...f.stats, ...(s.stats || {}) } };
+        return Coach.migrate({ ...f, ...s, version: s.version || 1, settings: { ...f.settings, ...(s.settings || {}) }, stats: { ...f.stats, ...(s.stats || {}) } });
       }
     } catch {
       /* corrupted or unavailable storage */
     }
     return this._fresh();
+  }
+
+  // Older saves (version 1) had a 5-slot cycle and a mastery-only level-up. Keep the level, XP,
+  // stars and history; start the current level's lesson plan about as far along as its mastery
+  // was (the old mastery bar filled about twice as fast).
+  static migrate(s) {
+    if (!s.plan || typeof s.plan !== 'object') s.plan = {};
+    for (const k of ['mastery', 'tempo', 'counter', 'fails', 'seenIntro']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
+    if (!Array.isArray(s.history)) s.history = [];
+    if ((s.version || 1) < 2) {
+      const L = s.level;
+      if (s.placed && !s.plan[L]) {
+        const p = freshPlan();
+        const checkAt = lessonPlan(L).length - 1;
+        if (s.seenIntro[L]) {
+          p.step = Math.max(1, Math.min(checkAt - 1, Math.round(((s.mastery[L] || 0) / 100) * checkAt)));
+          p.done = p.step;
+        }
+        s.plan[L] = p;
+      }
+      if (s.retry && s.retry.level !== L) s.retry = null;
+      s.version = VERSION;
+    }
+    for (const [k, p] of Object.entries(s.plan)) s.plan[k] = { ...freshPlan(), ...(p || {}) };
+    return s;
   }
 
   save() {
@@ -211,8 +335,11 @@ export class Coach {
       this.s.placed = true;
       this.s.level = final;
       this.s.placementHistory = [...(this.s.placementHistory || []), { t: Date.now(), experience: p.experience, tests: p.tests, level: final }].slice(-5);
-      // A small head start on a level the student has already shown they can handle.
-      if (final >= 2) this.s.mastery[final] = Math.max(this.s.mastery[final] || 0, 30);
+      // A small head start on a level the student has already shown they can handle; the lesson
+      // plan starts at its beginning.
+      if (final >= 2) this.s.mastery[final] = Math.max(this.s.mastery[final] || 0, PROGRESSION.placementHeadStart);
+      this.s.plan[final] = freshPlan();
+      this.s.retry = null;
       const tests = p.tests;
       this.s.placement = null;
       this.save();
@@ -229,36 +356,152 @@ export class Coach {
     this.s.level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
     this.s.placed = true;
     this.s.placement = null;
+    this.s.plan[this.s.level] = freshPlan();
+    this.s.retry = null;
     this.save();
   }
 
   // ---- lessons ----------------------------------------------------------------------------
+  _plan(level = this.s.level) {
+    if (!this.s.plan[level]) this.s.plan[level] = freshPlan();
+    return this.s.plan[level];
+  }
+
+  // Where the student is in a level's plan: {lesson, total, step, done, steps, checkFails, next}.
+  planStatus(level = this.s.level) {
+    const steps = lessonPlan(level);
+    const p = this._plan(level);
+    const step = Math.min(p.step, steps.length - 1);
+    const next = level === this.s.level ? this.nextActivity() : null;
+    return {
+      level, step, lesson: step + 1, total: steps.length, done: p.done, steps: steps.map((x) => x.type), checkFails: p.checkFails,
+      atCheck: steps[step].type === 'check', extra: !!(next && (next.retry || next.extra)), next,
+      minDone: PROGRESSION.minDone,
+    };
+  }
+
+  // A concept reminder from the level (Pip's line and tips), rotating through the plan.
+  tipFor(level, i = 0) {
+    const lv = levelInfo(level);
+    const pool = [lv.say, ...(lv.tips || [])].filter(Boolean);
+    return pool.length ? pool[i % pool.length] : '';
+  }
+
+  // A song from the library that fits the level (its arrangement is at most this level and not
+  // far below it), preferring ones the student has not had in a lesson yet.
+  lessonSong(level) {
+    const cands = songsForLevel(level).filter((x) => x.recommended.level >= Math.max(1, level - 6));
+    if (!cands.length) return null;
+    const had = new Set(Object.values(this.s.plan).map((p) => p && p.song && p.song.songId).filter(Boolean));
+    const played = new Set(Object.keys(this.s.songs || {}).map((k) => k.split('/')[0]));
+    const pick = cands.find((x) => !had.has(x.id) && !played.has(x.id)) || cands.find((x) => !had.has(x.id)) || cands[0];
+    const a = pick.recommended;
+    const first = a.pickup ? 0 : 1;
+    const last = a.pickup ? a.measures - 1 : a.measures;
+    // A long song: its first eight bars make the lesson.
+    const to = a.measures > 12 ? first + 7 : last;
+    return { songId: pick.id, arrangementId: a.id, title: pick.title, bpm: a.bpm, hands: a.hands, from: first, to, section: to < last };
+  }
+
+  _songActivity(level, song, mode, tf) {
+    const lv = levelInfo(level);
+    const f = Math.max(0, Math.min(1, tf));
+    const want = lv.bpm ? lv.bpm[0] + (lv.bpm[1] - lv.bpm[0]) * f : song.bpm;
+    const tempoScale = Math.max(0.5, Math.min(1, want / song.bpm));
+    const what = song.section ? `${song.title} (first part)` : song.title;
+    return {
+      kind: 'song', level, mode, songId: song.songId, arrangementId: song.arrangementId, hands: 'both', tempoScale, from: song.from, to: song.to, section: !!song.section,
+      label: mode === 'wait' ? `Song: learn ${what}` : `Song: ${what}`,
+    };
+  }
+
   // What should the student do next at their level?
   nextActivity() {
     const level = this.s.level;
-    const lv = levelInfo(level);
-    if (!this.s.seenIntro[level]) return { kind: 'intro', level };
+    const steps = lessonPlan(level);
+    const p = this._plan(level);
+    if (p.step === 0 && !this.s.seenIntro[level]) return { kind: 'intro', level, plan: { level, step: 0 }, lesson: 1, total: steps.length, label: `New idea: ${levelInfo(level).title}` };
+    if (p.step === 0) p.step = 1;
+    const i = Math.min(p.step, steps.length - 1);
+    const st = steps[i];
+    const tf = this.tempoFactor(level);
+    const base = { level, plan: { level, step: i }, lesson: i + 1, total: steps.length, tip: this.tipFor(level, i) };
     if (this.s.retry && this.s.retry.level === level) {
       const r = this.s.retry;
-      return { kind: 'sight', level, mode: r.mode, seed: r.seed, tempoFactor: this.tempoFactor(level), label: r.mode === 'wait' ? 'Learn it step by step' : 'Try it again at tempo' };
+      const learn = r.mode === 'wait';
+      const act = r.song ? this._songActivity(level, r.song, r.mode, tf) : { kind: 'sight', level, mode: r.mode, seed: r.seed, tempoFactor: tf };
+      return {
+        ...base, ...act, retry: true, coachLine: learn ? STEP_LINE.retry : 'Now with the beat again. You know this one!',
+        label: learn ? `Learn it step by step${r.check ? ' (level check piece)' : ''}` : `Try it again at tempo${r.check ? ' (level check piece)' : ''}`,
+      };
     }
-    const i = this.s.counter[level] || 0;
-    const plan = ['warmup', 'sight', 'rhythm', 'sight', 'sight'];
-    const slot = plan[i % plan.length];
-    const tf = this.tempoFactor(level);
-    if (slot === 'warmup') {
-      const kind = warmupKinds(level)[Math.floor(i / plan.length) % warmupKinds(level).length];
-      return { kind, level, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: WARMUP_LABEL[kind] };
+    switch (st.type) {
+      case 'warmup': {
+        const kind = st.warm;
+        return { ...base, kind, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: WARMUP_LABEL[kind], coachLine: STEP_LINE.warmup };
+      }
+      case 'learn':
+        return { ...base, kind: 'sight', mode: 'wait', tempoFactor: tf, label: 'Learn a new piece (wait mode)', coachLine: STEP_LINE.learn };
+      case 'play': {
+        const seed = p.seeds[i - 1];
+        return { ...base, kind: 'sight', mode: 'tempo', seed, tempoFactor: tf, label: seed != null ? 'Play it with the beat' : 'Sight-reading', coachLine: STEP_LINE.play };
+      }
+      case 'rhythm':
+        return { ...base, kind: 'rhythm', mode: 'tempo', tempoFactor: tf, label: 'Rhythm drill (any key)', coachLine: STEP_LINE.rhythm };
+      case 'review': {
+        const prev = level - 1;
+        return { ...base, kind: 'sight', level: prev, mode: 'tempo', tempoFactor: this.tempoFactor(prev), review: true, label: `Review: Level ${prev}`, coachLine: STEP_LINE.review };
+      }
+      case 'song-learn':
+      case 'song-play': {
+        if (!p.song) {
+          p.song = this.lessonSong(level) || { none: true };
+          this.save();
+        }
+        const learn = st.type === 'song-learn';
+        if (p.song.none) {
+          if (learn) return { ...base, kind: 'sight', mode: 'wait', tempoFactor: tf, label: 'Learn a new piece (wait mode)', coachLine: STEP_LINE.learn };
+          const seed = p.seeds[i - 1];
+          return { ...base, kind: 'sight', mode: 'tempo', seed, tempoFactor: tf, label: 'Play it with the beat', coachLine: STEP_LINE.play };
+        }
+        return { ...base, ...this._songActivity(level, p.song, learn ? 'wait' : 'tempo', tf), coachLine: STEP_LINE[st.type] };
+      }
+      case 'check': {
+        if (p.done < PROGRESSION.minDone) {
+          const left = PROGRESSION.minDone - p.done;
+          return { ...base, kind: 'sight', mode: 'tempo', tempoFactor: tf, extra: true, label: `Extra practice (${left} more before the level check)`, coachLine: STEP_LINE.extra };
+        }
+        const next = level < MAX_LEVEL ? `Score ${PROGRESSION.checkPass}% to unlock Level ${level + 1}.` : `Score ${PROGRESSION.checkPass}% to finish the course!`;
+        return { ...base, kind: 'sight', mode: 'tempo', tempoFactor: tf, check: true, label: 'Level check', coachLine: `Play it with the beat. ${next}` };
+      }
+      default:
+        return { ...base, kind: 'sight', mode: 'tempo', tempoFactor: tf, label: 'Practice piece', coachLine: STEP_LINE.practice };
     }
-    if (slot === 'rhythm') return { kind: 'rhythm', level, mode: 'tempo', tempoFactor: tf, label: 'Rhythm drill (any key)' };
-    // Very first piece at a beginner level: learn in wait mode.
-    const firstAtLevel = !this.s.history.some((h) => h.level === level && h.kind === 'sight');
-    const mode = firstAtLevel && level <= 4 ? 'wait' : 'tempo';
-    return { kind: 'sight', level, mode, tempoFactor: tf, label: mode === 'wait' ? 'Sight-reading (learn mode)' : 'Sight-reading' };
   }
 
   markIntroSeen(level) {
     this.s.seenIntro[level] = true;
+    const p = this._plan(level);
+    if (p.step === 0) {
+      p.step = 1;
+      p.done++;
+    }
+    this.save();
+  }
+
+  // "Skip this one": move past a plan step without counting it (the level check can't be
+  // skipped: a new check piece comes instead). A skipped retry is dropped.
+  skip(activity, piece) {
+    const s = this.s;
+    if (!activity || !activity.plan || activity.plan.level !== s.level) return;
+    const p = this._plan(s.level);
+    if (activity.retry) {
+      s.retry = null;
+    } else if (!activity.extra && !activity.check && activity.plan.step === p.step) {
+      if (piece && piece.seed != null) p.seeds[p.step] = piece.seed;
+      p.step = Math.min(p.step + 1, lessonPlan(s.level).length - 1);
+      p.skipped++;
+    }
     this.save();
   }
 
@@ -314,11 +557,11 @@ export class Coach {
       s.streak.days = s.streak.last === yd ? s.streak.days + 1 : 1;
       s.streak.last = d;
     }
-    s.history.push({ t: Date.now(), level, kind: activity.kind, mode: result.mode, score: result.score, bpm: piece.bpm, placement: !!activity.placement });
+    s.history.push({ t: Date.now(), level, kind: activity.kind, mode: result.mode, score: result.score, bpm: piece.bpm, placement: !!activity.placement, loops: result.loopCount || 0, check: !!activity.check });
     if (s.history.length > 500) s.history.splice(0, s.history.length - 500);
 
-    // XP: every exercise earns some, good ones earn more.
-    const xp = Math.max(1, Math.round(result.score / 10)) + (result.stars || 0) * 3;
+    // XP: pays for the work done (see xpFor).
+    const xp = xpFor(result, level);
     s.xp = (s.xp || 0) + xp;
     if (!s.daily || s.daily.date !== d) s.daily = { date: d, xp: 0 };
     const before = s.daily.xp;
@@ -329,22 +572,31 @@ export class Coach {
       this.save();
       return out;
     }
-    // Lesson-plan position advances (unless we're doing a retry).
-    if (!activity.retry && !(s.retry && s.retry.level === level)) s.counter[level] = (s.counter[level] || 0) + 1;
-
     const sc = result.score;
     const tempo = result.mode === 'tempo';
+    const cur = s.level;
+    const inPlan = !!(activity.plan && activity.plan.level === cur);
+    const sightLike = activity.kind === 'sight';
+
+    // Mastery grows slowly, and only from playing with the beat.
+    const G = PROGRESSION;
     let gain = 0;
-    if (tempo) gain = sc >= 90 ? 34 : sc >= 80 ? 25 : sc >= 70 ? 15 : sc >= 60 ? 8 : -5;
-    else gain = sc >= 90 ? 8 : sc >= 70 ? 4 : 0;
-    if (activity.kind !== 'sight') gain = gain > 0 ? Math.round(gain / 2) : 0;
-    if (level === s.level) {
-      s.mastery[level] = Math.max(0, Math.min(100, (s.mastery[level] || 0) + gain));
+    if (tempo) {
+      const band = G.gain.find(([min]) => sc >= min);
+      gain = band ? band[1] : G.loss;
+    } else {
+      const band = G.waitGain.find(([min]) => sc >= min);
+      gain = band ? band[1] : 0;
+    }
+    if (!sightLike || activity.review) gain = gain > 0 ? Math.round(gain / 2) : 0;
+    if (gain > 0 && (result.loopCount || 0) >= 2) gain = Math.round(gain / 2); // not solid yet
+    if (level === cur || inPlan) {
+      s.mastery[cur] = Math.max(0, Math.min(100, (s.mastery[cur] || 0) + gain));
       out.gain = gain;
     }
 
     // Tempo adapts to how comfortable the student is.
-    if (tempo && (activity.kind === 'sight' || activity.kind === 'rhythm')) {
+    if (tempo && level === cur && (activity.kind === 'sight' || activity.kind === 'rhythm')) {
       let tf = this.tempoFactor(level);
       if (sc >= 92) tf += 0.15;
       else if (sc >= 80) tf += 0.07;
@@ -352,32 +604,85 @@ export class Coach {
       s.tempo[level] = Math.max(-0.5, Math.min(1.3, tf));
     }
 
-    // Struggling at tempo -> learn the same piece in wait mode, then retry it at tempo.
-    if (activity.kind === 'sight') {
-      if (s.retry && s.retry.level === level) {
-        if (s.retry.mode === 'wait') s.retry = { level, seed: piece.seed, mode: 'tempo' };
-        else s.retry = null;
-      } else if (tempo && sc < 60) s.retry = { level, seed: piece.seed, mode: 'wait' };
-    }
-
-    if (tempo && activity.kind === 'sight') {
+    if (tempo && sightLike && level === cur) {
       s.fails[level] = sc < 50 ? (s.fails[level] || 0) + 1 : 0;
     }
 
-    if (level === s.level && s.mastery[level] >= 100 && s.level < MAX_LEVEL) {
-      s.level += 1;
+    // The lesson plan.
+    if (inPlan) this._advance(activity, piece, result, out);
+
+    if (out.checkPassed) {
+      s.mastery[cur] = Math.min(100, (s.mastery[cur] || 0) + G.checkBonus);
+      out.gain += G.checkBonus;
       s.retry = null;
-      out.levelUp = true;
-      out.newLevel = s.level;
-    } else if (level === s.level && (s.fails[level] || 0) >= 3 && s.level > 1 && (s.mastery[level] || 0) < 20) {
-      s.fails[level] = 0;
-      s.level -= 1;
+      if (cur < MAX_LEVEL) {
+        s.level = cur + 1;
+        out.levelUp = true;
+        out.newLevel = s.level;
+        if (!s.plan[s.level] || s.plan[s.level].step >= lessonPlan(s.level).length - 1) s.plan[s.level] = freshPlan();
+      } else {
+        // The whole course is done: the last level's plan starts over for more practice.
+        out.courseDone = true;
+        s.plan[cur] = { ...freshPlan(), step: 1, done: 1 };
+      }
+    } else if ((level === cur || inPlan) && (s.fails[cur] || 0) >= 3 && cur > 1 && (s.mastery[cur] || 0) < 20) {
+      s.fails[cur] = 0;
+      s.level = cur - 1;
       s.retry = null;
+      // Back through the easier level's pieces (its introduction is already known).
+      s.plan[s.level] = { ...freshPlan(), step: 1, done: 1 };
       out.levelDown = true;
       out.newLevel = s.level;
     }
+    out.plan = null;
+    if (inPlan) {
+      // Where the student is now (in the new level after a level change).
+      const st = this.planStatus(s.level);
+      out.plan = { level: s.level, lesson: st.lesson, total: st.total, done: st.done, steps: st.steps, next: st.next && st.next.label, nextKind: st.next && st.next.kind, extra: st.extra, atCheck: st.atCheck };
+    }
     this.save();
     return out;
+  }
+
+  // Move through the plan after a lesson activity (record() calls this).
+  _advance(activity, piece, result, out) {
+    const s = this.s;
+    const L = s.level;
+    const p = this._plan(L);
+    const steps = lessonPlan(L);
+    const sc = result.score;
+    const tempo = result.mode === 'tempo';
+    const G = PROGRESSION;
+    const retryable = activity.kind === 'sight' || activity.kind === 'song';
+    const songOf = () => (activity.kind === 'song' ? { songId: activity.songId, arrangementId: activity.arrangementId, title: p.song && p.song.title, bpm: piece && piece.bpm / (activity.tempoScale || 1), from: activity.from, to: activity.to, section: p.song && p.song.section } : null);
+    if (activity.retry) {
+      // Extra practice on a piece that was hard: wait mode, then at tempo again.
+      p.extra++;
+      if (s.retry && s.retry.level === L) {
+        if (s.retry.mode === 'wait') s.retry = { ...s.retry, mode: 'tempo' };
+        else s.retry = null;
+      }
+    } else if (activity.extra) {
+      p.done++;
+      p.extra++;
+    } else if (activity.check && activity.plan.step === p.step) {
+      p.checks++;
+      const loops = result.loopCount || 0;
+      const passed = tempo && sc >= G.checkPass && loops <= G.checkMaxLoops;
+      out.check = { passed, score: sc, need: G.checkPass, loops, tooManyLoops: tempo && sc >= G.checkPass && loops > G.checkMaxLoops };
+      if (passed) out.checkPassed = true;
+      else {
+        p.checkFails++;
+        // Learn the check piece step by step, try it at tempo, then a fresh check.
+        s.retry = { level: L, seed: piece && piece.seed, mode: 'wait', check: true };
+      }
+    } else if (activity.plan.step === p.step && steps[p.step] && steps[p.step].type !== 'check') {
+      if (piece && piece.seed != null) p.seeds[p.step] = piece.seed;
+      p.step = Math.min(p.step + 1, steps.length - 1);
+      p.done++;
+      // Struggling at tempo: learn the same piece in wait mode, then try it again.
+      if (tempo && retryable && !activity.review && sc < G.retryBelow) s.retry = { level: L, seed: piece && piece.seed, mode: 'wait', song: songOf() };
+    }
   }
 
   // What to say after a piece: a headline, one spoken line (Pip) and up to three short tips
@@ -399,6 +704,20 @@ export class Coach {
     const name = (m) => (key ? noteName(m, key) : String(m));
     const sayNote = (m) => (key ? spokenPc(m, key) : String(m));
 
+    // Bars played again (bar loop): name them, kindly.
+    const loops = r.loops || [];
+    if (loops.length) {
+      const bars = (list) => (list.length === 1 ? `Bar ${list[0].bar}` : `Bars ${list.slice(0, -1).map((l) => l.bar).join(', ')} and ${list.at(-1).bar}`);
+      const stuck = loops.filter((l) => l.gaveUp);
+      const learned = loops.filter((l) => l.learned && l.passed);
+      const got = loops.filter((l) => l.passed && !l.learned);
+      if (stuck.length) add(95, `${bars(stuck)} still ${stuck.length > 1 ? 'need' : 'needs'} work. Learn ${stuck.length > 1 ? 'them' : 'it'} in wait mode, then try with the beat.`, `${bars(stuck)} still ${stuck.length > 1 ? 'need' : 'needs'} a little work.`);
+      if (learned.length) add(90, `You learned ${bars(learned).toLowerCase()} step by step. Next time, try ${learned.length > 1 ? 'them' : 'it'} with the beat.`, null);
+      if (got.length) {
+        const most = Math.max(...got.map((l) => l.tries));
+        add(94, `${bars(got)} needed ${most > 2 ? 'a few tries' : 'a second try'}, and you got ${got.length > 1 ? 'them' : 'it'}! Play ${got.length > 1 ? 'them' : 'it'} once more slowly next time.`, `${bars(got)} took practice, and you got ${got.length > 1 ? 'them' : 'it'}!`);
+      }
+    }
     // Key-signature slips: the clearest single fix.
     if (r.sigSlips && r.sigSlips.length) {
       const k = r.sigSlips[0];
@@ -466,7 +785,7 @@ export class Coach {
     const todayXp = s.daily && s.daily.date === d ? s.daily.xp : 0;
     return {
       level: s.level, info: levelInfo(s.level), mastery: this.mastery(), avg, stats: s.stats, streak: s.streak.days, history: s.history, levels: LEVELS,
-      xp: s.xp || 0, todayXp, dailyGoal: s.settings.dailyGoal || 50,
+      xp: s.xp || 0, todayXp, dailyGoal: s.settings.dailyGoal || 50, plan: s.placed ? this.planStatus() : null,
     };
   }
 }

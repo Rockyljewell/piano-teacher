@@ -870,6 +870,34 @@ export class Stage {
     // Noteheads are centred on their moment in time; bar lines sit just before the downbeat.
     const X = (beat) => this.playheadX + (beat - now) * this.pxPerBeat - sp * 0.59;
 
+    // A bar being played again (bar loop): a soft sun band behind it, with its name on top.
+    if (state.loopBar) {
+      const x0 = X(state.loopBar.from) - sp * 2.0;
+      const x1 = X(state.loopBar.to) - sp * 2.0;
+      if (x1 > this.headerW && x0 < w) {
+        ctx.fillStyle = 'rgba(255,194,61,0.20)';
+        roundRect(ctx, x0, 4, x1 - x0, h - 8, 14);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(224,154,11,0.55)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (state.loopBar.label) {
+          ctx.font = `800 ${Math.round(Math.max(12, sp * 1.1))}px Nunito, system-ui, sans-serif`;
+          const tw = ctx.measureText(state.loopBar.label).width + 18;
+          const lx = Math.max(this.headerW + 4, Math.min(w - tw - 4, x0 + 8));
+          ctx.fillStyle = '#FFC23D';
+          roundRect(ctx, lx, 8, tw, Math.round(sp * 1.1) + 10, 10);
+          ctx.fill();
+          ctx.fillStyle = '#2A2346';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(state.loopBar.label, lx + 9, 8 + (Math.round(sp * 1.1) + 10) / 2 + 1);
+        }
+      }
+    }
+
     // staff lines
     ctx.strokeStyle = COLORS.ink;
     ctx.lineWidth = Math.max(1, sp * 0.1);
