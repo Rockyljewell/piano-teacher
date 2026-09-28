@@ -101,10 +101,11 @@ function quantile(a, q) {
 const GHOST_INTERVALS = new Set([12, 19, 24, 28, 31]);
 
 // Bar loop ("repeat bars I miss"), for lessons and practice. In tempo mode a bar the student
-// fails is stopped at its end and played again after a one-bar count-in, until it passes; after
-// a few failed tries the app offers to slow that bar down or learn it in wait mode. In wait mode
-// several wrong tries at one spot start the bar again (the app plays it first). A bar's notes
-// count once they are played correctly; the loops are reported in result().loops.
+// fails is stopped at its end and played again after a short pause and a one-bar count-in, until
+// it passes; after a few failed tries the app offers to slow that bar down or learn it in wait
+// mode. In wait mode several wrong tries at one spot start the bar again (the app plays it
+// first, then counts the student in). A bar's notes count once they are played correctly; the
+// loops are reported in result().loops.
 export const LOOP_RULES = {
   failFraction: 0.5, // a bar fails with at least this share of its notes missed or wrong...
   missRun: 2, // ...or this many missed notes (a chord counts once) in a row
@@ -113,6 +114,7 @@ export const LOOP_RULES = {
   slowTries: 2, // failed slow tries before moving on anyway
   waitWrong: 3, // wait mode: wrong tries at one spot before the bar starts again
   waitRestarts: 2, // wait mode: restarts per bar
+  settle: 1.5, // s: a pause after jumping back, before the count-in starts (at least one beat)
 };
 
 export class Session {
@@ -292,9 +294,10 @@ export class Session {
     this.onEvent({ type: 'tempo', bpm: Math.round(this.bpm), scale: f });
   }
 
-  // Start again at beat `from` (a bar line) after a one-bar count-in: everything from there on is
-  // forgotten, and wrong notes of the try being repeated no longer count.
-  _rewind(from, { lead = true } = {}) {
+  // Start again at beat `from` (a bar line) after a pause and a one-bar count-in (_countIn):
+  // everything from there on is forgotten, and wrong notes of the try being repeated no longer
+  // count.
+  _rewind(from) {
     const t = this.clock();
     for (const n of this.piece.notes) if (n.beat >= from - 1e-6) this.status.delete(n.id);
     const keep = [];
@@ -306,16 +309,25 @@ export class Session {
     }
     this.wrong = keep;
     Object.assign(this.octaveRun, { dir: 0, count: 0, warned: false });
-    const k = lead ? this.beatsPerBar : 1;
-    this.beat = from - k;
+    this._countIn(from);
     this.startT = t - this.beat * this.spb;
     this.lastT = t;
     this.lastBeatInt = Math.floor(this.beat) - 1;
-    this.lead = lead ? { from: from - k, to: from } : null;
     this.barChecked = Math.max(0, this.barOf(from) - 1);
     this.groupIdx = this.groups.findIndex((g) => g.beat >= from - 1e-6);
     if (this.groupIdx < 0) this.groupIdx = this.groups.length;
     this.rewinds++;
+  }
+
+  // The playhead before beat `from` (a bar line): a short pause (LOOP_RULES.settle) to take in the
+  // bar, then a one-bar count-in ('beat' events with .lead, then .go on the bar line). Notes
+  // played before the count-in ends are ignored.
+  _countIn(from) {
+    const k = this.beatsPerBar;
+    const rest = Math.max(1, Math.round(LOOP_RULES.settle / this.spb));
+    this.beat = from - k - rest;
+    this.lead = { rest: from - k - rest, from: from - k, to: from };
+    this.leadEnd = null;
   }
 
   // Tempo mode: judge each bar once its notes are decided and the playhead has left it.
@@ -387,7 +399,7 @@ export class Session {
       this.onEvent({ type: 'loop', bar: o.bar, attempt: rec.fails + 1, slowed: true, mode: 'tempo' });
     } else if (choice === 'learn') {
       rec.learned = true;
-      this._rewind(from, { lead: false });
+      this._rewind(from);
       this.barWait = { bar: o.bar, from, to: o.bar * this.beatsPerBar };
       this.replays++;
       this.onEvent({ type: 'loop', bar: o.bar, attempt: rec.fails + 1, learning: true, mode: 'wait' });
@@ -437,7 +449,7 @@ export class Session {
     for (const n of this.piece.notes) if (n.beat >= from - 1e-6 && n.beat <= g.beat + 1e-6) this.status.delete(n.id);
     for (const i of [...this.waitLog.keys()]) if (i !== stuck && this.groups[i] && this.groups[i].beat >= from - 1e-6 && this.groups[i].beat <= g.beat + 1e-6) this.waitLog.delete(i);
     this.groupIdx = this.groups.findIndex((x) => x.beat >= from - 1e-6);
-    this.beat = Math.max(-1, from - 1);
+    this._countIn(from);
     this.lastT = t;
     this.startT = t - this.beat * this.spb;
     this.lastBeatInt = Math.floor(this.beat) - 1;
@@ -511,6 +523,7 @@ export class Session {
         if (this.held) return;
       }
     } else {
+      if (this.lead && this.beat >= this.lead.to) this.lead = null;
       let next = this.beat + dt / this.spb;
       // Skip over groups already satisfied.
       while (this.groupIdx < this.groups.length && this._groupDone(this.groups[this.groupIdx])) this.groupIdx++;
@@ -553,7 +566,8 @@ export class Session {
       this.lastBeatInt = bi;
       const ev = { type: 'beat', beat: bi };
       // The count-in before a bar played again: how many beats to go, then "go".
-      if (this.lead && bi >= Math.floor(this.lead.from) && bi < this.lead.to) {
+      if (this.lead && bi < Math.floor(this.lead.from)) ev.rest = true; // (the pause before it)
+      else if (this.lead && bi >= Math.floor(this.lead.from) && bi < this.lead.to) {
         ev.lead = Math.round(this.lead.to - bi);
         this.leadEnd = this.lead.to;
       } else if (this.leadEnd != null && bi >= this.leadEnd) {
@@ -593,6 +607,7 @@ export class Session {
     const out = [];
     if (this.held) return out;
     if (this.playMode === 'wait') {
+      if (this.lead && this.beat < this.lead.to - 0.5) return out; // (counting in: not yet)
       const g = this.waitGroup;
       if (g) for (const n of g.notes) if (!this.status.has(n.id)) out.push(n);
       return out;
