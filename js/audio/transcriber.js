@@ -249,6 +249,8 @@ export class Transcriber {
     this.pianoSeen = []; // times of notes that prove the piano is being played (_pianoKnown)
     this.pianoAll = [];
     this.pianoOpen = false;
+    this.pianoProven = -1e9; // when the gate was last open
+    this.pianoReopen = opts.pianoReopen ?? 30; // s (see _pianoKnown)
     this.fastAt = new Map(); // midi -> attack time of the last note the fast path emitted
     this.stats = { emitted: 0, rejected: 0, restrikes: 0 };
     this._tmp = { amp: new Float64Array(40), bin: new Int32Array(40) };
@@ -1226,7 +1228,8 @@ export class Transcriber {
 
   // The piano has been heard for sure: several notes that the long-window path was confident
   // about, or that were due in the lesson. (Fast-path guesses never count, or one
-  // false note in a noisy room could open the door to the next.)
+  // false note in a noisy room could open the door to the next.) Tempo-independent: a pause
+  // closes it, but once proven the first sure note after the pause re-opens it (pianoReopen).
   _pianoKnown() {
     const now = this.pos / this.sr;
     const S = this.pianoSeen;
@@ -1242,7 +1245,14 @@ export class Transcriber {
         this.pianoOpen = false;
         S.length = 0;
       }
-    } else this.pianoOpen = S.filter((v) => v >= now - 15).length >= 6;
+    } else {
+      this.pianoOpen = S.filter((v) => v >= now - 15).length >= 6;
+      // ... but a student who pauses between phrases (a beginner does, every few notes) is not
+      // the room: once proven, the first sure note after a pause of up to pianoReopen s re-opens
+      // it (the next notes of the phrase are fast again)
+      if (!this.pianoOpen && S.length && now - S[S.length - 1] <= 1.5 && now - this.pianoProven <= this.pianoReopen) this.pianoOpen = true;
+    }
+    if (this.pianoOpen) this.pianoProven = now;
     return this.pianoOpen;
   }
 

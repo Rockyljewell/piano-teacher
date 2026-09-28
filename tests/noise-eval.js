@@ -3,7 +3,8 @@
 //   node tests/noise-eval.js            full report (uses all CPU cores)
 //   node tests/noise-eval.js noise      only the noise-only false-positive table
 //   node tests/noise-eval.js piano      only the piano recall/precision tables
-//   QUICK=1 node tests/noise-eval.js    shorter clips
+//   QUICK=1 node tests/noise-eval.js    shorter clips      THREADS=n  worker threads (default: all cores, <= 8)
+//   GAIN_DB=-25 FLOOR_DB=-80            everything 25 dB quieter, over a -80 dBFS mic noise floor
 //
 // Part 1 - false note-ons per minute on noise-only audio, per noise type, at a realistic and a
 //          loud level (levels are relative to a mezzo-forte piano, see noise-sim.js LEVELS).
@@ -29,6 +30,7 @@ const SR = 48000;
 // the practice engine does with setExpected) - a score-informed run.
 export function transcribe(audio, sr, opts = {}, { calibTo = 0.4, chunk = 128, expect = null } = {}) {
   const events = [];
+  audio = quieter(audio, sr);
   const tr = new Transcriber(sr, {
     ...opts,
     onNoteOn: (midi, t, vel, info) => events.push({ midi, t, vel, conf: info && info.confidence != null ? info.confidence : 1, restrike: !!(info && info.restrike) }),
@@ -51,6 +53,19 @@ export function transcribe(audio, sr, opts = {}, { calibTo = 0.4, chunk = 128, e
   events.speed = audio.length / sr / (ms / 1000);
   events.tr = tr;
   return events;
+}
+
+// GAIN_DB=-25 [FLOOR_DB=-80]: every clip that quieter (a quiet mic / piano), plus a steady mic
+// noise floor at that absolute level (dBFS RMS), as tests/bench-listen.js does.
+const GAIN_DB = Number(process.env.GAIN_DB || 0);
+const FLOOR_DB = process.env.FLOOR_DB ? Number(process.env.FLOOR_DB) : null;
+function quieter(audio, sr) {
+  if (!GAIN_DB && FLOOR_DB == null) return audio;
+  const x = Float32Array.from(audio);
+  const g = gainDb(GAIN_DB);
+  for (let i = 0; i < x.length; i++) x[i] *= g;
+  if (FLOOR_DB != null) mixInto(x, roomTone(x.length / sr, { sr, seed: 191 }), gainDb(FLOOR_DB), 0);
+  return x;
 }
 
 export function score(notes, events, tol = 0.08) {
@@ -280,7 +295,7 @@ function runJob(job) {
   throw new Error('unknown job ' + job.kind);
 }
 
-export async function runParallel(jobs, threads = Math.max(1, Math.min(os.cpus().length, 8))) {
+export async function runParallel(jobs, threads = Number(process.env.THREADS) || Math.max(1, Math.min(os.cpus().length, 8))) {
   const results = new Array(jobs.length);
   let next = 0;
   const file = fileURLToPath(import.meta.url);
