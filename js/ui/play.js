@@ -697,9 +697,10 @@ export function loop() {
     if (waiting && s.waitGroup) for (const n of s.waitGroup.notes) waitEvents.add(n.eventId);
     const li = s.loopInfo;
     const now = audio.now();
-    const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5).map((w) => ({ ...w, age: now - w.t }));
+    const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5 && !(w.beat < s.clearBefore)).map((w) => ({ ...w, age: now - w.t }));
     stage.draw({
       nowBeat: s.beat,
+      hideBefore: s.clearBefore,
       status: s.status,
       hints,
       heard,

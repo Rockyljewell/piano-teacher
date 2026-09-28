@@ -948,6 +948,7 @@ export class Stage {
     const drawn = [];
     for (const e of p.events) {
       if (e.beat + e.dur < visLo || e.beat > visHi) continue;
+      if (e.beat < state.hideBefore - 1e-6) continue; // (cleared before a bar played again)
       const x = X(e.beat) + (e.measureRest ? ((p.beatsPer / 2) * this.pxPerBeat - sp * 0.6) : 0);
       if (e.rest) this._drawRest(e, x);
       else drawn.push(this._drawChord(state, e, x));
@@ -1352,6 +1353,7 @@ export class Stage {
     const key = p.key;
     for (const n of p.notes) {
       if (n.beat > now + lookBeats || n.beat + n.dur < now - 0.5) continue;
+      if (n.beat < state.hideBefore - 1e-6) continue; // (cleared before a bar played again)
       const k = this.keys.get(n.midi);
       if (!k) continue;
       const y1 = bottom - (n.beat - now) * pxb;

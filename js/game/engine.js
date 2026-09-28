@@ -101,8 +101,8 @@ function quantile(a, q) {
 const GHOST_INTERVALS = new Set([12, 19, 24, 28, 31]);
 
 // Bar loop ("repeat bars I miss"), for lessons and practice. In tempo mode a bar the student
-// fails is stopped at its end and played again after a short pause and a one-bar count-in, until
-// it passes; after a few failed tries the app offers to slow that bar down or learn it in wait
+// fails is stopped at its end and played again after a lead-in (about 4 s, ending with a one-bar
+// count-in; the notes before the bar are cleared away), until it passes; after a few failed tries the app offers to slow that bar down or learn it in wait
 // mode. In wait mode several wrong tries at one spot start the bar again (the app plays it
 // first, then counts the student in). A bar's notes count once they are played correctly; the
 // loops are reported in result().loops.
@@ -114,7 +114,7 @@ export const LOOP_RULES = {
   slowTries: 2, // failed slow tries before moving on anyway
   waitWrong: 3, // wait mode: wrong tries at one spot before the bar starts again
   waitRestarts: 2, // wait mode: restarts per bar
-  settle: 1.5, // s: a pause after jumping back, before the count-in starts (at least one beat)
+  leadIn: 4, // s: the playhead jumps back this far before a bar played again (at least a bar)
 };
 
 export class Session {
@@ -140,6 +140,7 @@ export class Session {
     this.barNotes = new Map();
     this.activeLoop = null; // the bar being played again (tempo mode)
     this.leadEnd = null;
+    this.clearBefore = null; // notes before this beat are no longer shown (a bar played again)
     this.countIn = countInBeats ?? piece.beatsPer;
     this.onEvent = onEvent || (() => {});
     this.level = level ?? piece.level ?? 1;
@@ -319,15 +320,17 @@ export class Session {
     this.rewinds++;
   }
 
-  // The playhead before beat `from` (a bar line): a short pause (LOOP_RULES.settle) to take in the
-  // bar, then a one-bar count-in ('beat' events with .lead, then .go on the bar line). Notes
-  // played before the count-in ends are ignored.
+  // The playhead jumps back to about LOOP_RULES.leadIn seconds before beat `from` (a bar line):
+  // the notes before it are cleared away (clearBefore), so the bar comes closer through an empty
+  // stretch - quiet at first ('beat' events with .rest), then a one-bar count-in (.lead, then .go
+  // on the bar line). Notes played before the count-in ends are ignored.
   _countIn(from) {
     const k = this.beatsPerBar;
-    const rest = Math.max(1, Math.round(LOOP_RULES.settle / this.spb));
-    this.beat = from - k - rest;
-    this.lead = { rest: from - k - rest, from: from - k, to: from };
+    const total = Math.max(k, Math.round(LOOP_RULES.leadIn / this.spb));
+    this.beat = from - total;
+    this.lead = { rest: from - total, from: from - k, to: from };
     this.leadEnd = null;
+    this.clearBefore = from;
   }
 
   // Tempo mode: judge each bar once its notes are decided and the playhead has left it.
