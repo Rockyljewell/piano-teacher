@@ -132,6 +132,34 @@ function cueHtml(dir) {
   return `<span class="cue ${cls}"><span class="arrow">${icon(ic, 17)}</span>${text}</span>`;
 }
 
+// The level's lesson plan as a row of segments: done, the next one, and the level check (flag).
+export function planSegs(plan, cls = '') {
+  let segs = '';
+  for (let i = 0; i < plan.total; i++) {
+    const kind = plan.steps ? plan.steps[i] : '';
+    const state = i < plan.lesson - 1 ? 'done' : i === plan.lesson - 1 ? 'cur' : '';
+    segs += `<i class="${state}${kind === 'check' ? ' check' : ''}" title="${esc(kind || '')}"></i>`;
+  }
+  return `<div class="segs plan-segs ${cls}" aria-hidden="true">${segs}</div>`;
+}
+function planHtml(plan, act = {}) {
+  const next = plan.next ? `Next: <b>${esc(plan.next)}</b>` : '';
+  const what = act.retry || act.extra || act.check ? 'Extra practice done' : act.lesson ? `Lesson ${act.lesson} of ${plan.total} done` : `Lesson ${plan.lesson} of ${plan.total}`;
+  return `<div class="plan-prog"><div class="pp-top"><span class="pp-n">${what}</span><span class="pp-next">${next}</span></div>${planSegs(plan)}</div>`;
+}
+
+// Bars played again during the piece (bar loop).
+function loopsHtml(result) {
+  const loops = result.loops || [];
+  if (!loops.length) return '';
+  const chip = (l) => {
+    const how = l.gaveUp ? 'next time' : l.learned ? 'step by step' : l.slowed ? `${l.tries} tries · slower` : `${l.tries} tries`;
+    const ic = l.gaveUp ? icon('retry', 16) : icon('check', 16);
+    return `<span class="loop-chip${l.gaveUp ? ' open' : ''}">${ic}<b>Bar ${l.bar}</b>${esc(how)}</span>`;
+  };
+  return `<span class="rl-hd">${icon('retry', 18)} Bars you practised</span>${loops.map(chip).join('')}`;
+}
+
 export function finishPiece(result) {
   const act = S.activity;
   const piece = S.piece;
@@ -140,10 +168,13 @@ export function finishPiece(result) {
   clearTimers();
   stopConfetti();
   const out = coach.record(act, piece, result, seconds);
+  const lessonSong = act.kind === 'song' && !!act.plan;
   // A song's best score before this take (for the "New best!" tag).
-  const prevSong = act.kind === 'song' ? coach.songRecord(act.songId, act.arrangementId) : null;
+  // (a lesson that plays only the first part of a song doesn't count as the song's best)
+  const wholeSong = act.kind === 'song' && !act.section;
+  const prevSong = wholeSong ? coach.songRecord(act.songId, act.arrangementId) : null;
   const prevBest = prevSong ? prevSong.best : null;
-  if (act.kind === 'song') coach.recordSong(act.songId, act.arrangementId, result);
+  if (wholeSong) coach.recordSong(act.songId, act.arrangementId, result);
   const res = $('#results');
   res.classList.remove('placement-card', 'skip', 'anim');
 
@@ -169,6 +200,7 @@ export function finishPiece(result) {
   $('#res-offset-d').textContent = off.d;
   $('#tile-offset').className = `tile t-off ${off.cls}`;
   $('#res-histo').innerHTML = histogramHtml(result);
+  $('#res-loops').innerHTML = act.placement ? '' : loopsHtml(result);
   $('#res-histo').closest('.histo-card').classList.toggle('hidden', !tempo || !result.errs.length);
   $('#res-timing-summary').textContent = result.timingSummary || '';
   // What to fix: the bar with most slips, notes missed most, the weaker hand, rushing or
@@ -202,7 +234,7 @@ export function finishPiece(result) {
   const lvlEl = $('#res-level');
   const lvNow = levelInfo(act.level ?? coach.level);
   let title = headline(result.score);
-  let subtitle = act.kind === 'song' ? `${piece.title} · ${piece.subtitle || ''}` : act.placement ? 'Placement test' : `${act.label || 'Exercise'} · Level ${lvNow.n}`;
+  let subtitle = act.kind === 'song' && !lessonSong ? `${piece.title} · ${piece.subtitle || ''}` : act.placement ? 'Placement test' : `${act.label || 'Exercise'} · Level ${lvNow.n}`;
   let nextAct = null;
   let nextLabel = 'Next';
   let line = '';
@@ -234,7 +266,7 @@ export function finishPiece(result) {
       nextLabel = 'Next test';
       pose = d === 'harder' ? 'cheer' : d === 'easier' ? 'hello' : 'listen';
     }
-  } else if (act.kind === 'song' || act.kind === 'import') {
+  } else if ((act.kind === 'song' && !lessonSong) || act.kind === 'import') {
     const rec = act.kind === 'song' ? coach.songRecord(act.songId, act.arrangementId) : null;
     lvlEl.innerHTML = rec ? `<div class="mastery">Best: <b>${rec.best}%</b> ${[0, 1, 2].map((i) => icon(i < rec.stars ? 'star' : 'starOff', 20)).join('')}${prevBest != null && result.score > prevBest ? `<span class="was">was ${prevBest}%</span>` : ''}</div>` : '';
     nextFn = () => {
@@ -251,21 +283,34 @@ export function finishPiece(result) {
     line = rv.speak;
   } else {
     const lv = levelInfo(coach.level);
+    const plan = out.plan;
     if (out.levelUp) {
-      lvlEl.innerHTML = `<span class="levelup">${icon('trophy', 26)} Level up! Welcome to <b>Level ${lv.n}: ${esc(lv.title)}</b></span>`;
-      line = `Level up! Welcome to level ${lv.n}, ${lv.title}.`;
+      lvlEl.innerHTML = `<span class="levelup">${icon('trophy', 26)} Level check passed! Welcome to <b>Level ${lv.n}: ${esc(lv.title)}</b></span>`;
+      line = `Level check passed! Welcome to level ${lv.n}, ${lv.title}.`;
       title = 'Level up!';
+      pose = 'cheer';
+      later(() => sfx('levelup'), 900);
+    } else if (out.courseDone) {
+      lvlEl.innerHTML = `<span class="levelup">${icon('crown', 26)} You finished all ${lv.n} levels! Keep playing to stay sharp.</span>`;
+      line = 'You finished the whole course. Amazing!';
+      title = 'Course complete!';
       pose = 'cheer';
       later(() => sfx('levelup'), 900);
     } else if (out.levelDown) {
       lvlEl.innerHTML = `<div class="mastery">Let's strengthen the basics: back to <b>Level ${lv.n}: ${esc(lv.title)}</b></div>`;
       line = `Let's strengthen the basics with level ${lv.n}.`;
     } else {
-      // The bar grows from where it was to where it is now (transform only).
+      // Where the student is in the level's lesson plan, what's next, and mastery (which grows
+      // from where it was to where it is now: transform only).
       const now = coach.mastery();
       const was = Math.max(0, Math.min(now, now - out.gain));
-      lvlEl.innerHTML = `<div class="mastery">Level ${lv.n} mastery <b>${out.gain >= 0 ? '+' : ''}${out.gain}</b><span class="bar grow"><i style="transform:scaleX(${Math.max(0.03, was / 100)})" data-to="${Math.max(0.03, now / 100)}"></i></span><span>${now}%</span></div>`;
-      line = rv.speak;
+      const check = out.check && !out.check.passed
+        ? `<div class="check-miss">${icon('target', 20)}<span>Level check: <b>${out.check.score}%</b>${out.check.tooManyLoops ? ` with ${out.check.loops} bars played again` : ''}. You need ${out.check.need}%${out.check.tooManyLoops ? ' with at most one bar repeated' : ''}. Let's practise it and try again.</span></div>`
+        : '';
+      lvlEl.innerHTML = `${check}${plan ? planHtml(plan, act) : ''}<div class="mastery">Level ${lv.n} mastery <b>${out.gain >= 0 ? '+' : ''}${out.gain}</b><span class="bar grow"><i style="transform:scaleX(${Math.max(0.03, was / 100)})" data-to="${Math.max(0.03, now / 100)}"></i></span><span>${now}%</span></div>`;
+      if (out.check && !out.check.passed) title = 'So close!';
+      line = out.check && !out.check.passed ? `${result.score} percent. So close! Let's practise that piece, then try the check again.` : rv.speak;
+      if (plan) subtitle = `${act.label || 'Exercise'} · Level ${lvNow.n} · Lesson ${act.lesson || plan.lesson} of ${plan.total}`;
     }
     nextAct = coach.nextActivity();
   }

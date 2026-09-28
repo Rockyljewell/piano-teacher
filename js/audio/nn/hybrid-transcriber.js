@@ -11,6 +11,11 @@
 //     reported is reported as soon as the evidence is enough (often long before the DSP would
 //     have: fast passages, the bass, the upper note of an octave), or dropped after a deadline.
 //   - Onsets and note-offs come from the DSP.
+//   - Level: the DSP is level-invariant (its thresholds are relative to the calibrated room and
+//     the piano's own level), the network is not. Once both engines have heard the piano, a
+//     quiet one (an iPad on the music stand of a softly played upright: ~25 dB below the
+//     benchmark) is raised at the network's input to the level the listener was tuned at
+//     (_nnGain; the first real recording, tests/real-recording.test.js).
 // Costs both engines' CPU. Until the network's weights are in (fetched when this module loads) the
 // hybrid is exactly the DSP engine; the network joins by itself once they arrive. dropNN() (the
 // listener calls it when the device is too slow) returns to the DSP alone for good.
@@ -50,6 +55,11 @@ export class Transcriber {
     this.opts = opts;
     this.set = { expected: null, range: null, lohi: null, strictness: null, noisyRoom: null, a4: null, sensitivity: null };
     this.nnOff = opts.engine === 'dsp';
+    // level normalisation of the network's input (_nnGain): the DSP's piano level (dB) the
+    // listener was tuned at (the benchmark's mezzo-forte reads -22..-28), and the most it adds
+    this.levelRef = opts.levelRef !== undefined ? opts.levelRef : ENV.HYBRID_LEVEL_REF === 'off' ? null : num(ENV.HYBRID_LEVEL_REF, -28);
+    this.maxGain = opts.maxGain ?? num(ENV.HYBRID_MAX_GAIN, 30);
+    this.agreed = []; // times of notes both engines heard (_dspNote)
     this.dsp = new DspTranscriber(sampleRate, {
       ...opts,
       onNoteOn: (midi, t, vel, info) => {
@@ -152,6 +162,12 @@ export class Transcriber {
 
   _dspNote(midi, t, vel, info = {}) {
     this.arb._trim(this.at);
+    // a note of the piano for sure: the DSP's long window is sure of it and the network heard
+    // the attack too (the level normalisation trusts the piano's level only then, _nnGain)
+    if (this.nn && this.nn.engine === 'nn' && (info.confidence ?? 0) >= 0.85 && info.path === 'long' && this.arb._pmax(midi - 21, t - 0.03, Math.min(this.at, t + 0.15)) >= 0.5) {
+      this.agreed.push(this.at);
+      if (this.agreed.length > 16) this.agreed.shift();
+    }
     if (!this.lesson && this.nn && this.nn.engine === 'nn') {
       const before = this.arb.dropped.length;
       this.arb.dsp(midi, t, vel, info, this.at);
@@ -201,6 +217,19 @@ export class Transcriber {
     this.pend = keep;
   }
 
+  // The network's input gain (nn-transcriber.js setInputGain): raise a quiet piano to the level
+  // the listener was tuned at. The piano's level is the DSP's (upper quartile of its last
+  // confident notes, not forgotten in pauses); until it is known, none. At most maxGain dB.
+  _nnGain() {
+    const pl = this.dsp.pianoLevelBase;
+    const A = this.agreed;
+    while (A.length && A[0] < this.at - 30) A.shift();
+    // (a note the DSP was sure of in talking or a TV must not turn the room up: only a piano
+    // both engines have heard - 3 notes within 30 s - counts)
+    if (pl == null || A.length < 3) return 0;
+    return Math.min(this.maxGain, Math.max(0, this.levelRef - pl));
+  }
+
   get pos() {
     return this.dsp.pos;
   }
@@ -240,6 +269,7 @@ export class Transcriber {
     this.dsp.push(samples, frame0);
     const nn = this.nn;
     if (nn && nn.engine === 'nn') {
+      if (this.levelRef != null) nn.setInputGain(this._nnGain());
       nn.push(samples, frame0);
       // every new network frame: the arbiter watches the probabilities
       if (nn.frame !== this.nnFrame && nn.frame >= nn.dec.warm) {

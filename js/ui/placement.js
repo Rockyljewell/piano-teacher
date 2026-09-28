@@ -97,7 +97,7 @@ screen('reveal', {
       for (let n = st.from; n <= st.to; n++, k++) dots += `<i class="${n < lv.n ? 'got' : n === lv.n ? 'here' : ''}" style="--k:${k}">${n === lv.n ? n : ''}</i>`;
       return `<div class="grp"><div class="dots">${dots}</div><small>${esc(st.name)}</small></div>`;
     }).join('');
-    $('#reveal-range').textContent = lv.n > 1 ? `Levels 1–${lv.n - 1} are unlocked too: revisit them any time from All levels.` : 'We start with the very first notes. You will move up quickly!';
+    $('#reveal-range').textContent = lv.n > 1 ? `Levels 1–${lv.n - 1} are unlocked too: revisit them any time from All levels.` : 'We start with the very first notes, one short lesson at a time.';
     $('#btn-reveal-go').innerHTML = `${icon('play', 26)} Start Level ${lv.n}`;
     $('#btn-reveal-go').onclick = () => {
       sfx('tap');

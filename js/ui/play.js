@@ -20,7 +20,7 @@ export function gradeColor(grade, errMs = 0) {
 
 export function buildPiece(act) {
   if (act.piece) return act.piece;
-  if (act.kind === 'song') return songPiece(act.songId, act.arrangementId, { hands: act.hands || 'both', tempoScale: act.tempoScale || 1 });
+  if (act.kind === 'song') return songPiece(act.songId, act.arrangementId, { hands: act.hands || 'both', tempoScale: act.tempoScale || 1, from: act.from, to: act.to });
   const opts = { kind: act.kind, seed: act.seed, measures: act.measures, tempoFactor: act.tempoFactor, bpm: act.bpm, bothHands: act.bothHands };
   return act.kind === 'rhythm' ? generateRhythm(act.level, opts) : generate(act.level, opts);
 }
@@ -56,9 +56,16 @@ export function stageOptions(level) {
 
 function modeLabel(act) {
   if (act.placement) return 'Placement';
+  if (act.plan && act.lesson) return `Lesson ${act.lesson} of ${act.total}`;
   if (act.kind === 'song') return 'Song';
   if (act.kind === 'import') return 'Imported';
   return act.free ? 'Practice' : 'Lesson';
+}
+
+// Bars the student misses are played again (engine LOOP_RULES) in lessons and practice: not in
+// placement tests, the listening test or while the app plays a demo.
+export function wantsBarLoop(act) {
+  return coach.settings.repeatBars !== false && !!act && !act.placement && !act.listenTest;
 }
 
 function cueHtml(dir) {
@@ -91,11 +98,11 @@ export function play(piece, act) {
   requestAnimationFrame(() => resizeStage());
   const lv = levelInfo(level);
   let title = act.label || piece.title;
-  if (act.kind === 'song') title = piece.title;
+  if (act.kind === 'song' && !act.plan) title = piece.title;
   $('#hud-title').textContent = act.placement ? 'Find my level' : title;
   const bits = act.placement ? ['Both hands', piece.key.name, piece.tsName] : [modeLabel(act)];
   if (!act.placement) {
-    if (act.kind === 'song') bits.push(piece.subtitle || '', piece.composer || '');
+    if (act.kind === 'song' && !act.plan) bits.push(piece.subtitle || '', piece.composer || '');
     else bits.push(`Level ${lv.n} · ${lv.title}`);
     bits.push(piece.key.name, piece.tsName);
   }
@@ -107,10 +114,17 @@ export function play(piece, act) {
     prog.innerHTML = placementProgress(act);
   } else prog.classList.add('hidden');
   const mode = act.mode || 'tempo';
+  hideCoachCard(true);
   if (wantsPrep(piece, act)) {
     enterPrep(piece, act, mode);
     loop();
-  } else startSession(mode);
+  } else {
+    startSession(mode);
+    // No "get ready" step: Pip's lesson tip shows during the count-in instead.
+    if (act.plan && !act.demoFirst && (act.coachLine || act.tip)) {
+      showCoachCard({ eyebrow: modeLabel(act), title: act.label || '', text: [act.coachLine, act.tip].filter(Boolean).join(' '), pose: 'hello', until: 'go' });
+    }
+  }
   if (act.placement) {
     const line = S.placementCue === 'harder' ? "Nice! Here's a trickier one." : S.placementCue === 'easier' ? "Let's try an easier one." : 'Play what you can. Both hands!';
     flash(line, 'info', 3200);
@@ -124,6 +138,7 @@ function resizeStage() {
   stage.resize();
   placeStrip();
   placePrep();
+  placeCoachCard();
 }
 app.stageLayout = () => stage.L;
 
@@ -137,9 +152,11 @@ function placeStrip() {
   else $('#countdown').style.top = '';
 }
 
-export function startSession(mode) {
+export function startSession(mode, { demo = false } = {}) {
   const piece = S.piece;
   cancelPrep();
+  if (!demo) hideCoachCard(true);
+  stopBarDemo();
   if (S.session) S.session.finished = true;
   S.combo = 0;
   S.bestCombo = 0;
@@ -172,6 +189,7 @@ export function startSession(mode) {
     clock: () => audio.now(),
     latency: coach.settings.latencyMs / 1000,
     onEvent: onSessionEvent,
+    barLoop: !demo && wantsBarLoop(S.activity),
   });
   S.session = session;
   S.startedAt = audio.now();
@@ -192,14 +210,15 @@ function scheduleTicks() {
   const beatUnit = piece.ts.compound ? 1.5 : 1;
   for (let k = Math.ceil(s.beat / beatUnit - 1e-6); k * beatUnit < s.beat + 1.5; k++) {
     const b = k * beatUnit;
-    if (b >= 0 && (met !== 'always' || s.mode !== 'tempo')) continue;
+    const lead = s.lead && b >= s.lead.from - 1e-6 && b < s.lead.to - 1e-6; // count-in before a bar again
+    if (b >= 0 && !lead && (met !== 'always' || s.playMode !== 'tempo')) continue;
     if (b >= piece.totalBeats) continue;
     const t = s.timeOfBeat(b);
     if (t < now - 0.01 || t > now + 0.2) continue;
     const key = b.toFixed(3);
     if (S.scheduledTicks.has(key)) continue;
     S.scheduledTicks.add(key);
-    const inBar = (((b % piece.beatsPer) + piece.beatsPer) % piece.beatsPer) < 1e-6;
+    const inBar = lead ? Math.abs(b - s.lead.from) < 1e-6 : (((b % piece.beatsPer) + piece.beatsPer) % piece.beatsPer) < 1e-6;
     audio.synth.tick(Math.max(audio.ctx.currentTime, t - audio.now() + audio.ctx.currentTime), inBar);
   }
 }
@@ -227,7 +246,7 @@ function onSessionEvent(ev) {
       comboFlash(S.combo);
       stage.sweep();
     }
-    if (S.session.mode === 'tempo') {
+    if (S.session.playMode === 'tempo') {
       S.timingRecent.push({ errMs: ev.errMs, t: performance.now(), color: col });
       if (S.timingRecent.length > 12) S.timingRecent.shift();
       S.timingLast = ev.grade === 'perfect' ? `on time (${ev.errMs >= 0 ? '+' : ''}${ev.errMs} ms)` : `${Math.abs(ev.errMs)} ms ${ev.errMs < 0 ? 'early' : 'late'}`;
@@ -255,15 +274,17 @@ function onSessionEvent(ev) {
       d.classList.toggle('on', i === idx);
       d.classList.toggle('first', i === 0);
     });
-    // Count-in: the number sits in a ring that closes over one beat; "Go!" on beat 1.
+    // Count-in: the number sits in a ring that closes over one beat; "Go!" on beat 1. (The same
+    // before a bar played again.)
     const cd = $('#countdown');
-    if (ev.beat < 0) {
+    if (ev.beat < 0 || ev.lead) {
       cd.style.setProperty('--beat', `${Math.max(0.25, S.session.spb * (S.piece.ts.compound ? 1.5 : 1)).toFixed(3)}s`);
-      cd.innerHTML = `<b>${-ev.beat}</b>`;
+      cd.innerHTML = `<b>${ev.lead || -ev.beat}</b>`;
       cd.classList.remove('pulse', 'go');
       void cd.offsetWidth;
       cd.classList.add('pulse');
-    } else if (ev.beat === 0 && S.session.countIn > 0 && S.session.mode === 'tempo' && !S.demo) {
+    } else if (((ev.beat === 0 && S.session.countIn > 0) || ev.go) && S.session.playMode === 'tempo' && !S.demo) {
+      if (S.coachUntil === 'go') hideCoachCard();
       cd.innerHTML = '<b>Go!</b>';
       cd.classList.remove('pulse');
       void cd.offsetWidth;
@@ -274,6 +295,18 @@ function onSessionEvent(ev) {
         cd.classList.remove('go');
       }, 520);
     } else if (!cd.classList.contains('go')) cd.innerHTML = '';
+  } else if (ev.type === 'loop') {
+    onLoop(ev);
+  } else if (ev.type === 'loop-offer') {
+    onLoopOffer(ev);
+  } else if (ev.type === 'bar-pass') {
+    hideCoachCard();
+    flash(`${icon('check', 18)} Bar ${ev.bar}: got it!${ev.learned ? ' Now with the beat.' : ''}`, 'info', 2200);
+  } else if (ev.type === 'bar-move-on') {
+    hideCoachCard();
+    flash(`Let's keep going. Bar ${ev.bar} can wait for next time.`, 'info', 2600);
+  } else if (ev.type === 'tempo') {
+    $('#hud-bpm').textContent = String(ev.bpm);
   } else if (ev.type === 'finish') {
     // A short flourish across the keys, then the results.
     const result = ev.result;
@@ -306,6 +339,140 @@ $('#feedback-pop').addEventListener('animationend', (e) => {
 });
 
 app.flash = flash;
+
+// ---- Pip's card over the falling notes: lesson tips, "let's try bar 3 again", the offer -------
+const LOOP_TIPS = [
+  'Read the bar during the count-in, before you play.',
+  'Slow and steady: every note, right on the beat.',
+  'Keep your eyes on the music, not your hands.',
+  'Count along out loud.',
+];
+export function showCoachCard({ eyebrow = '', title = '', text = '', pose = 'hello', actions = '', until = null, ms = 0 } = {}) {
+  const el = $('#coach-card');
+  clearTimeout(S.coachTimer);
+  el.innerHTML = `<div class="cc-pip">${pip(pose, 70)}</div><div class="cc-body">${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ''}<div class="cc-title">${esc(title)}</div>${text ? `<div class="cc-text">${esc(text)}</div>` : ''}</div>${actions ? `<div class="cc-actions">${actions}</div>` : ''}`;
+  el.classList.toggle('offer', !!actions);
+  el.classList.remove('hidden', 'leave');
+  void el.offsetWidth;
+  el.classList.add('show');
+  S.coachUntil = until;
+  placeCoachCard();
+  if (ms) S.coachTimer = setTimeout(() => hideCoachCard(), ms);
+}
+export function hideCoachCard(instant = false) {
+  const el = $('#coach-card');
+  clearTimeout(S.coachTimer);
+  clearTimeout(S.offerTimer);
+  S.coachUntil = null;
+  if (el.classList.contains('hidden')) return;
+  if (instant || stage.reduced) {
+    el.classList.add('hidden');
+    el.classList.remove('show', 'leave');
+    return;
+  }
+  el.classList.add('leave');
+  S.coachTimer = setTimeout(() => {
+    el.classList.add('hidden');
+    el.classList.remove('show', 'leave');
+  }, 200);
+}
+function placeCoachCard() {
+  const el = $('#coach-card');
+  const L = stage.L;
+  if (!el || !L || !L.fall) return;
+  const top = L.fall.h > 120 ? L.fall.y + 10 : L.strip.y + L.strip.h + 4;
+  el.style.top = `${Math.round(top)}px`;
+}
+function esc(t) {
+  return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+}
+
+// A bar played again: say so kindly, with a short tip (Pip's level tips and a few general ones).
+function onLoop(ev) {
+  const act = S.activity || {};
+  const n = ev.attempt || 2;
+  const lv = act.level ?? S.piece.level ?? coach.level;
+  const tips = [...LOOP_TIPS, coach.tipFor(lv, n)].filter(Boolean);
+  const tip = tips[(ev.bar + n) % tips.length];
+  S.combo = 0;
+  if (ev.mode === 'wait' && !ev.learning) {
+    // Wait mode: the app plays the bar first, then the student finds its notes again.
+    const want = ev.expected && ev.expected.length ? noteName(ev.expected[0], S.piece.key) : '';
+    showCoachCard({ eyebrow: `Bar ${ev.bar} · try ${n}`, title: `Let's try bar ${ev.bar} again`, text: `Listen first${want ? `, then look for ${want}` : ''}. ${tip}`, pose: 'listen', ms: 0 });
+    playBar(ev.bar);
+    return;
+  }
+  if (ev.learning) {
+    showCoachCard({ eyebrow: `Bar ${ev.bar} · learn it`, title: `Bar ${ev.bar}, step by step`, text: 'I wait for each note. Then we go on with the beat.', pose: 'think', ms: 4200 });
+    return;
+  }
+  const title = ev.slowed ? `Bar ${ev.bar} again, a bit slower` : `Let's try bar ${ev.bar} again`;
+  showCoachCard({ eyebrow: `Bar ${ev.bar} · try ${n}`, title, text: tip, pose: ev.slowed ? 'think' : 'hello', until: 'go' });
+  S.scheduledTicks.clear();
+  stage.clearFx && stage.clearFx();
+}
+
+// After a few tries: slower, step by step, or keep going. Hands-free: slower on its own.
+function onLoopOffer(ev) {
+  const actions = `<button class="btn btn-primary" data-loop="slower">${icon('metronome', 20)} Slower</button><button class="btn" data-loop="learn">${icon('hourglass', 20)} Step by step</button><button class="btn btn-ghost" data-loop="continue">Keep going ${icon('chevron', 18)}</button>`;
+  showCoachCard({ eyebrow: `Bar ${ev.bar} · ${ev.tries} tries`, title: `Bar ${ev.bar} is a tricky one!`, text: 'Shall we play it slower, or learn it step by step?', pose: 'think', actions });
+  clearTimeout(S.offerTimer);
+  if (ev.played && coach.settings.autoAdvance !== false) {
+    let left = 10;
+    const tick = () => {
+      const b = $('#coach-card [data-loop="slower"]');
+      if (!b || !S.session || !S.session.offer) return;
+      if (left <= 0) return chooseLoop('slower');
+      b.innerHTML = `${icon('metronome', 20)} Slower (${left})`;
+      left--;
+      S.offerTimer = setTimeout(tick, 1000);
+    };
+    S.offerTimer = setTimeout(tick, 1500);
+  }
+}
+function chooseLoop(choice) {
+  clearTimeout(S.offerTimer);
+  const s = S.session;
+  if (!s || !s.offer) return;
+  hideCoachCard(true);
+  S.scheduledTicks.clear();
+  s.chooseLoop(choice);
+}
+$('#coach-card').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-loop]');
+  if (!b) return;
+  sfx('tap');
+  chooseLoop(b.dataset.loop);
+});
+
+// Play one bar to the student (wait mode, after several wrong tries), holding the lesson meanwhile.
+function playBar(bar) {
+  const s = S.session;
+  const piece = S.piece;
+  if (!s || !piece || typeof audio.playDemo !== 'function' || !audio.ctx) return;
+  const from = s.barStart(bar);
+  const to = bar * s.beatsPerBar;
+  const events = (piece.events || []).filter((e) => e.beat >= from - 1e-6 && e.beat < to - 1e-6).map((e) => ({ ...e, beat: e.beat - from, tieNext: null }));
+  if (!events.some((e) => !e.rest)) return;
+  stopBarDemo();
+  s.hold();
+  const h = audio.playDemo({ ...piece, events, notes: [], totalBeats: to - from }, { startAt: audio.ctx.currentTime + 0.35, bpm: s.bpm });
+  S.barDemo = h;
+  const done = () => {
+    if (S.barDemo !== h) return;
+    S.barDemo = null;
+    if (S.session === s && !s.finished) s.release();
+    setTimeout(() => S.coachUntil == null && hideCoachCard(), 1200);
+  };
+  const ms = (to - from) * s.spb * 1000 + 900;
+  if (h && h.done) Promise.race([h.done, new Promise((r) => setTimeout(r, ms + 2500))]).then(() => setTimeout(done, 150));
+  else setTimeout(done, ms);
+}
+function stopBarDemo() {
+  const h = S.barDemo;
+  S.barDemo = null;
+  if (h && typeof h.stop === 'function') h.stop();
+}
 
 function comboFlash(n) {
   flash(`${icon('flame', 20)} ${n} in a row!`);
@@ -466,6 +633,13 @@ $('#mic-dot').addEventListener('click', () => {
   app.openDiagnostics();
 });
 
+// "Bar 3 · try 2", "Bar 3 · step by step", "Bar 3 · 3 tries" (while offering help).
+function loopLabel(li) {
+  if (li.learning) return `Bar ${li.bar} · step by step`;
+  if (li.held) return `Bar ${li.bar} · ${li.attempt} tries`;
+  return `Bar ${li.bar} · try ${li.attempt}${li.slowed ? ' · slower' : ''}`;
+}
+
 function barProgress() {
   const s = S.session;
   const p = S.piece;
@@ -473,7 +647,9 @@ function barProgress() {
   const total = p.measures || Math.ceil(p.totalBeats / p.beatsPer);
   const beat = Math.max(0, s.beat);
   const bar = Math.min(total, Math.floor(beat / p.beatsPer) + 1);
-  const label = s.beat < 0 ? `${total} bar${total === 1 ? '' : 's'}` : `Bar ${bar} of ${total}`;
+  const li = s.loopInfo;
+  const label = s.beat < 0 && !li ? `${total} bar${total === 1 ? '' : 's'}` : li ? loopLabel(li) : `Bar ${bar} of ${total}`;
+  $('#status-strip .bar-prog').classList.toggle('looping', !!li);
   const el = $('#bar-label');
   if (el.textContent !== label) el.textContent = label;
   $('#bar-fill').style.width = `${Math.max(0, Math.min(100, (100 * beat) / Math.max(1, p.totalBeats)))}%`;
@@ -502,7 +678,7 @@ export function loop() {
       audio.setExpected(expected.map((n) => n.midi));
     }
     const hints = new Map();
-    const soon = s.mode === 'wait' ? expected : expected.filter((n) => n.beat - s.beat < 0.6);
+    const soon = s.playMode === 'wait' ? expected : expected.filter((n) => n.beat - s.beat < 0.6);
     for (const n of soon) hints.set(n.midi, n.hand);
     const heard = new Map();
     const nowP = performance.now();
@@ -511,7 +687,9 @@ export function loop() {
       heard.set(m, { kind: lk && nowP - lk.t < 1500 ? lk.kind : 'neutral' });
     }
     const waitEvents = new Set();
-    if (s.mode === 'wait' && s.waitGroup) for (const n of s.waitGroup.notes) waitEvents.add(n.eventId);
+    const waiting = s.playMode === 'wait';
+    if (waiting && s.waitGroup) for (const n of s.waitGroup.notes) waitEvents.add(n.eventId);
+    const li = s.loopInfo;
     const now = audio.now();
     const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5).map((w) => ({ ...w, age: now - w.t }));
     stage.draw({
@@ -519,11 +697,12 @@ export function loop() {
       status: s.status,
       hints,
       heard,
-      waitMode: s.mode === 'wait',
+      waitMode: waiting,
       waitEvents,
       wrongMarks,
+      loopBar: li ? { from: li.from, to: li.to, label: loopLabel(li) } : null,
       lookaheadSec: coach.settings.lookaheadSec,
-      timingMeter: s.mode === 'tempo' && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
+      timingMeter: !waiting && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
       streak: S.demo ? 0 : S.combo,
     });
     micDot();
@@ -555,6 +734,8 @@ function drawPrep() {
 
 export function stopPlay(keepScreen) {
   cancelPrep();
+  stopBarDemo();
+  hideCoachCard(true);
   S.expKey = null;
   cancelAnimationFrame(S.raf);
   clearTimeout(S.autoTimer);
@@ -603,10 +784,13 @@ $('#btn-skip').addEventListener('click', () => {
     // Skipping a placement test counts as not being able to play it.
     S.session.finished = true;
     app.finishPiece({ ...S.session.result(), score: 0 });
-  } else if (act && (act.free || act.kind === 'song' || act.kind === 'import')) {
+  } else if (act && !act.plan && (act.free || act.kind === 'song' || act.kind === 'import')) {
     stopPlay();
     show(act.kind === 'song' || act.kind === 'import' ? 'songs' : 'home');
-  } else runActivity(coach.nextActivity());
+  } else {
+    coach.skip(act, S.piece);
+    runActivity(coach.nextActivity());
+  }
 });
 $('#btn-quit').addEventListener('click', () => {
   $('#pause-menu').classList.add('hidden');
@@ -634,7 +818,7 @@ async function startDemo() {
   const mode = S.session ? S.session.mode : S.prep ? S.prep.mode : S.activity?.mode || 'tempo';
   cancelPrep();
   await audio.ensureContext();
-  startSession('tempo');
+  startSession('tempo', { demo: true });
   S.demo = true;
   S.demoMode = mode;
   const s = S.session;
@@ -673,6 +857,12 @@ $('#view-menu').addEventListener('change', (e) => {
   if (!k) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
   coach.setSetting(k, v);
+  if (k === 'repeatBars' && S.session && !S.demo) {
+    const s = S.session;
+    s.barLoop = !!v && wantsBarLoop(S.activity);
+    // (switched on mid-piece: only bars from here on are judged)
+    if (s.barLoop) s.barChecked = Math.max(s.barChecked, s.barOf(Math.max(0, s.beat)) - 1);
+  }
   stage.setOptions(stageOptions(S.activity ? S.activity.level ?? 1 : coach.level));
   resizeStage();
 });

@@ -67,6 +67,7 @@ export const regOf = (midi) => {
   return r;
 };
 const sigmoid = (z) => 1 / (1 + Math.exp(-z));
+const GAIN_RATE = 10; // dB/s: how fast the input gain follows its target (setInputGain)
 
 // Decoder defaults (overridden by the weights file's "decoder" section, fitted in tools/nn/).
 const DEC = {
@@ -163,6 +164,8 @@ export class Transcriber {
     this.calibrating = null;
     this.lastOnsetT = -1;
     this.autoTune = this.opts.autoTune ?? true;
+    this.gain = 1; // input gain (setInputGain), linear: now and where it is going
+    this.gainTarget = 1;
     this.tunePending = []; // [{midi, frame}] notes to measure once the long window sees them
     this.tuneSamples = [];
   }
@@ -273,7 +276,40 @@ export class Transcriber {
         this._trackNoise(this.frameRms);
       }
     }
-    this.fe.push(y, this._onFrame || (this._onFrame = (f, end) => this._frame(f, end)));
+    this.fe.push(this._gained(y), this._onFrame || (this._onFrame = (f, end) => this._frame(f, end)));
+  }
+
+  // ---- input gain ----------------------------------------------------------------------------------
+  // The network was trained on pianos between about -50 and -10 dBFS (tools/nn/train.py) and its
+  // log spectra (frontend.js: ln(1 + m / 3e-5)) are not level-invariant: a quiet piano (an iPad
+  // on the music stand of a softly played upright: ~ -50 dBFS) sits at the bottom of that range,
+  // where a chord's softer notes and bass fundamentals sink towards the log's knee. The hybrid
+  // listener raises the network's input towards the level the listener was tuned at
+  // (setInputGain, from the piano level the DSP has measured). Only the network's input: levels
+  // (velocity, piano level) are still measured on the signal itself. The gain moves smoothly
+  // (GAIN_RATE dB/s) so that it never looks like an attack.
+  setInputGain(db) {
+    this.gainTarget = Math.pow(10, clamp(db || 0, 0, 40) / 20);
+  }
+
+  get inputGainDb() {
+    return 20 * Math.log10(this.gain || 1);
+  }
+
+  _gained(y) {
+    const gt = this.gainTarget || 1;
+    let g = this.gain || 1;
+    if (g === 1 && gt === 1) return y;
+    if (!this.gbuf || this.gbuf.length < y.length) this.gbuf = new Float32Array(Math.max(y.length, 1024));
+    const out = this.gbuf;
+    const up = this.gainUp || (this.gainUp = Math.pow(10, GAIN_RATE / 20 / NSR));
+    for (let i = 0; i < y.length; i++) {
+      if (g < gt) g = Math.min(gt, g * up);
+      else if (g > gt) g = Math.max(gt, g / up);
+      out[i] = y[i] * g;
+    }
+    this.gain = g;
+    return out.subarray(0, y.length);
   }
 
   _switchToNN() {

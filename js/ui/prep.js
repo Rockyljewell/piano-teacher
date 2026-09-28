@@ -119,9 +119,10 @@ export function enterPrep(piece, act, mode) {
   card.innerHTML = `
     <div class="prep-pip">${pip(info.anyKey != null ? 'conduct' : 'hello', 92)}</div>
     <div class="prep-body">
-      <div class="eyebrow">Get ready</div>
+      <div class="eyebrow">${act.plan && act.lesson ? `Lesson ${act.lesson} of ${act.total} · ` : ''}Get ready</div>
       <div class="prep-title">${esc(info.title)}</div>
       <div class="prep-text" id="prep-text">${esc(info.text)}</div>
+      ${lessonTip(act)}
     </div>
     <div class="prep-go">
       <button id="btn-prep-go" class="btn btn-primary btn-lg"><span class="prep-ring"></span>I'm ready</button>
@@ -213,6 +214,12 @@ async function startFromPrep(why) {
   if (S.screen !== 'play' || S.piece == null) return;
   app.startSession(p.mode);
   if (r && r.ok === false && !S.listenSkipped && app.listenLost) app.listenLost({ ...(audio.health || {}), ...r });
+}
+
+// Pip's tip for a lesson step: what this step is for, and a reminder of the level's idea.
+function lessonTip(act) {
+  if (!act || !act.plan || (!act.coachLine && !act.tip)) return '';
+  return `<div class="prep-tip"><b>${esc(act.coachLine || '')}</b> ${esc(act.tip || '')}</div>`;
 }
 
 // A note while getting ready: a first note starts; another key gets a gentle pointer.
