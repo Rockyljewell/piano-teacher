@@ -211,6 +211,7 @@ function scheduleTicks() {
   for (let k = Math.ceil(s.beat / beatUnit - 1e-6); k * beatUnit < s.beat + 1.5; k++) {
     const b = k * beatUnit;
     const lead = s.lead && b >= s.lead.from - 1e-6 && b < s.lead.to - 1e-6; // count-in before a bar again
+    if (s.lead && b < s.lead.from - 1e-6) continue; // (the pause before it: quiet)
     if (b >= 0 && !lead && (met !== 'always' || s.playMode !== 'tempo')) continue;
     if (b >= piece.totalBeats) continue;
     const t = s.timeOfBeat(b);
@@ -277,13 +278,17 @@ function onSessionEvent(ev) {
     // Count-in: the number sits in a ring that closes over one beat; "Go!" on beat 1. (The same
     // before a bar played again.)
     const cd = $('#countdown');
-    if (ev.beat < 0 || ev.lead) {
+    if (ev.rest) {
+      // the pause before a bar again's count-in: nothing to count yet
+      cd.classList.remove('pulse', 'go');
+      cd.innerHTML = '';
+    } else if (ev.beat < 0 || ev.lead) {
       cd.style.setProperty('--beat', `${Math.max(0.25, S.session.spb * (S.piece.ts.compound ? 1.5 : 1)).toFixed(3)}s`);
       cd.innerHTML = `<b>${ev.lead || -ev.beat}</b>`;
       cd.classList.remove('pulse', 'go');
       void cd.offsetWidth;
       cd.classList.add('pulse');
-    } else if (((ev.beat === 0 && S.session.countIn > 0) || ev.go) && S.session.playMode === 'tempo' && !S.demo) {
+    } else if (((ev.beat === 0 && S.session.countIn > 0 && S.session.playMode === 'tempo') || ev.go) && !S.demo) {
       if (S.coachUntil === 'go') hideCoachCard();
       cd.innerHTML = '<b>Go!</b>';
       cd.classList.remove('pulse');
@@ -396,14 +401,15 @@ function onLoop(ev) {
   const tip = tips[(ev.bar + n) % tips.length];
   S.combo = 0;
   if (ev.mode === 'wait' && !ev.learning) {
-    // Wait mode: the app plays the bar first, then the student finds its notes again.
+    // Wait mode: the app plays the bar first, counts the student in, then waits for its notes.
     const want = ev.expected && ev.expected.length ? noteName(ev.expected[0], S.piece.key) : '';
-    showCoachCard({ eyebrow: `Bar ${ev.bar} · try ${n}`, title: `Let's try bar ${ev.bar} again`, text: `Listen first${want ? `, then look for ${want}` : ''}. ${tip}`, pose: 'listen', ms: 0 });
+    showCoachCard({ eyebrow: `Bar ${ev.bar} · try ${n}`, title: `Let's try bar ${ev.bar} again`, text: `Listen first, then I'll count you in${want ? ` - start on ${want}` : ''}. ${tip}`, pose: 'listen', until: 'go' });
+    S.scheduledTicks.clear();
     playBar(ev.bar);
     return;
   }
   if (ev.learning) {
-    showCoachCard({ eyebrow: `Bar ${ev.bar} · learn it`, title: `Bar ${ev.bar}, step by step`, text: 'I wait for each note. Then we go on with the beat.', pose: 'think', ms: 4200 });
+    showCoachCard({ eyebrow: `Bar ${ev.bar} · learn it`, title: `Bar ${ev.bar}, step by step`, text: "I'll count you in, then wait for each note. Then we go on with the beat.", pose: 'think', until: 'go' });
     return;
   }
   const title = ev.slowed ? `Bar ${ev.bar} again, a bit slower` : `Let's try bar ${ev.bar} again`;
@@ -691,9 +697,10 @@ export function loop() {
     if (waiting && s.waitGroup) for (const n of s.waitGroup.notes) waitEvents.add(n.eventId);
     const li = s.loopInfo;
     const now = audio.now();
-    const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5).map((w) => ({ ...w, age: now - w.t }));
+    const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5 && !(w.beat < s.clearBefore)).map((w) => ({ ...w, age: now - w.t }));
     stage.draw({
       nowBeat: s.beat,
+      hideBefore: s.clearBefore,
       status: s.status,
       hints,
       heard,

@@ -17,7 +17,7 @@ function sim(piece, { play = (n) => n.midi, mode = 'tempo', barLoop = true, choo
   const s = new Session(piece, {
     mode, barLoop, level: level ?? piece.level, clock: () => now,
     onEvent: (e) => {
-      events.push({ ...e, at: now, beatNow: s.beat });
+      events.push({ ...e, at: now, beatNow: s.beat, clearBefore: s.clearBefore });
       if (e.type === 'loop-offer') pendingChoice = true;
     },
   });
@@ -269,4 +269,88 @@ test('hold and release freeze the clock without losing the place', () => {
   s.update();
   assert.ok(Math.abs(s.beat - b) < 0.05);
   assert.ok(s.expectedNotes().length > 0);
+});
+
+// The lead-in before a bar played again: jumping back is not instant. The playhead goes back about
+// LOOP_RULES.leadIn seconds (at least a bar) with the notes before the bar cleared away, quiet at
+// first, then a full bar counted in, then "go" on the bar line.
+function countInAfter(events, loop, bar, piece, spb) {
+  const i = events.indexOf(loop);
+  const after = events.slice(i + 1);
+  const go = after.find((e) => e.type === 'beat' && e.go);
+  const beats = after.slice(0, after.indexOf(go) + 1).filter((e) => e.type === 'beat');
+  const rest = beats.filter((e) => e.rest);
+  const lead = beats.filter((e) => e.lead);
+  const from = (bar - 1) * piece.beatsPer;
+  assert.ok(go, 'a "go" after the loop');
+  assert.equal(go.beat, from, 'go on the bar line');
+  const total = Math.max(piece.beatsPer, Math.round(LOOP_RULES.leadIn / spb));
+  assert.equal(rest.length, total - piece.beatsPer, 'quiet beats first');
+  if (rest.length) assert.ok(beats.indexOf(rest.at(-1)) < beats.indexOf(lead[0]), 'the quiet beats come first');
+  assert.deepEqual(lead.map((e) => e.lead), Array.from({ length: piece.beatsPer }, (_, k) => piece.beatsPer - k), 'a full bar counted down');
+  // time from the jump back to "go": about LOOP_RULES.leadIn (whole beats), at least a bar
+  const secs = go.at - loop.at;
+  assert.ok(secs >= Math.max(piece.beatsPer * spb, LOOP_RULES.leadIn - spb / 2) - 0.05, `${secs.toFixed(2)} s from the jump back to go`);
+  assert.ok(secs <= Math.max(piece.beatsPer * spb, LOOP_RULES.leadIn + spb / 2) + 0.3, `${secs.toFixed(2)} s from the jump back to go`);
+  // the notes before the bar are cleared away (not drawn) while it comes closer
+  assert.equal(loop.clearBefore, from);
+  return { go, rest, lead };
+}
+
+test('tempo: a bar played again starts after a ~4 s lead-in, cleared of old notes, ending with a one-bar count-in', () => {
+  const piece = piece4();
+  const { s, events } = sim(piece, { play: (n, c) => (inBar(c.s, n, 2) && c.attempt(2) <= 1 ? null : n.midi) });
+  const loop = events.find((e) => e.type === 'loop');
+  countInAfter(events, loop, 2, piece, s.spb);
+});
+
+test('tempo: notes played during the lead-in are ignored', () => {
+  const piece = piece4();
+  let now = 0;
+  const events = [];
+  const s = new Session(piece, { mode: 'tempo', barLoop: true, level: piece.level, clock: () => now, onEvent: (e) => events.push({ ...e, at: now }) });
+  s.start();
+  // miss bar 1 entirely: it is played again
+  for (; now < 60 && !events.some((e) => e.type === 'loop'); now += 0.01) s.update();
+  assert.ok(s.lead, 'counting in');
+  const first = piece.notes.filter((n) => n.beat === 0);
+  for (; s.beat < s.lead.to - 0.6; now += 0.01) {
+    s.update();
+    for (const n of first) assert.equal(s.noteOn(n.midi, now), null, `ignored at beat ${s.beat.toFixed(2)}`);
+  }
+});
+
+test('wait mode: after a restart the app counts the student in before waiting for the notes', () => {
+  const piece = piece4();
+  const target = piece.notes.filter((n) => Math.floor(n.beat / piece.beatsPer) === 1).sort((a, b) => a.beat - b.beat)[1];
+  let wrongs = 0;
+  const pressed = [];
+  const { s, events } = sim(piece, {
+    mode: 'wait',
+    play: (n, c) => {
+      pressed.push({ beat: c.s.beat, lead: c.s.lead });
+      if (n.id === target.id && wrongs < 3) {
+        wrongs++;
+        return n.midi + 2;
+      }
+      return n.midi;
+    },
+  });
+  const loop = events.find((e) => e.type === 'loop');
+  assert.equal(loop.mode, 'wait');
+  countInAfter(events, loop, 2, piece, s.spb);
+  // nothing is asked for (the listener gets no hints, the student is not waited on) until then
+  assert.ok(pressed.every((p) => !p.lead || p.beat >= p.lead.to - 0.5));
+  assert.ok(s.finished);
+});
+
+test('tempo: "learn it" counts the student in before the bar in wait mode', () => {
+  const piece = piece4();
+  const { s, events } = sim(piece, {
+    choose: 'learn',
+    play: (n, c) => (inBar(c.s, n, 2) && c.s.playMode === 'tempo' ? null : n.midi),
+  });
+  const loop = events.find((e) => e.type === 'loop' && e.learning);
+  assert.ok(loop, 'learning the bar');
+  countInAfter(events, loop, 2, piece, s.spb);
 });

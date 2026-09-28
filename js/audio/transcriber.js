@@ -237,6 +237,12 @@ export class Transcriber {
     // an octave's lower note (_octaveLow): its odd partials vs its even ones and vs the gaps
     // between partials
     this.octLow = { odd: 0.2, gap: 1.5, ...opts.octLow };
+    // a due note's attack in a lesson (_lessonAttack), fitted on a real iPad recording (the
+    // key-release thumps in tests/real-recording.test.js):
+    //   rise: its partials rose at least this much (power) - not a thump over ringing strings
+    //   quietDb / quietRise: this far under the piano's level, the weakest quarter of its
+    //     partials rose at least this much - a key bed's knock raises a few, a hammer all
+    this.lessonAttack = opts.lessonAttack === false ? null : { rise: 2, quietDb: -18, quietRise: 10, ...opts.lessonAttack };
     this.range = null;
     this.calibrating = null;
     this.frameRms = 0;
@@ -2198,6 +2204,18 @@ export class Transcriber {
     return o.odd >= K.odd * o.even && o.odd >= K.gap * o.gap;
   }
 
+  // A due note's fast-path attack in a lesson that is not a key being struck: energy that fell
+  // (a key's release thump over the strings still ringing) or a quiet knock that raised only a
+  // few partials. Returns why, or null.
+  _lessonAttack(m, c, x, ev) {
+    const K = this.lessonAttack;
+    if (!K) return null;
+    if (ev.riseMed < K.rise) return 'fell';
+    const rel = this.pianoLevel != null ? ev.level - this.pianoLevel : 0;
+    if (rel < K.quietDb && ev.riseLow < K.quietRise) return 'quiet';
+    return null;
+  }
+
   _lookDecide(f, x) {
     const { l, L, F, A, B, NP, Y, maxK, fmin, cands } = x;
     const m = f.midi;
@@ -2253,6 +2271,13 @@ export class Transcriber {
       // ... or than a note not heard yet that this window finds strongest or cannot resolve
       // yet (a bass note): wait for a longer window
       if (this._dueAfter(m, (n) => n >= MIDI_MIN && n <= MIDI_MAX && !this._heard(n) && (cands[n - MIDI_MIN].f0 < fmin || x.all.some((g) => g.midi === n && g.score >= 1 && g.rank === 0)))) return;
+    }
+    if (exp && this._inLesson()) {
+      const why = this._lessonAttack(m, c, x, ev);
+      if (why) {
+        this.stats[`lessonAttack_${why}`] = (this.stats[`lessonAttack_${why}`] || 0) + 1;
+        return;
+      }
     }
     let need;
     if (exp) need = this.expNeed ?? 0.85 + 0.15 * s;
