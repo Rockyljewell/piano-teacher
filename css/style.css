@@ -532,6 +532,11 @@ small { color: var(--ink-3); }
 .prep-go { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .prep-go .btn { overflow: hidden; }
 .prep-or { font-size: 14px; font-weight: 800; color: var(--ink-3); }
+.prep-keep { display: flex; align-items: center; gap: 10px; max-width: 214px; font-size: 14px; font-weight: 800; line-height: 1.2; color: var(--ink-2); cursor: pointer; }
+.prep-keep input { width: 44px; height: 28px; }
+.prep-keep input::after { width: 20px; height: 20px; }
+.prep-keep input:checked::after { transform: translateX(16px); }
+.prep-keep input:checked:active::after { transform: translateX(16px) scaleX(1.18); }
 .prep-ring { position: absolute; left: 0; bottom: 0; height: 5px; width: calc(var(--p, 0) * 100%); background: rgba(255,255,255,.55); border-radius: 0 3px 3px 0; display: none; }
 .prep-ring.on { display: block; }
 .prep.leave { animation: prep-out .18s var(--ease-in) both; pointer-events: none; }

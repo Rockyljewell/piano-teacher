@@ -1539,7 +1539,9 @@ export class Stage {
     ctx.fillStyle = COLORS.playhead;
     roundRect(ctx, kx, y - 2, w, felt + 2, 3);
     ctx.fill();
-    const prep = state.prep || null;
+    // The get-ready step (state.prep), or the hand guide kept on the keyboard while playing
+    // (state.guide: the same keys and finger numbers, without the brackets over the falling notes).
+    const prep = state.prep || state.guide || null;
     const drawWhite = (m, k) => {
       const info = heard.get(m);
       const hint = this.opts.showHints ? hints.get(m) : null;
@@ -1634,7 +1636,7 @@ export class Stage {
     for (const [m, k] of this.keys) if (k.black) drawBlack(m, k);
     if (prep) {
       this._prepGlow(prep, true);
-      this._drawPrep(prep);
+      if (!prep.guide) this._drawPrep(prep);
     }
   }
 

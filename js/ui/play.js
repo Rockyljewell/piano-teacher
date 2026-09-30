@@ -8,7 +8,7 @@ import { songPiece } from '../music/songs.js';
 import { levelInfo } from '../music/curriculum.js';
 import { noteName, chordName, Key } from '../music/theory.js';
 import { icon, pip } from './brand.js';
-import { wantsPrep, enterPrep, cancelPrep, prepNote, prepDrawState, placePrep } from './prep.js';
+import { wantsPrep, enterPrep, cancelPrep, prepNote, prepDrawState, placePrep, guideDrawState } from './prep.js';
 import { ViewGlide } from './glide.js';
 
 // Grade colours (docs/brand/playful/spec.md): Perfect = sun, Great = mint, early = blue, late = orange.
@@ -159,6 +159,27 @@ function placeStrip() {
   if (L.fall && L.fall.h > 200) $('#countdown').style.top = `${Math.round(L.fall.y + L.fall.h * 0.46)}px`;
   else $('#countdown').style.top = '';
 }
+
+// Play the piece again from the top: Restart in the pause menu and "Try again" on the results.
+// It goes back through the get-ready step (where the hands go), the same as the first time, when
+// the piece would get one; otherwise it just starts over.
+export function restartPiece(mode) {
+  const piece = S.piece;
+  const act = S.activity;
+  // (a lesson started with "Hear it first" skipped the step then, but a restart is a new start)
+  const again = act && { ...act, demoFirst: false };
+  if (!piece || !again || S.demo || !wantsPrep(piece, again)) return startSession(mode);
+  stopPlay(true);
+  stage.clearFx && stage.clearFx();
+  $('#results').classList.add('hidden');
+  $('#pause-menu').classList.add('hidden');
+  $('#hud-score').textContent = '–';
+  $('#hud-combo').textContent = '0';
+  S.combo = 0;
+  enterPrep(piece, again, mode);
+  loop();
+}
+app.restartPiece = restartPiece;
 
 export function startSession(mode, { demo = false } = {}) {
   const piece = S.piece;
@@ -765,6 +786,7 @@ export function loop() {
       lookaheadSec: coach.settings.lookaheadSec,
       timingMeter: !waiting && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
       streak: S.demo ? 0 : S.combo,
+      guide: S.demo ? null : guideDrawState(S.piece, S.activity || {}, s.beat, hints),
     });
     micDot();
     barProgress(view.beat);
@@ -839,7 +861,7 @@ $('#btn-resume').addEventListener('click', () => {
   S.scheduledTicks.clear();
   S.session.resume();
 });
-$('#btn-restart').addEventListener('click', () => startSession(S.session.mode));
+$('#btn-restart').addEventListener('click', () => restartPiece(S.session.mode));
 $('#btn-skip').addEventListener('click', () => {
   $('#pause-menu').classList.add('hidden');
   const act = S.activity;

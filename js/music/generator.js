@@ -341,7 +341,7 @@ function addChromatic(rng, line, rhythm, prob) {
 // Finger for a note in a five-finger position whose lowest key is `lo` (RH thumb / LH pinky).
 // Notes just outside the position (a half step below the LH pinky, e.g. F♯ in G position)
 // are played by the reaching pinky.
-function positionFingers(key, lo, midi, hand) {
+export function positionFingers(key, lo, midi, hand) {
   const d = diatonic(key.spell(midi)) - diatonic(key.spell(lo));
   if (d < 0) return hand === 'L' && d === -1 ? 5 : null;
   if (d > 4) return hand === 'R' && d === 5 ? 5 : null;
