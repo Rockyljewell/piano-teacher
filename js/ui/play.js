@@ -9,6 +9,7 @@ import { levelInfo } from '../music/curriculum.js';
 import { noteName, chordName, Key } from '../music/theory.js';
 import { icon, pip } from './brand.js';
 import { wantsPrep, enterPrep, cancelPrep, prepNote, prepDrawState, placePrep } from './prep.js';
+import { ViewGlide } from './glide.js';
 
 // Grade colours (docs/brand/playful/spec.md): Perfect = sun, Great = mint, early = blue, late = orange.
 export const GRADE_COLORS = { perfect: '#FFC23D', great: '#20C07A', early: '#2F9BFF', late: '#FF9A2E', wrong: '#FF5A6A' };
@@ -163,6 +164,9 @@ export function startSession(mode, { demo = false } = {}) {
   S.judged = 0;
   S.credit = 0;
   S.lastKind.clear();
+  S.ghostKeys.clear();
+  S.band = null;
+  glide.reset();
   S.scheduledTicks.clear();
   S.timingRecent = [];
   S.timingLast = '';
@@ -512,9 +516,13 @@ audio.on('noteon', (ev) => {
     S.session.noteOn(0, ev.time, { anyPitch: true, confidence: ev.confidence ?? 1 });
     return;
   }
-  S.session.noteOn(ev.midi, ev.time, { confidence: ev.confidence ?? 1 });
+  // (a detection the session ignores as a ghost - a partial, a low-confidence double - is not a
+  // key strike: its key stays dark)
+  S.ghostKeys.delete(ev.midi);
+  if (!S.session.noteOn(ev.midi, ev.time, { confidence: ev.confidence ?? 1 }) && S.session.lastIgnore === 'ghost') S.ghostKeys.add(ev.midi);
 });
 audio.on('noteoff', (ev) => {
+  S.ghostKeys.delete(ev.midi);
   if (!S.free) return;
   for (let i = S.history.length - 1; i >= 0; i--)
     if (S.history[i].midi === ev.midi && S.history[i].off === null) {
@@ -646,7 +654,7 @@ function loopLabel(li) {
   return `Bar ${li.bar} · try ${li.attempt}${li.slowed ? ' · slower' : ''}`;
 }
 
-function barProgress() {
+function barProgress(shown) {
   const s = S.session;
   const p = S.piece;
   if (!s || !p) return;
@@ -654,12 +662,37 @@ function barProgress() {
   const beat = Math.max(0, s.beat);
   const bar = Math.min(total, Math.floor(beat / p.beatsPer) + 1);
   const li = s.loopInfo;
+  const fill = Math.max(0, shown ?? s.beat); // (glides back with the view)
   const label = s.beat < 0 && !li ? `${total} bar${total === 1 ? '' : 's'}` : li ? loopLabel(li) : `Bar ${bar} of ${total}`;
   $('#status-strip .bar-prog').classList.toggle('looping', !!li);
   const el = $('#bar-label');
   if (el.textContent !== label) el.textContent = label;
-  $('#bar-fill').style.width = `${Math.max(0, Math.min(100, (100 * beat) / Math.max(1, p.totalBeats)))}%`;
+  $('#bar-fill').style.width = `${Math.max(0, Math.min(100, (100 * fill) / Math.max(1, p.totalBeats)))}%`;
 }
+
+// The bar band on the staff: the bar that is going to be played again is marked while it is still
+// being played ("again next"), and the same band stays through the jump back. It fades in and out.
+const BAND_MS = 300;
+function bandState(s, li, now) {
+  const risk = s.riskBar;
+  const src = risk || li;
+  const cur = S.band;
+  if (src) {
+    const b = { bar: src.bar, from: src.from, to: src.to, label: risk ? `Bar ${risk.bar} · again next` : loopLabel(li) };
+    S.band = cur && cur.bar === b.bar ? Object.assign(cur, b, { seen: now }) : { ...b, since: now, seen: now };
+    return { from: b.from, to: b.to, label: b.label, a: Math.min(1, (now - S.band.since) / BAND_MS) };
+  }
+  if (!cur) return null;
+  const gone = (now - cur.seen) / BAND_MS;
+  if (gone >= 1) {
+    S.band = null;
+    return null;
+  }
+  return { from: cur.from, to: cur.to, label: cur.label, a: Math.min(1, (now - cur.since) / BAND_MS) * (1 - gone) };
+}
+
+const glide = new ViewGlide();
+let glideFor = null;
 
 export function loop() {
   cancelAnimationFrame(S.raf);
@@ -689,6 +722,7 @@ export function loop() {
     const heard = new Map();
     const nowP = performance.now();
     for (const [m] of audio.heard) {
+      if (S.ghostKeys.has(m)) continue;
       const lk = S.lastKind.get(m);
       heard.set(m, { kind: lk && nowP - lk.t < 1500 ? lk.kind : 'neutral' });
     }
@@ -697,23 +731,36 @@ export function loop() {
     if (waiting && s.waitGroup) for (const n of s.waitGroup.notes) waitEvents.add(n.eventId);
     const li = s.loopInfo;
     const now = audio.now();
-    const wrongMarks = s.wrong.filter((w) => now - w.t < 2.5 && !(w.beat < s.clearBefore)).map((w) => ({ ...w, age: now - w.t }));
+    // The view glides back when the playhead jumps back (a bar played again); the notes before the
+    // cleared bar fade as it goes.
+    if (glideFor !== s) {
+      glide.reset();
+      glideFor = s;
+    }
+    const wall = performance.now();
+    const view = glide.update(s.beat, wall, { instant: stage.reduced });
+    const before = (beat) => s.clearBefore != null && beat < s.clearBefore; // (in the cleared stretch)
+    const wrongMarks = s.wrong
+      .filter((w) => now - w.t < 2.5 && !(before(w.beat) && view.fade <= 0.01))
+      .map((w) => ({ ...w, age: now - w.t, fade: before(w.beat) ? view.fade : 1 }));
     stage.draw({
-      nowBeat: s.beat,
+      nowBeat: view.beat,
+      pulseBeat: s.beat,
       hideBefore: s.clearBefore,
+      fadeBefore: view.fade,
       status: s.status,
       hints,
       heard,
       waitMode: waiting,
       waitEvents,
       wrongMarks,
-      loopBar: li ? { from: li.from, to: li.to, label: loopLabel(li) } : null,
+      loopBar: bandState(s, li, wall),
       lookaheadSec: coach.settings.lookaheadSec,
       timingMeter: !waiting && !S.piece.waitOnly && !S.demo ? { profile: s.profile, recent: S.timingRecent, last: S.timingLast } : null,
       streak: S.demo ? 0 : S.combo,
     });
     micDot();
-    barProgress();
+    barProgress(view.beat);
   };
   S.raf = requestAnimationFrame(frame);
 }
@@ -744,6 +791,8 @@ export function stopPlay(keepScreen) {
   stopBarDemo();
   hideCoachCard(true);
   S.expKey = null;
+  S.band = null;
+  S.ghostKeys.clear();
   cancelAnimationFrame(S.raf);
   clearTimeout(S.autoTimer);
   clearTimeout(S.demoTimer);

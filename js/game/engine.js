@@ -141,6 +141,7 @@ export class Session {
     this.activeLoop = null; // the bar being played again (tempo mode)
     this.leadEnd = null;
     this.clearBefore = null; // notes before this beat are no longer shown (a bar played again)
+    this.lastIgnore = null; // why the last noteOn() returned null, when it was a 'ghost' of the listener
     this.countIn = countInBeats ?? piece.beatsPer;
     this.onEvent = onEvent || (() => {});
     this.level = level ?? piece.level ?? 1;
@@ -248,6 +249,21 @@ export class Session {
     return { bar, attempt: rec.fails + (this.offer ? 0 : 1), held: !!this.offer, slowed: rec.slowed, learning: !!this.barWait, from: this.barStart(bar), to: this.barEnd(bar), mode: rec.mode };
   }
 
+  // Tempo mode: the bar being played already fails (judgeBar only ever gets worse as a bar goes
+  // on) and will be played again when it ends: {bar, from, to, attempt}, or null. Not when the
+  // student is about to be offered help or the bar is given up, which have their own cards.
+  get riskBar() {
+    if (!this.barLoop || this.mode !== 'tempo' || !this.started || this.finished || this.held || this.barWait || this.lead) return null;
+    const bar = this.barChecked + 1;
+    if (bar > this.lastBar || this.beat < this.barStart(bar)) return null;
+    const rec = this.loops.get(bar);
+    if (rec && (rec.passed || rec.gaveUp)) return null;
+    const fails = rec ? rec.fails : 0;
+    if (rec && rec.slowed ? rec.slowFails + 1 >= LOOP_RULES.slowTries : fails + 1 >= LOOP_RULES.offerAfter) return null;
+    if (this.judgeBar(bar).pass) return null;
+    return { bar, from: this.barStart(bar), to: this.barEnd(bar), attempt: fails + 1 };
+  }
+
   // Did the student fail this bar? Missed or wrong on at least half its notes, or two misses in a
   // row. Wrong keys usually replace a missed note, so a bar's problems are the larger of the two.
   judgeBar(bar) {
@@ -273,7 +289,10 @@ export class Session {
       maxRun = Math.max(maxRun, run);
     }
     const wrong = this.wrong.filter((w) => w.beat >= from - 0.5 && w.beat < to).length;
-    const bad = Math.min(notes.length, Math.max(missed, wrong));
+    // A wrong key that replaced a note leaves that note missed. With none missed, the keys heard
+    // were extras (or notes the listener made up), and only a bar full of them counts as failed:
+    // two false strikes must not send a bar played right back to the start.
+    const bad = Math.min(notes.length, missed > 0 ? Math.max(missed, wrong) : wrong >= notes.length ? wrong : 0);
     const byShare = bad >= Math.ceil(notes.length * R.failFraction - 1e-9);
     const byRun = maxRun >= R.missRun;
     const pass = !(byShare || byRun);
@@ -659,6 +678,7 @@ export class Session {
   }
 
   noteOn(midi, t, { anyPitch = false, confidence = 1 } = {}) {
+    this.lastIgnore = null;
     if (!this.started || this.finished || this.paused || this.held) return null;
     const tt = t - this.latency;
     const beat = this.beatAtTime(tt);
@@ -730,8 +750,10 @@ export class Session {
     if (!res) {
       // Wait mode: the right next note, just played before the playhead got there, is not wrong.
       const early = waiting && this.waitGroup && this.waitGroup.notes.some((n) => n.midi === midi && !this.status.has(n.id));
-      if (rhythm || early || this._isGhost(midi, tt, confidence)) {
+      const ghost = !rhythm && !early && this._isGhost(midi, tt, confidence);
+      if (rhythm || early || ghost) {
         this.ignored++;
+        this.lastIgnore = ghost ? 'ghost' : 'other'; // (the play screen doesn't light a ghost's key)
         return null;
       }
       // (wrong keys while learning a bar in wait mode don't cost the tempo piece anything)

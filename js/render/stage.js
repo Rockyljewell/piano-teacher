@@ -806,13 +806,13 @@ export class Stage {
     const p = this.piece;
     if (p && state.nowBeat != null && !state.prep) {
       const unit = p.ts && p.ts.compound ? 1.5 : 1;
-      const b = state.nowBeat / unit;
+      const b = (state.pulseBeat ?? state.nowBeat) / unit; // (the view may glide back: the pulse follows the beat)
       const bi = Math.floor(b);
       const per = Math.max(1, Math.round(p.beatsPer / unit));
       this._pulse = Math.exp(-(b - bi) * 7) * (this.reduced ? 0.5 : 1);
       this._downbeat = ((bi % per) + per) % per === 0;
       // Wait mode has no beat while it waits for you: breathe gently instead ("your turn").
-      if (state.waitMode && state.nowBeat >= 0) {
+      if (state.waitMode && (state.pulseBeat ?? state.nowBeat) >= 0) {
         this._pulse = this.reduced ? 0.3 : 0.3 + 0.3 * Math.sin((performance.now() / 1000) * 3.2);
         this._downbeat = true;
       }
@@ -842,6 +842,12 @@ export class Stage {
     this._drawKeyboard(state);
     if (state.timingMeter) this._drawTimingMeter(state.timingMeter);
     this._drawFx();
+  }
+
+  // How visible things at `beat` are: 1, except before the bar cleared for a bar played again
+  // (state.hideBefore), where state.fadeBefore (1 -> 0 while the view glides back) applies.
+  _cleared(state, beat) {
+    return state.hideBefore != null && beat < state.hideBefore - 1e-6 ? state.fadeBefore ?? 0 : 1;
   }
 
   _noteColor(state, e, n) {
@@ -875,6 +881,8 @@ export class Stage {
       const x0 = X(state.loopBar.from) - sp * 2.0;
       const x1 = X(state.loopBar.to) - sp * 2.0;
       if (x1 > this.headerW && x0 < w) {
+        const ba = state.loopBar.a ?? 1; // (it fades in as it is announced, and out when the bar is done)
+        ctx.globalAlpha = ba;
         ctx.fillStyle = 'rgba(255,194,61,0.20)';
         roundRect(ctx, x0, 4, x1 - x0, h - 8, 14);
         ctx.fill();
@@ -895,6 +903,7 @@ export class Stage {
           ctx.textBaseline = 'middle';
           ctx.fillText(state.loopBar.label, lx + 9, 8 + (Math.round(sp * 1.1) + 10) / 2 + 1);
         }
+        ctx.globalAlpha = 1;
       }
     }
 
@@ -948,21 +957,37 @@ export class Stage {
     const drawn = [];
     for (const e of p.events) {
       if (e.beat + e.dur < visLo || e.beat > visHi) continue;
-      if (e.beat < state.hideBefore - 1e-6) continue; // (cleared before a bar played again)
+      const a = this._cleared(state, e.beat); // (cleared before a bar played again: fading, then gone)
+      if (a <= 0.01) continue;
       const x = X(e.beat) + (e.measureRest ? ((p.beatsPer / 2) * this.pxPerBeat - sp * 0.6) : 0);
+      ctx.globalAlpha = a;
       if (e.rest) this._drawRest(e, x);
-      else drawn.push(this._drawChord(state, e, x));
+      else {
+        const d = this._drawChord(state, e, x);
+        if (d) d.alpha = a;
+        drawn.push(d);
+      }
+      ctx.globalAlpha = 1;
     }
     // beams (after heads so we know stem ends)
-    const beams = new Set(drawn.filter((d) => d && d.e._beam).map((d) => d.e._beam));
-    for (const g of beams) this._drawBeam(state, g, X);
+    const beams = new Map();
+    for (const d of drawn) if (d && d.e._beam && !beams.has(d.e._beam)) beams.set(d.e._beam, d.alpha);
+    for (const [g, a] of beams) {
+      ctx.globalAlpha = a;
+      this._drawBeam(state, g, X);
+    }
     // flags / stems for unbeamed
-    for (const d of drawn) if (d && !d.e._beam) this._drawStemFlag(d);
+    for (const d of drawn)
+      if (d && !d.e._beam) {
+        ctx.globalAlpha = d.alpha;
+        this._drawStemFlag(d);
+      }
     // ties
     ctx.strokeStyle = COLORS.ink;
     ctx.lineWidth = Math.max(1, sp * 0.14);
     for (const d of drawn) {
       if (!d || !d.e._tieTo) continue;
+      ctx.globalAlpha = d.alpha;
       const x1 = X(d.e._tieTo.beat);
       for (const n of d.e._notes) {
         const y = this._y(d.e.staff, n.d);
@@ -973,6 +998,7 @@ export class Stage {
         ctx.stroke();
       }
     }
+    ctx.globalAlpha = 1;
 
     // wrong-note ghosts (what the player actually played)
     if (state.wrongMarks) {
@@ -982,7 +1008,7 @@ export class Stage {
         const staff = p.staves.includes('treble') && (wm.midi >= 60 || !p.staves.includes('bass')) ? 'treble' : p.staves.includes('bass') ? 'bass' : p.staves[0];
         const d = staff === 'rhythm' ? 34 : diatonic(p.key.spell(wm.midi));
         const y = this._y(staff, d);
-        ctx.globalAlpha = Math.max(0, 1 - wm.age / 2.5) * 0.85;
+        ctx.globalAlpha = Math.max(0, 1 - wm.age / 2.5) * 0.85 * (wm.fade ?? 1);
         this._ledger(staff, d, x, COLORS.wrong);
         ctx.fillStyle = COLORS.wrong;
         this._glyph('noteheadBlack', x, y);
@@ -1353,7 +1379,8 @@ export class Stage {
     const key = p.key;
     for (const n of p.notes) {
       if (n.beat > now + lookBeats || n.beat + n.dur < now - 0.5) continue;
-      if (n.beat < state.hideBefore - 1e-6) continue; // (cleared before a bar played again)
+      const fa = this._cleared(state, n.beat); // (cleared before a bar played again: fading, then gone)
+      if (fa <= 0.01) continue;
       const k = this.keys.get(n.midi);
       if (!k) continue;
       const y1 = bottom - (n.beat - now) * pxb;
@@ -1373,21 +1400,21 @@ export class Stage {
       if (!st && ahead < 1 && ahead > -0.2 && bot - top > 4) {
         const a = Math.max(0, Math.min(1, 1 - ahead));
         const pad = k.black ? 1 : Math.max(2, k.w * 0.1);
-        ctx.globalAlpha = 0.25 + 0.45 * a;
+        ctx.globalAlpha = (0.25 + 0.45 * a) * fa;
         ctx.strokeStyle = col;
         ctx.lineWidth = 2 + 4 * a;
         roundRect(ctx, k.x + pad - 3, top - 3, k.w - pad * 2 + 6, bot - top + 6, r + 3);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = hit ? 0.8 : st && st.s === 'miss' ? 0.7 : 1;
+      ctx.globalAlpha = (hit ? 0.8 : st && st.s === 'miss' ? 0.7 : 1) * fa;
       this._noteBlock(k, top, bot - top, col, edge, r);
       if (hit) {
         // played: lit from inside while it sounds, with a white flash right after the hit
         const pad = k.black ? 1 : Math.max(2, k.w * 0.1);
         const t = this.landed.get(n.id);
         const flash = t ? Math.max(0, 1 - (performance.now() - t) / 180) : 0;
-        ctx.globalAlpha = 0.28 + 0.6 * flash;
+        ctx.globalAlpha = (0.28 + 0.6 * flash) * fa;
         ctx.fillStyle = '#fff';
         roundRect(ctx, k.x + pad, top, k.w - pad * 2, Math.max(2, bot - top - 1), Math.min(r, (bot - top) / 2));
         ctx.fill();

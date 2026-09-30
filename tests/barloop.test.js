@@ -10,7 +10,7 @@ import { generate } from '../js/music/generator.js';
 // bar line are followed exactly as the app would (it reads session.expectedNotes() every frame).
 // `play(note, ctx)` returns the midi to play, or null to leave the note out. ctx.epoch counts the
 // jumps back, ctx.attempt(bar) how many times that bar has started.
-function sim(piece, { play = (n) => n.midi, mode = 'tempo', barLoop = true, choose = 'continue', errMs = 0, level } = {}) {
+function sim(piece, { play = (n) => n.midi, mode = 'tempo', barLoop = true, choose = 'continue', errMs = 0, level, onFrame } = {}) {
   let now = 0;
   const events = [];
   let pendingChoice = false;
@@ -48,14 +48,15 @@ function sim(piece, { play = (n) => n.midi, mode = 'tempo', barLoop = true, choo
       const due = (s.playMode === 'wait' && !queue.length) || (s.beat - n.beat) * s.spb >= errMs / 1000 - 0.005;
       if (!due) continue;
       done.add(key);
-      const m = play(n, ctx);
-      if (m != null) queue.push({ midi: m, t: now + (s.playMode === 'wait' ? 0.05 : 0) });
+      const m = play(n, ctx); // (a midi, null to leave the note out, or a list of keys pressed together)
+      for (const k of Array.isArray(m) ? m : m == null ? [] : [m]) queue.push({ midi: k, t: now + (s.playMode === 'wait' ? 0.05 : 0) });
     }
     while (queue.length && queue[0].t <= now) {
       const q = queue.shift();
       s.noteOn(q.midi, q.t);
     }
     s.update();
+    if (onFrame) onFrame(s, now);
   }
   return { s, r: s.result(), events, expectedSeen };
 }
@@ -353,4 +354,90 @@ test('tempo: "learn it" counts the student in before the bar in wait mode', () =
   const loop = events.find((e) => e.type === 'loop' && e.learning);
   assert.ok(loop, 'learning the bar');
   countInAfter(events, loop, 2, piece, s.spb);
+});
+
+// ---- false strikes ---------------------------------------------------------------------------
+// The listener sometimes reports a key that was not struck (a release thump, a ghost partial). A bar
+// the student played right must not be sent back for that.
+
+test('tempo: a bar played right is not repeated for a couple of false strikes', () => {
+  const piece = piece4();
+  const bar2 = piece.notes.filter((n) => Math.floor(n.beat / piece.beatsPer) === 1);
+  const strays = Math.ceil(bar2.length / 2); // (as many as the old rule needed to fail the bar)
+  assert.ok(strays >= 1 && strays < bar2.length, 'a bar with several notes');
+  const extra = new Set(bar2.slice(0, strays).map((n) => n.id));
+  const { r, events } = sim(piece, { play: (n) => (extra.has(n.id) ? [n.midi, n.midi + 1] : n.midi) });
+  assert.equal(events.filter((e) => e.type === 'loop').length, 0, 'no loop');
+  assert.equal(r.hits, r.total);
+  assert.ok(r.extras >= strays, 'the strays still count as wrong keys');
+});
+
+test('tempo: a bar with as many stray keys as notes is still repeated', () => {
+  const piece = piece4();
+  const { events } = sim(piece, { play: (n, c) => (inBar(c.s, n, 2) && c.attempt(2) <= 1 ? [n.midi, n.midi + 1] : n.midi) });
+  const loops = events.filter((e) => e.type === 'loop');
+  assert.equal(loops.length, 1);
+  assert.equal(loops[0].bar, 2);
+});
+
+test('tempo: strays and misses together still fail the bar (a wrong key replacing a note)', () => {
+  const piece = piece4();
+  const { events } = sim(piece, { play: (n, c) => (inBar(c.s, n, 2) && c.attempt(2) <= 1 ? n.midi + 1 : n.midi) });
+  const loops = events.filter((e) => e.type === 'loop');
+  assert.equal(loops.length, 1);
+  assert.equal(loops[0].bar, 2);
+});
+
+// The retry is announced while the bar is still being played: riskBar says the bar already fails.
+test('tempo: riskBar names the bar that is going to be played again, before it ends', () => {
+  const piece = piece4();
+  const risk = [];
+  const { s, events } = sim(piece, {
+    play: (n, c) => (inBar(c.s, n, 2) && c.attempt(2) <= 1 ? null : n.midi),
+    onFrame: (s) => {
+      const r = s.riskBar;
+      if (r) risk.push({ ...r, beat: s.beat, looped: s.rewinds });
+    },
+  });
+  assert.ok(risk.length, 'the bar is flagged');
+  assert.ok(risk.every((r) => r.bar === 2 && r.attempt === 1 && r.from === piece.beatsPer && r.to === 2 * piece.beatsPer));
+  const first = risk[0];
+  const loop = events.find((e) => e.type === 'loop');
+  assert.ok(first.beat < 2 * piece.beatsPer, `flagged at beat ${first.beat.toFixed(2)}, before the bar ends`);
+  assert.ok(first.beat < loop.beatNow + 4 * piece.beatsPer && first.looped === 0, 'flagged before the jump back');
+  assert.equal(s.riskBar, null, 'nothing flagged at the end');
+});
+
+test('tempo: riskBar stays null for a bar played well, and when help is offered instead of a repeat', () => {
+  const piece = piece4();
+  let flagged = 0;
+  sim(piece, { onFrame: (s) => { if (s.riskBar) flagged++; } });
+  assert.equal(flagged, 0, 'a clean run flags nothing');
+  // the third failed try of a bar ends in the offer (slower / learn it), not in a repeat
+  const seen = [];
+  sim(piece, {
+    choose: 'continue',
+    play: (n, c) => (inBar(c.s, n, 2) ? null : n.midi),
+    onFrame: (s) => { const r = s.riskBar; if (r) seen.push(r.attempt); },
+  });
+  assert.ok(seen.includes(1) && seen.includes(2), `tries 1 and 2 are flagged (${[...new Set(seen)]})`);
+  assert.ok(!seen.includes(LOOP_RULES.offerAfter), 'the try that ends in the offer is not announced as a repeat');
+});
+
+// A detection the engine ignores as a ghost is marked, so the play screen can leave that key dark.
+test('noteOn marks ignored ghost detections (a partial, a low-confidence double), not real strikes', () => {
+  const piece = piece4();
+  let now = 0;
+  const s = new Session(piece, { mode: 'tempo', level: piece.level, clock: () => now });
+  s.start();
+  for (; s.beat < 0.05; now += 0.01) s.update();
+  const first = piece.notes.filter((n) => n.beat === 0)[0];
+  assert.equal(s.noteOn(first.midi, now, { confidence: 0.95 }).type, 'hit');
+  assert.equal(s.lastIgnore, null, 'a hit is not ignored');
+  assert.equal(s.noteOn(first.midi + 12, now + 0.05, { confidence: 0.3 }), null);
+  assert.equal(s.lastIgnore, 'ghost', 'the octave double of a hit key');
+  assert.equal(s.noteOn(first.midi + 2, now + 0.5, { confidence: 0.4 }), null);
+  assert.equal(s.lastIgnore, 'ghost', 'low confidence');
+  assert.equal(s.noteOn(first.midi + 2, now + 0.6, { confidence: 0.9 }).type, 'wrong');
+  assert.equal(s.lastIgnore, null, 'a confident wrong key is a wrong key, not a ghost');
 });

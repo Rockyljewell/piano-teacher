@@ -22,6 +22,8 @@ export const S = {
   free: false,
   history: [],
   lastKind: new Map(),
+  ghostKeys: new Set(), // keys the listener reported that the session ignored as ghosts: not lit on the keyboard
+  band: null, // the bar band (a bar to be / being played again), for its fade in and out
   combo: 0,
   bestCombo: 0,
   judged: 0,
