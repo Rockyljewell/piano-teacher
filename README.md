@@ -26,6 +26,7 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 
   Beginners also start at a slower tempo, and extra notes cost less at low levels.
 - **Gets you ready first.** Before each exercise (levels 1–16), song or placement test, the keyboard lights up where your hands go, with finger numbers, and Pip says it: "Left pinky on C3, the C below middle C." Rhythm drills say "any key works" and suggest a key in your current hand position. The count-in starts when you play the first note, or tap "I'm ready".
+- **Teaches each key when you meet it.** The first time a level brings a key (C at the start, then G, F, A minor and D minor, D, B♭, A, E♭ and on to F♯), a short *key lesson* follows the level introduction: the key signature in words; the five-finger hand position for each hand; the scale with finger numbers going **up and down**, with the thumb tuck and the finger crossing over the thumb marked on the keyboard ("thumb under", "3 over thumb"); and the I–IV–V–I chords with their hand shapes. **Hear it** plays what is on screen and lights the keys and finger numbers in turn. Guided practice in wait mode follows: the scale with each hand, then the chords (level 1 just practises the five-finger position). The level's warm-ups then use the new key, the get-ready card says where the thumb moves ("Going up, tuck the thumb under finger 3 to play C"), and a dashed ring on the finger number marks the spot on the staff. Fingerings are standard for all 24 major and minor keys, both hands. Practice → **Keys** opens the lesson for any key at any time.
 - **Grading that fits your level.** Beginners are graded mostly on playing the right notes; timing counts more as you advance. Chords earn partial credit, each hand counts, and wait mode is graded too (wrong tries and long hesitations). Results say what to fix: the weakest bar, the weaker hand, the notes missed most, and whether you rush or drag.
 - **Adaptive placement.** A Bayesian estimate of your level (0–40) is updated after every test. It starts from how much you said you've played. Scores of 92%+ jump two levels up, 80%+ one level up, under 70% never goes harder, and under 55% steps down. The test stops once the estimate is narrow enough (5 to 9 tests). Every test uses both hands.
 - **Moving-line display, like a typing game.** A scrolling grand staff moves past a fixed playhead. Pitch-coloured notes fall onto a keyboard overlay that lights up the keys to play. Note names and finger numbers show at beginner levels.
@@ -40,7 +41,7 @@ A web app for iPad that listens to you play a real piano, grades every note in r
 
 | Stage | Levels | Topics |
 | --- | --- | --- |
-| Beginner | 1–8 | Middle C position (RH, LH), steps and skips, rests, hands taking turns, 3/4, first hands-together, eighth notes, G position and F♯ |
+| Beginner | 1–8 | Middle C position (RH, LH), steps and skips, rests, hands taking turns, 3/4, first hands-together, eighth notes, G position and F♯ (key lessons: C at level 1, G at level 8) |
 | Elementary | 9–16 | Melodies across hands, harmonic intervals, F major, dotted rhythms, shifting positions, LH triads (I–IV–V), minor keys, scales and new keys |
 | Intermediate | 17–26 | Alberti bass, ledger lines, sixteenths, syncopation and ties, 3♯/3♭ keys, RH chords, triplets, independent hands, arpeggios and two-octave scales, 6/8 |
 | Advanced | 27–34 | Seventh chords, 4–5 accidentals, chromaticism, velocity, octaves and leaps, walking bass, every key, 3-against-2 polyrhythm |
@@ -118,6 +119,7 @@ npm run eval:noise     # false notes per minute and accuracy in noise
 npm run fit            # refit the listener's confidence model
 node e2e/smoke.mjs out/     # full run in headless Chromium: fake mic, adaptive placement, every screen
 node e2e/gallery.mjs out/   # screenshots of exercises from across the curriculum
+node e2e/keylesson.mjs out/ # the G major key lesson, its guided practice and the Keys section
 ```
 
 The microphone needs a secure context: `localhost` works on a computer, but an iPad needs HTTPS (GitHub Pages provides it).

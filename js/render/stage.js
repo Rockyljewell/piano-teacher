@@ -1186,14 +1186,28 @@ export class Stage {
       if (n > 1) ctx.font = `600 ${Math.round(sp * 0.95)}px ${COLORS.fontDisplay}`;
       const lineH = n > 1 ? sp * 0.98 : 0;
       const cardH = this.L.staff.h;
+      // A scale's thumb tuck or cross-over: the finger number that lands there gets a dashed ring.
+      const ring = (cy) => {
+        if (!e.cross || n !== 1) return;
+        ctx.save();
+        ctx.strokeStyle = '#E09A0B';
+        ctx.lineWidth = Math.max(2, sp * 0.2);
+        ctx.setLineDash([sp * 0.35, sp * 0.25]);
+        ctx.beginPath();
+        ctx.arc(x + hw / 2, cy, sp * 0.95, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      };
       if (e.hand === 'R') {
         const top = Math.max(notes[notes.length - 1].d + (e._up ? 8 : 3), s.top + 3);
         const y0 = Math.max(this._y(staff, top), sp * 0.8 + (n - 1) * lineH); // lowest line
         fs.forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 - i * lineH));
+        ring(y0);
       } else {
         const bot = Math.min(notes[0].d - (e._up ? 3 : 8), s.bottom - 3);
         const y0 = Math.min(this._y(staff, bot), cardH - sp * 0.8 - (n - 1) * lineH); // top line
         [...fs].reverse().forEach((f, i) => ctx.fillText(String(f), x + hw / 2, y0 + i * lineH));
+        ring(y0);
       }
     }
     if (e._base >= 4) return null;

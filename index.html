@@ -152,6 +152,41 @@
       </div>
     </section>
 
+    <!-- KEY LESSON ------------------------------------------------------------------------------ -->
+    <section id="screen-key" class="screen focus intro-screen key-screen">
+      <header class="focus-top">
+        <button id="btn-key-back" class="icon-btn" aria-label="Back"></button>
+        <span id="key-stage" class="stage-chip"></span>
+        <div id="key-facts" class="intro-top-facts"></div>
+      </header>
+      <div class="content keylesson">
+        <div class="key-top">
+          <div class="key-head">
+            <div id="key-coin" class="intro-coin"><span>C</span></div>
+            <div class="intro-titles"><p id="key-eyebrow" class="eyebrow">Meet a new key</p><h1 id="key-title"></h1><p id="key-sub" class="key-sub"></p></div>
+          </div>
+          <div id="key-tabs" class="key-tabs" role="tablist" aria-label="Key lesson"></div>
+        </div>
+        <section class="card key-card">
+          <div id="key-toolbar" class="chips key-toolbar"></div>
+          <div id="key-board" class="key-board"></div>
+          <div id="key-seq" class="key-seq hidden" aria-hidden="true"></div>
+          <p id="key-words" class="key-words"></p>
+        </section>
+        <div class="key-foot">
+          <div class="intro-coach">
+            <div class="pip-slot" data-pip="conduct" data-size="80"></div>
+            <div class="bubble tail-left" data-coach id="key-line"></div>
+          </div>
+          <div class="key-actions">
+            <button id="btn-key-skip" class="btn btn-ghost">Skip for now</button>
+            <button id="btn-key-hear" class="btn btn-lg">Hear it</button>
+            <button id="btn-key-next" class="btn btn-primary btn-lg">Next</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- PLAY ------------------------------------------------------------------------------------ -->
     <section id="screen-play" class="screen play">
       <header class="hud">
@@ -345,6 +380,11 @@
                 <input type="range" id="pr-tempo" min="-50" max="130" value="30">
               </label>
               <div class="pr-go"><button id="btn-pr-go" class="btn btn-primary btn-lg">Start practice</button></div>
+            </div>
+            <div class="card pr-keys">
+              <h2 class="pr-label">Keys</h2>
+              <p class="pr-hint">Learn a key: its scale, where the fingers go up and down, and its chords.</p>
+              <div id="pr-keys" class="key-grid"></div>
             </div>
           </div>
           <div class="practice-pip">

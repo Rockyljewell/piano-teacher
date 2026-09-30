@@ -5,6 +5,7 @@ import { noteName, spokenPc } from './music/theory.js';
 import { musicalOffset } from './game/engine.js';
 import { songsForLevel } from './music/songs.js';
 import { generate } from './music/generator.js';
+import { keysToTeach, keyFlowSteps, keyOf, specId } from './music/keylesson.js';
 import * as P from './placement.js';
 
 const STORE = 'maestro.progress.v1'; // (the key stays; the data inside carries its own version)
@@ -134,14 +135,14 @@ export function lessonPlan(level) {
   const S = (type, extra = {}) => ({ type, ...extra });
   return [
     S('intro'),
-    S('warmup', { warm: wk[0] }),
+    S('warmup', { warm: wk[0], n: 0 }),
     S('learn'),
     S('play', { same: true }),
     S('rhythm'),
     level > 1 ? S('review') : S('practice'),
     S('learn'),
     S('play', { same: true }),
-    S('warmup', { warm: wk[1 % wk.length] }),
+    S('warmup', { warm: wk[1 % wk.length], n: 1 }),
     S('song-learn'),
     S('song-play', { same: true }),
     S('rhythm'),
@@ -193,6 +194,8 @@ export class Coach {
       placement: null,
       version: VERSION,
       plan: {},
+      keysTaught: {}, // key lessons the student has had (see music/keylesson.js)
+      keyFlow: null, // the guided practice after a key lesson: {level, key, i, free}
     };
   }
 
@@ -216,6 +219,7 @@ export class Coach {
   static migrate(s) {
     if (!s.plan || typeof s.plan !== 'object') s.plan = {};
     for (const k of ['mastery', 'tempo', 'counter', 'fails', 'seenIntro']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
+    if (!s.keysTaught || typeof s.keysTaught !== 'object') s.keysTaught = {};
     if (!Array.isArray(s.history)) s.history = [];
     if ((s.version || 1) < 2) {
       const L = s.level;
@@ -340,6 +344,7 @@ export class Coach {
       if (final >= 2) this.s.mastery[final] = Math.max(this.s.mastery[final] || 0, PROGRESSION.placementHeadStart);
       this.s.plan[final] = freshPlan();
       this.s.retry = null;
+      this.s.keyFlow = null;
       const tests = p.tests;
       this.s.placement = null;
       this.save();
@@ -358,6 +363,7 @@ export class Coach {
     this.s.placement = null;
     this.s.plan[this.s.level] = freshPlan();
     this.s.retry = null;
+    this.s.keyFlow = null;
     this.save();
   }
 
@@ -422,6 +428,12 @@ export class Coach {
     const p = this._plan(level);
     if (p.step === 0 && !this.s.seenIntro[level]) return { kind: 'intro', level, plan: { level, step: 0 }, lesson: 1, total: steps.length, label: `New idea: ${levelInfo(level).title}` };
     if (p.step === 0) p.step = 1;
+    // Guided practice after a key lesson, then a key lesson that is due (right after the level's
+    // introduction; a student already part-way through the level is not interrupted).
+    const flow = this._keyFlowActivity(level);
+    if (flow) return flow;
+    const due = p.step <= 1 ? this.pendingKey(level) : null;
+    if (due) return { kind: 'keylesson', level, key: due, label: `Meet ${keyOf(due).name}` };
     const i = Math.min(p.step, steps.length - 1);
     const st = steps[i];
     const tf = this.tempoFactor(level);
@@ -438,7 +450,10 @@ export class Coach {
     switch (st.type) {
       case 'warmup': {
         const kind = st.warm;
-        return { ...base, kind, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: WARMUP_LABEL[kind], coachLine: STEP_LINE.warmup };
+        // A level that brings a new key practises it in its warm-ups.
+        const ks = keysToTeach(level);
+        const key = ks.length ? ks[(st.n || 0) % ks.length] : undefined;
+        return { ...base, kind, key, mode: kind === 'notes' ? 'wait' : 'tempo', tempoFactor: tf, label: WARMUP_LABEL[kind], coachLine: STEP_LINE.warmup };
       }
       case 'learn':
         return { ...base, kind: 'sight', mode: 'wait', tempoFactor: tf, label: 'Learn a new piece (wait mode)', coachLine: STEP_LINE.learn };
@@ -489,10 +504,57 @@ export class Coach {
     this.save();
   }
 
+  // ---- key lessons ------------------------------------------------------------------------
+  // The first time a level brings a key the student meets it properly (music/keylesson.js):
+  // a lesson card, then guided practice (scale with each hand, then the chords).
+  keyTaught(spec) {
+    return !!this.s.keysTaught[specId(spec)];
+  }
+
+  // The key this level introduces that the student has not had yet, or null.
+  pendingKey(level = this.s.level) {
+    return keysToTeach(level).find((k) => !this.keyTaught(k)) || null;
+  }
+
+  // The student has seen the key lesson. With `practice` the guided practice follows.
+  keyLessonDone(spec, { practice = true, level = this.s.level, free = false } = {}) {
+    this.s.keysTaught[specId(spec)] = true;
+    this.s.keyFlow = practice ? { level, key: { f: spec.f, m: spec.m }, i: 0, free: !!free } : null;
+    this.save();
+  }
+
+  _keyFlowActivity(level) {
+    const kf = this.s.keyFlow;
+    if (!kf) return null;
+    if (!kf.free && kf.level !== level) {
+      this.s.keyFlow = null;
+      return null;
+    }
+    const steps = keyFlowSteps(kf.level, kf.key, { full: !!kf.free });
+    const st = steps[kf.i];
+    if (!st) {
+      this.s.keyFlow = null;
+      return null;
+    }
+    return { ...st, level: kf.level, mode: 'wait', tempoFactor: this.tempoFactor(kf.level), free: !!kf.free, keyFlow: { i: kf.i, n: steps.length, free: !!kf.free } };
+  }
+
+  _advanceKeyFlow(activity) {
+    const kf = this.s.keyFlow;
+    if (!kf || !activity.keyFlow || kf.i !== activity.keyFlow.i) return;
+    kf.i++;
+    if (kf.i >= activity.keyFlow.n) this.s.keyFlow = null;
+  }
+
   // "Skip this one": move past a plan step without counting it (the level check can't be
   // skipped: a new check piece comes instead). A skipped retry is dropped.
   skip(activity, piece) {
     const s = this.s;
+    if (activity && activity.keyFlow) {
+      this._advanceKeyFlow(activity);
+      this.save();
+      return;
+    }
     if (!activity || !activity.plan || activity.plan.level !== s.level) return;
     const p = this._plan(s.level);
     if (activity.retry) {
@@ -547,6 +609,7 @@ export class Coach {
     const s = this.s;
     const level = activity.level;
     const latency = this.autoLatency(result, activity);
+    if (activity.keyFlow) this._advanceKeyFlow(activity);
     s.stats.seconds += seconds;
     s.stats.pieces += 1;
     s.stats.notes += result.hits;
@@ -589,6 +652,7 @@ export class Coach {
       gain = band ? band[1] : 0;
     }
     if (!sightLike || activity.review) gain = gain > 0 ? Math.round(gain / 2) : 0;
+    if (activity.keyFlow) gain = 0; // learning a key is not a level exercise
     if (gain > 0 && (result.loopCount || 0) >= 2) gain = Math.round(gain / 2); // not solid yet
     if (level === cur || inPlan) {
       s.mastery[cur] = Math.max(0, Math.min(100, (s.mastery[cur] || 0) + gain));
@@ -631,6 +695,7 @@ export class Coach {
       s.retry = null;
       // Back through the easier level's pieces (its introduction is already known).
       s.plan[s.level] = { ...freshPlan(), step: 1, done: 1 };
+      s.keyFlow = null;
       out.levelDown = true;
       out.newLevel = s.level;
     }

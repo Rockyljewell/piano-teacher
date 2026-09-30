@@ -23,6 +23,10 @@ function playNext(c, score = 92, extra = {}) {
     c.markIntroSeen(a.level);
     return { a, out: null };
   }
+  if (a.kind === 'keylesson') {
+    c.keyLessonDone(a.key, { practice: false });
+    return { a, out: null };
+  }
   const stars = a.mode === 'wait' ? 0 : score >= 95 ? 3 : score >= 85 ? 2 : score >= 70 ? 1 : 0;
   const seed = 1000 + c.s.stats.pieces;
   const out = c.record(a, { seed, bpm: 70 }, { score, mode: a.mode, hits: 14, stars, loopCount: 0, ...extra }, 30);
@@ -81,7 +85,7 @@ test('the plan walks through its steps with the right modes', () => {
 });
 
 test('level-up needs the whole plan and a passed level check at tempo', () => {
-  const c = placed(8);
+  const c = placed(9); // (a level with no new key: no key lesson in the way)
   let n = 0,
     out = null;
   do {
@@ -90,7 +94,7 @@ test('level-up needs the whole plan and a passed level check at tempo', () => {
   } while (!(out && out.levelUp) && n < 40);
   assert.ok(out.levelUp);
   assert.equal(n, 15, 'intro + 13 lessons + the check');
-  assert.equal(c.level, 9);
+  assert.equal(c.level, 10);
   assert.equal(c.planStatus().lesson, 1, 'the new level starts at its beginning');
 });
 

@@ -85,6 +85,13 @@ export class Key {
         return { step, alter: alt, octave };
       }
     }
+    // The raised 7th of a minor key (the leading tone): C♯ in D minor, B♮ in C minor, not D♭ and
+    // C♭. Left to the fallback below when it would need a double sharp (F𝄪 in G♯ minor).
+    if (this.mode === 'minor') {
+      const step = (this.tonicStep + 6) % 7;
+      const alt = this.alter[step] + 1;
+      if (alt >= -1 && alt <= 1 && (STEP_PC[step] + alt + 12) % 12 === pc) return { step, alter: alt, octave: Math.floor((midi - alt) / 12) - 1 };
+    }
     // Chromatic: raise the lower step (sharp keys) or lower the upper step (flat keys).
     const flat = preferFlat ?? this.fifths < 0;
     for (let step = 0; step < 7; step++) {
@@ -100,6 +107,24 @@ export class Key {
       if (STEP_PC[step] === pc) return { step, alter: 0, octave: Math.floor(midi / 12) - 1 };
     return { step: 0, alter: 0, octave: 4 };
   }
+}
+
+// The key signature in words: { count, kind ('sharp' | 'flat' | 'none'), notes: ['F♯', ...], text }.
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'];
+const joinAnd = (a) => (a.length <= 1 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+export function signature(key) {
+  const f = key.fifths;
+  const notes = f > 0 ? SHARP_ORDER.slice(0, f).map((s) => `${STEP_NAMES[s]}♯`) : f < 0 ? FLAT_ORDER.slice(0, -f).map((s) => `${STEP_NAMES[s]}♭`) : [];
+  const kind = f > 0 ? 'sharp' : f < 0 ? 'flat' : 'none';
+  const text = f === 0 ? 'No sharps or flats: only white keys' : `${COUNT_WORDS[Math.abs(f)]} ${kind}${Math.abs(f) > 1 ? 's' : ''}: ${joinAnd(notes)}`;
+  return { count: Math.abs(f), kind, notes, text };
+}
+
+// "G major: every F is F♯." for a key's signature notes (null in C major and A minor).
+export function keyReminder(key) {
+  const sig = signature(key);
+  if (!sig.notes.length) return null;
+  return `${key.name}: ${joinAnd(sig.notes.map((n) => `every ${n[0]} is ${n}`))}.`;
 }
 
 // Diatonic staff position: C0 = 0, each step +1. Middle C (C4) = 28.

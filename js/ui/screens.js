@@ -4,16 +4,17 @@ import { $, $$, S, app, audio, coach, esc, screen, show, say, showLine, sfx, toa
 import { icon, pip, pipFace, wordmark, reducedMotion } from './brand.js';
 import { levelInfo, LEVELS, STAGES } from '../music/curriculum.js';
 import { generate } from '../music/generator.js';
-import { isBlack } from '../music/theory.js';
+import { isBlack, Key } from '../music/theory.js';
+import { allKeys, signature } from '../music/keylesson.js';
 import { XP_MAX, PROGRESSION } from '../coach.js';
 import { planSegs } from './results.js';
 
 // Per-stage colour variables: full (--sc/--sce), softened (--scs/--scse) and ink (--sci).
-const STAGE_VARS = STAGES.map((_, i) => {
+export const STAGE_VARS = STAGES.map((_, i) => {
   const k = i + 1;
   return `--sc:var(--stage-${k});--sce:var(--stage-${k}-edge);--scs:var(--stage-${k}-soft);--scse:var(--stage-${k}-soft-edge);--sci:var(--stage-${k}-ink)`;
 });
-const stageOf = (n) => Math.max(0, STAGES.findIndex((s) => n >= s.from && n <= s.to));
+export const stageOf = (n) => Math.max(0, STAGES.findIndex((s) => n >= s.from && n <= s.to));
 // A level title inside a sentence: lowercase the first word, but keep note names ("G position",
 // "F major and B flat"), "C" in "Middle C" and proper names (Alberti) as they are.
 function inSentence(t) {
@@ -306,7 +307,7 @@ function renderHome() {
     $('#today-level').innerHTML = `<div class="eyebrow">First step</div><h1>Find your level</h1><p>A few short pieces for both hands. They get harder or easier to match you.</p>`;
   }
   $('#btn-start').innerHTML = `${icon('play', 24)} ${placed ? (next && next.kind === 'intro' ? `Start Level ${lv.n}` : 'Continue') : 'Start'}`;
-  $('#btn-hear').classList.toggle('hidden', !placed || !next || next.kind === 'intro');
+  $('#btn-hear').classList.toggle('hidden', !placed || !next || next.kind === 'intro' || next.kind === 'keylesson');
   $('#btn-hear').innerHTML = `${icon('speaker', 20)} Hear it first`;
   // daily goal: the ring fills and its number counts up from the last value shown
   const left = Math.max(0, sm.dailyGoal - sm.todayXp);
@@ -345,7 +346,7 @@ $('#btn-start').addEventListener('click', () => {
 $('#btn-hear').addEventListener('click', () => {
   sfx('tap');
   const next = coach.nextActivity();
-  if (!next || next.kind === 'intro') return app.withListening(() => app.runActivity(next));
+  if (!next || next.kind === 'intro' || next.kind === 'keylesson') return app.withListening(() => app.runActivity(next));
   app.withListening(() => app.runActivity({ ...next, demoFirst: true }));
 });
 $('#pill-mic').addEventListener('click', () => {
@@ -567,7 +568,7 @@ export function showIntro(level) {
     // (no tap sound: entering the lesson plays the whoosh)
     coach.markIntroSeen(level);
     const act = coach.nextActivity();
-    app.runActivity(demoFirst && act && act.kind !== 'intro' ? { ...act, demoFirst: true } : act);
+    app.runActivity(demoFirst && act && act.kind !== 'intro' && act.kind !== 'keylesson' ? { ...act, demoFirst: true } : act);
   };
   $('#btn-intro-go').onclick = () => start(false);
   $('#btn-intro-hear').onclick = () => start(true);
@@ -658,8 +659,27 @@ screen('practice', {
     updatePracticeLabels();
     fillRange(lvl);
     fillRange($('#pr-tempo'));
-    rise([...$$('#pr-kind .kind'), $('#screen-practice .pr-card')], { delay: 60, step: 40 });
+    renderKeyGrid();
+    rise([...$$('#pr-kind .kind'), $('#screen-practice .pr-card'), $('#screen-practice .pr-keys')], { delay: 60, step: 40 });
   },
+});
+// Keys: pick any key for its lesson (signature, scale fingering up and down, chords).
+function renderKeyGrid() {
+  const pick = (spec, cls) => {
+    const key = new Key(spec.f, spec.m);
+    const sig = signature(key);
+    const tonic = key.name.split(' ')[0];
+    const taught = coach.keyTaught(spec);
+    return `<button class="key-pick ${cls}" data-f="${spec.f}" data-m="${spec.m}" aria-label="${esc(key.name)}${taught ? ', learned' : ''}"><span>${esc(tonic)}${cls === 'minor' ? 'm' : ''}</span><small>${sig.count ? `${sig.count}${sig.kind === 'sharp' ? '♯' : '♭'}` : 'no ♯ ♭'}</small>${taught ? '<span class="kp-check" aria-hidden="true">✓</span>' : ''}</button>`;
+  };
+  const ks = allKeys();
+  $('#pr-keys').innerHTML = `<h3>Major</h3>${ks.map((k) => pick(k.major, 'major')).join('')}<h3>Minor</h3>${ks.map((k) => pick(k.minor, 'minor')).join('')}`;
+}
+$('#pr-keys').addEventListener('click', (e) => {
+  const b = e.target.closest('.key-pick');
+  if (!b) return;
+  sfx('tap');
+  app.showKeyLesson({ key: { f: +b.dataset.f, m: b.dataset.m }, level: coach.level, library: true });
 });
 function updatePracticeLabels() {
   const n = +$('#pr-level').value;

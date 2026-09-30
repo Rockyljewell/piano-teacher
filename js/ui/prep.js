@@ -97,7 +97,7 @@ export function prepInfo(piece, act = {}) {
 export function wantsPrep(piece, act = {}) {
   if (!piece || act.demoFirst) return false;
   if (coach.settings.prep === false) return false;
-  if (act.placement) return true;
+  if (act.placement || act.keyFlow) return true;
   const level = act.level ?? piece.level ?? 1;
   return level <= 16;
 }
@@ -105,7 +105,7 @@ export function wantsPrep(piece, act = {}) {
 // How long before starting on its own (ms), or 0 to wait for the student.
 function autoStartMs(act, info) {
   if (act.placement) return 6000;
-  if (info.level <= 8) return 0;
+  if (act.keyFlow || info.level <= 8) return 0; // a key lesson: read where the hands go, take your time
   return coach.settings.autoAdvance === false ? 0 : 7000;
 }
 
@@ -119,7 +119,7 @@ export function enterPrep(piece, act, mode) {
   card.innerHTML = `
     <div class="prep-pip">${pip(info.anyKey != null ? 'conduct' : 'hello', 92)}</div>
     <div class="prep-body">
-      <div class="eyebrow">${act.plan && act.lesson ? `Lesson ${act.lesson} of ${act.total} · ` : ''}Get ready</div>
+      <div class="eyebrow">${act.keyFlow ? `Key lesson · step ${act.keyFlow.i + 1} of ${act.keyFlow.n} · ` : act.plan && act.lesson ? `Lesson ${act.lesson} of ${act.total} · ` : ''}Get ready</div>
       <div class="prep-title">${esc(info.title)}</div>
       <div class="prep-text" id="prep-text">${esc(info.text)}</div>
       ${lessonTip(act)}
@@ -218,7 +218,7 @@ async function startFromPrep(why) {
 
 // Pip's tip for a lesson step: what this step is for, and a reminder of the level's idea.
 function lessonTip(act) {
-  if (!act || !act.plan || (!act.coachLine && !act.tip)) return '';
+  if (!act || !(act.plan || act.keyFlow) || (!act.coachLine && !act.tip)) return '';
   return `<div class="prep-tip"><b>${esc(act.coachLine || '')}</b> ${esc(act.tip || '')}</div>`;
 }
 

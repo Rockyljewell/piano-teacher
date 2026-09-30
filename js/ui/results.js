@@ -276,6 +276,23 @@ export function finishPiece(result) {
     nextLabel = 'Back to songs';
     autoSecs = 0;
     line = rv.speak;
+  } else if (act.keyFlow) {
+    // Practice after a key lesson: step by step; the last one goes back to the lesson (or to Keys).
+    const kf = act.keyFlow;
+    const last = kf.i + 1 >= kf.n;
+    lvlEl.innerHTML = `<div class="mastery">Key lesson · step <b>${kf.i + 1}</b> of ${kf.n}</div>`;
+    line = rv.speak;
+    if (last && act.free) {
+      nextFn = () => {
+        app.stopPlay();
+        app.show('practice');
+      };
+      nextLabel = 'Done';
+      autoSecs = 0;
+    } else {
+      nextAct = coach.nextActivity();
+      nextLabel = last ? 'Back to my lesson' : 'Next';
+    }
   } else if (act.free) {
     lvlEl.innerHTML = '';
     nextAct = { ...act, seed: undefined, demoFirst: false };

@@ -23,6 +23,11 @@ export function buildPiece(act) {
   if (act.piece) return act.piece;
   if (act.kind === 'song') return songPiece(act.songId, act.arrangementId, { hands: act.hands || 'both', tempoScale: act.tempoScale || 1, from: act.from, to: act.to });
   const opts = { kind: act.kind, seed: act.seed, measures: act.measures, tempoFactor: act.tempoFactor, bpm: act.bpm, bothHands: act.bothHands };
+  // Key practice: a chosen key, hand and chord progression.
+  if (act.key) opts.key = new Key(act.key.f, act.key.m);
+  if (act.hand) opts.hand = act.hand;
+  if (act.prog) opts.prog = act.prog;
+  if (act.harmonic != null) opts.harmonic = act.harmonic;
   return act.kind === 'rhythm' ? generateRhythm(act.level, opts) : generate(act.level, opts);
 }
 
@@ -31,6 +36,7 @@ export function runActivity(act) {
   stopVoice();
   if (!act) return show('home');
   if (act.kind === 'intro') return app.showIntro(act.level);
+  if (act.kind === 'keylesson') return app.showKeyLesson(act);
   let piece;
   try {
     piece = buildPiece(act);
@@ -57,6 +63,7 @@ export function stageOptions(level) {
 
 function modeLabel(act) {
   if (act.placement) return 'Placement';
+  if (act.keyFlow) return `Key lesson · step ${act.keyFlow.i + 1} of ${act.keyFlow.n}`;
   if (act.plan && act.lesson) return `Lesson ${act.lesson} of ${act.total}`;
   if (act.kind === 'song') return 'Song';
   if (act.kind === 'import') return 'Imported';
@@ -122,7 +129,7 @@ export function play(piece, act) {
   } else {
     startSession(mode);
     // No "get ready" step: Pip's lesson tip shows during the count-in instead.
-    if (act.plan && !act.demoFirst && (act.coachLine || act.tip)) {
+    if ((act.plan || act.keyFlow) && !act.demoFirst && (act.coachLine || act.tip)) {
       showCoachCard({ eyebrow: modeLabel(act), title: act.label || '', text: [act.coachLine, act.tip].filter(Boolean).join(' '), pose: 'hello', until: 'go' });
     }
   }
@@ -840,12 +847,17 @@ $('#btn-skip').addEventListener('click', () => {
     // Skipping a placement test counts as not being able to play it.
     S.session.finished = true;
     app.finishPiece({ ...S.session.result(), score: 0 });
-  } else if (act && !act.plan && (act.free || act.kind === 'song' || act.kind === 'import')) {
+  } else if (act && !act.plan && !act.keyFlow && (act.free || act.kind === 'song' || act.kind === 'import')) {
     stopPlay();
     show(act.kind === 'song' || act.kind === 'import' ? 'songs' : 'home');
   } else {
     coach.skip(act, S.piece);
-    runActivity(coach.nextActivity());
+    const next = coach.nextActivity();
+    // Skipping the last step of a key practice from the Keys section goes back there.
+    if (act && act.keyFlow && act.free && !(next && next.keyFlow)) {
+      stopPlay();
+      show('practice');
+    } else runActivity(next);
   }
 });
 $('#btn-quit').addEventListener('click', () => {

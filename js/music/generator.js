@@ -3,9 +3,10 @@
 // chord tones on strong beats, then a left-hand accompaniment in the level's style.
 //
 // Every piece also carries `prep`: where the hands go before it starts (see buildPrep).
-import { Key, diatonic, diatonicToMidi, noteName, pcName, findableName, middleCRelative, spokenPc, chordName, isBlack } from './theory.js';
+import { Key, diatonic, diatonicToMidi, noteName, pcName, findableName, middleCRelative, spokenPc, chordName, isBlack, keyReminder } from './theory.js';
 import { makeRng } from './rng.js';
 import { levelInfo } from './curriculum.js';
+import { scaleFingers, crossings } from './fingering.js';
 
 const T = 1 / 3;
 export const CELLS = {
@@ -39,7 +40,7 @@ let nextId = 1;
 
 // Pitch classes of a diatonic chord. In minor, V gets the raised leading tone (harmonic minor);
 // VII stays the natural subtonic (it leads to III in these progressions, not to i).
-function chordPcs(key, degree, seventh = false) {
+export function chordPcs(key, degree, seventh = false) {
   const pcs = key.scalePcs();
   const out = [pcs[degree % 7], pcs[(degree + 2) % 7], pcs[(degree + 4) % 7]];
   if (seventh) out.push(pcs[(degree + 6) % 7]);
@@ -389,7 +390,7 @@ export function fingerPart(evs, key, hand) {
 
 // Standard fingering for a block triad: LH 5-3-1 (5-2-1 when the lower interval is a fourth),
 // RH 1-3-5 (1-2-5 when the upper interval is a fourth).
-function chordFingers(midis, hand) {
+export function chordFingers(midis, hand) {
   if (midis.length === 1) return [hand === 'R' ? 1 : 5];
   if (midis.length === 2) return midis[1] - midis[0] > 9 ? (hand === 'R' ? [1, 5] : [5, 1]) : hand === 'R' ? [1, midis[1] - midis[0] >= 7 ? 5 : 3] : [midis[1] - midis[0] >= 7 ? 5 : 3, 1];
   if (midis.length === 3) {
@@ -877,7 +878,7 @@ function accompaniment(rng, add, style, key, prog, perMeasure, measures, beatsPe
 
 // Close-position voicing of the chord's pitch classes, moving as little as possible.
 // `rootPosition` (final chords) keeps the root in the bass.
-function voiceLead(pcs, prev, lo, hi, rootPosition = false) {
+export function voiceLead(pcs, prev, lo, hi, rootPosition = false) {
   const candidates = [];
   for (let bass = lo - 6; bass <= hi; bass++) {
     const pcb = pcOf(bass);
@@ -904,24 +905,22 @@ function voiceLead(pcs, prev, lo, hi, rootPosition = false) {
   return pool.sort((a, b) => cost(a) - cost(b))[0];
 }
 
-// --- technique ----------------------------------------------------------------------------
-// One-octave scale fingerings, ascending (the descent reverses them).
-const SCALE_FINGERS = {
-  white: { R: [1, 2, 3, 1, 2, 3, 4, 5], L: [5, 4, 3, 2, 1, 3, 2, 1] },
-  '-1major': { R: [1, 2, 3, 4, 1, 2, 3, 4], L: [5, 4, 3, 2, 1, 3, 2, 1] },
-  '-2major': { R: [4, 1, 2, 3, 1, 2, 3, 4], L: [3, 2, 1, 4, 3, 2, 1, 3] },
-  '-3major': { R: [3, 1, 2, 3, 4, 1, 2, 3], L: [3, 2, 1, 4, 3, 2, 1, 3] },
-  '-4major': { R: [3, 4, 1, 2, 3, 1, 2, 3], L: [3, 2, 1, 4, 3, 2, 1, 3] },
-};
-const WHITE_START = new Set(['0major', '1major', '2major', '3major', '4major', '0minor', '1minor', '-1minor', '-2minor', '-3minor']);
-function scaleFingering(key, hand) {
-  const k = `${key.fifths}${key.mode}`;
-  if (WHITE_START.has(k)) return SCALE_FINGERS.white[hand];
-  return SCALE_FINGERS[k] ? SCALE_FINGERS[k][hand] : null;
+// The chords of a progression (scale degrees, 0 = I) as one hand plays them: each close to the
+// one before, the last in root position. Shared by the chord warm-up and the key lesson, so the
+// lesson shows exactly what the warm-up asks for.
+export function progressionVoicings(key, prog, hand = 'L') {
+  const lo = hand === 'L' ? 47 : 64;
+  const hi = hand === 'L' ? 59 : 74;
+  let prev = null;
+  return prog.map((deg, i) => {
+    prev = voiceLead(chordPcs(key, deg), prev, lo, hi, i === prog.length - 1);
+    return prev;
+  });
 }
 
+// --- technique ----------------------------------------------------------------------------
 // Tonic of `key` in [lo, hi] (the octave window a part should start in).
-function tonicIn(key, lo, hi) {
+export function tonicIn(key, lo, hi) {
   for (let m = lo; m <= hi; m++) if (pcOf(m) === key.tonicPc) return m;
   return key.tonicNear(lo);
 }
@@ -939,18 +938,21 @@ function padRests(events, handsList, measures, beatsPer) {
   }
 }
 
+// Scales and arpeggios. Options: key, hand ('R', 'L' or 'both'; by default one hand at a time
+// until level 20), octaves (default 2 from level 25), harmonic (raise the 7th in minor; default
+// from level 15). Every note that follows a thumb-under or a cross-over carries `cross`.
 function techniquePiece(lv, rng, seed, kind, opts) {
   const key = opts.key || pickKey(rng, lv);
-  const octaves = lv.n >= 25 ? 2 : 1;
+  const octaves = opts.octaves ?? (lv.n >= 25 ? 2 : 1);
+  const harmonic = opts.harmonic ?? lv.n >= 15;
   // Scales are introduced one hand at a time; hands together from level 20.
-  const oneHand = lv.hands === 'L' ? 'L' : lv.hands === 'R' ? 'R' : lv.n < 20 ? (rng.chance(0.5) ? 'R' : 'L') : null;
+  const oneHand = opts.hand === 'both' ? null : opts.hand || (lv.hands === 'L' ? 'L' : lv.hands === 'R' ? 'R' : lv.n < 20 ? (rng.chance(0.5) ? 'R' : 'L') : null);
   const handsList = oneHand ? [oneHand] : ['R', 'L'];
   const dur = lv.n < 20 ? 1 : lv.n < 30 ? 0.5 : 0.25;
   const beatsPer = 4;
   const events = [];
   let bpm = opts.bpm || Math.round(lv.bpm[0] + (lv.bpm[1] - lv.bpm[0]) * (opts.tempoFactor ?? 0.5));
   if (dur === 1) bpm = Math.round(lv.bpm[0] * 0.95);
-  const firstFingers = {};
   for (const hand of handsList) {
     // Start where the staff needs few ledger lines: RH from the tonic above middle C, LH from
     // the tonic in the bass staff's middle.
@@ -958,7 +960,7 @@ function techniquePiece(lv, rng, seed, kind, opts) {
     let up = [];
     if (kind === 'scale') {
       for (let d = 0; d <= 7 * octaves; d++) up.push(key.degreeToMidi(d, tonic));
-      if (key.mode === 'minor' && lv.n >= 15) {
+      if (key.mode === 'minor' && harmonic) {
         // Harmonic minor: raise the 7th.
         const pcs = key.scalePcs();
         up = up.map((m) => (pcOf(m) === pcs[6] ? m + 1 : m));
@@ -970,16 +972,24 @@ function techniquePiece(lv, rng, seed, kind, opts) {
     }
     const seq = [...up, ...up.slice(0, -1).reverse()];
     let fingers = null;
-    if (kind === 'scale' && octaves === 1) {
-      const upF = scaleFingering(key, hand);
+    if (kind === 'scale') {
+      const upF = scaleFingers(key, hand, octaves);
       if (upF) fingers = [...upF, ...upF.slice(0, -1).reverse()];
-    } else if (kind === 'arpeggio' && octaves === 1) {
+    } else if (octaves === 1) {
       const upF = hand === 'R' ? [1, 2, 3, 5] : [5, 4, 2, 1];
       fingers = [...upF, ...upF.slice(0, -1).reverse()];
     }
-    if (fingers) firstFingers[hand] = fingers[0];
+    // Where the hand has to move: a thumb tuck or a finger crossing over the thumb.
+    const moves = new Map();
+    if (fingers && kind === 'scale') {
+      const top = up.length - 1;
+      for (const c of crossings(fingers.slice(0, top + 1), hand, 'up')) moves.set(c.at, c);
+      for (const c of crossings(fingers.slice(top), hand, 'down')) moves.set(top + c.at, c);
+    }
     seq.forEach((m, i) => {
-      events.push({ id: nextId++, staff: hand === 'R' ? 'treble' : 'bass', hand, beat: i * dur, dur: i === seq.length - 1 ? Math.max(dur, 1) : dur, midis: [m], rest: false, fingers: fingers ? [fingers[i]] : null });
+      const ev = { id: nextId++, staff: hand === 'R' ? 'treble' : 'bass', hand, beat: i * dur, dur: i === seq.length - 1 ? Math.max(dur, 1) : dur, midis: [m], rest: false, fingers: fingers ? [fingers[i]] : null };
+      if (moves.has(i)) ev.cross = moves.get(i);
+      events.push(ev);
     });
   }
   const total = Math.max(...events.map((e) => e.beat + e.dur));
@@ -1043,21 +1053,17 @@ function fiveFingerPiece(lv, rng, seed, opts) {
 // and V triads with fingering; from level 20 the right hand plays triads over bass roots.
 function chordPiece(lv, rng, seed, opts) {
   const key = opts.key || pickKey(rng, lv);
-  const prog = key.mode === 'major' ? rng.pick([[0, 3, 4, 0], [0, 5, 3, 4, 0], [0, 3, 0, 4, 0]]) : [0, 3, 4, 0];
+  const prog = opts.prog || (key.mode === 'major' ? rng.pick([[0, 3, 4, 0], [0, 5, 3, 4, 0], [0, 3, 0, 4, 0]]) : [0, 3, 4, 0]);
   const events = [];
-  let prev = null;
   const dur = 2;
-  const lhChords = lv.n < 20;
+  const lhChords = opts.hand ? opts.hand === 'L' : lv.n < 20;
+  const voicings = progressionVoicings(key, prog, lhChords ? 'L' : 'R');
   prog.forEach((deg, i) => {
     const pcs = chordPcs(key, deg);
-    const last = i === prog.length - 1;
+    const v = voicings[i];
     if (lhChords) {
-      const v = voiceLead(pcs, prev, 47, 59, last);
-      prev = v;
       events.push({ id: nextId++, staff: 'bass', hand: 'L', beat: i * dur, dur, midis: v, rest: false, fingers: lv.n <= 26 ? chordFingers(v, 'L') : null });
     } else {
-      const v = voiceLead(pcs, prev, 64, 74, last);
-      prev = v;
       events.push({ id: nextId++, staff: 'treble', hand: 'R', beat: i * dur, dur, midis: v, rest: false, fingers: lv.n <= 26 ? chordFingers(v, 'R') : null });
       const root = nearestWithPc(pcs[0], 48, 41, 55);
       if (lv.hands === 'both') events.push({ id: nextId++, staff: 'bass', hand: 'L', beat: i * dur, dur, midis: [root], rest: false });
@@ -1319,11 +1325,51 @@ export function buildPrep(p, ctx = {}) {
   }
   if (order.length === 2 && Math.abs(order[0].beat - order[1].beat) > 1e-6) textParts.push(`The ${HAND_WORD[order[0].hand]} hand plays first.`);
   for (const x of extensions) textParts.push(`${cap(HAND_WORD[x.hand])} ${FINGER_WORD[x.finger]} reaches down to ${x.name}${x.why ? ` for ${x.why}` : ''}.`);
-  if (outOfPosition && level <= 16) textParts.push('The hand moves later: read ahead.');
+  if (p.kind === 'scale') {
+    const hint = crossingHint(p, key);
+    if (hint) textParts.push(hint);
+  } else {
+    if (outOfPosition && level <= 16) textParts.push('The hand moves later: read ahead.');
+    // The key signature, in words, when the piece is not in C major or A minor.
+    const reminder = level <= 16 ? keyReminder(key) : null;
+    if (reminder) textParts.push(reminder);
+  }
   // Keep the spoken line short: at most two hands, no extras.
   let say = sayParts.join(' ');
   if (say.split(/\s+/).length > 16 && sayParts.length === 2) say = sayParts.map((s) => s.replace(/, finger \d/, '')).join(' ');
   return { level, anyKey: false, hands, first, outOfPosition, extensions, say, text: textParts.join(' ') };
+}
+
+// Where a scale's hand moves, in words: "Going up, tuck the thumb under finger 3 to play C. Coming
+// down, cross finger 3 over the thumb to play B." One sentence per hand when both play.
+function crossingHint(p, key) {
+  const parts = [];
+  const list = (a) => (a.length <= 1 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+  for (const h of ['R', 'L']) {
+    const evs = p.events.filter((e) => e.hand === h && !e.rest).sort((a, b) => a.beat - b.beat);
+    if (!evs.some((e) => e.cross)) continue;
+    let top = 0;
+    evs.forEach((e, i) => e.midis[0] > evs[top].midis[0] && (top = i));
+    const phrase = (dir) => {
+      const mv = evs.map((e, i) => [e, i]).filter(([e, i]) => e.cross && (dir === 'up' ? i <= top : i > top));
+      const out = [];
+      for (const kind of ['under', 'over']) {
+        const ms = mv.filter(([e]) => e.cross.kind === kind);
+        if (!ms.length) continue;
+        const fingers = new Set(ms.map(([e]) => (kind === 'under' ? e.cross.finger : e.cross.to)));
+        const f = fingers.size === 1 ? ` finger ${[...fingers][0]}` : '';
+        const names = list(ms.map(([e]) => pcName(e.midis[0], key)));
+        out.push(kind === 'under' ? `tuck the thumb under${f} to play ${names}` : `cross${f || ' a finger'} over the thumb to play ${names}`);
+      }
+      return out.join(', and ');
+    };
+    const up = phrase('up');
+    const down = phrase('down');
+    const who = p.staves.length > 1 ? `${cap(HAND_WORD[h])} hand: ` : '';
+    const said = [up && `Going up, ${up}.`, down && `Coming down, ${down}.`].filter(Boolean).join(' ');
+    parts.push(who ? `${who}${said.charAt(0).toLowerCase()}${said.slice(1)}` : said);
+  }
+  return parts.length ? `${parts.join(' ')} A dashed ring on a finger number marks where the hand moves.` : '';
 }
 
 function spokenChord(name) {
