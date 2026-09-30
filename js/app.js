@@ -6,6 +6,7 @@ import './ui/results.js';
 import './ui/placement.js';
 import './ui/songs.js';
 import './ui/screens.js';
+import './ui/keylesson.js';
 import './ui/listentest.js';
 
 // Handy for debugging and the end-to-end tests.
