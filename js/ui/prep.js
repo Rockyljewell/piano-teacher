@@ -3,6 +3,7 @@
 // count-in begins when the student plays a first note (hands-free) or taps "I'm ready".
 import { $, S, app, audio, coach, say, stopVoice, sfx, getVoice } from './core.js';
 import { noteName } from '../music/theory.js';
+import { positionFingers } from '../music/generator.js';
 import { pip } from './brand.js';
 
 const FINGER = { 1: 'thumb', 2: 'pointer', 3: 'middle finger', 4: 'ring finger', 5: 'pinky' };
@@ -63,8 +64,18 @@ export function prepInfo(piece, act = {}) {
     const firstBeat = evs[0].beat;
     const first = evs.filter((e) => Math.abs(e.beat - firstBeat) < 1e-6).flatMap((e) => e.midis);
     // A compact position: light every key the hand uses. A wide part: just the first notes.
-    const lit = hi - lo <= 9 ? midis : first;
-    for (const m of lit) if (!keys.has(m) || h === 'R') keys.set(m, { hand: h, finger: fingerOf.get(m) ?? null, first: first.includes(m) });
+    const compact = hi - lo <= 9;
+    const lit = compact ? midis : first;
+    // For the guide kept on the keyboard while playing: the keys of the starting position, until
+    // the beat where the hand has to leave it (a wide part has no position to keep showing).
+    const reach = new Set(((P && P.extensions) || []).filter((x) => x.hand === h).map((x) => x.midi));
+    const inPos = (m) => (m >= lo && m <= hi) || reach.has(m);
+    const leaves = evs.find((e) => e.midis.some((m) => !inPos(m)));
+    const until = compact ? (leaves ? leaves.beat : Infinity) : -Infinity;
+    // A key of the starting position gets the finger it has there (the notes' own fingers can
+    // be from after the hand has moved).
+    const fingerAt = (m) => (ph && compact && inPos(m) ? positionFingers(key, lo, m, h) : null) ?? fingerOf.get(m) ?? null;
+    for (const m of lit) if (!keys.has(m) || h === 'R') keys.set(m, { hand: h, finger: fingerAt(m), first: first.includes(m), until: inPos(m) ? until : -Infinity });
     let anchor = ph && ph.anchor ? ph.anchor : null;
     if (!anchor) {
       const want = h === 'R' ? 1 : 5;
@@ -102,11 +113,11 @@ export function wantsPrep(piece, act = {}) {
   return level <= 16;
 }
 
-// How long before starting on its own (ms), or 0 to wait for the student.
-function autoStartMs(act, info) {
-  if (act.placement) return 6000;
-  if (act.keyFlow || info.level <= 8) return 0; // a key lesson: read where the hands go, take your time
-  return coach.settings.autoAdvance === false ? 0 : 7000;
+// How long before starting on its own (ms), or 0 to wait for the student. Only a placement test
+// moves on by itself; everywhere else the card stays until the student plays the first note or
+// taps "I'm ready", so there is time to find the fingers.
+function autoStartMs(act) {
+  return act.placement ? 6000 : 0;
 }
 
 let autoTimer = 0;
@@ -127,6 +138,7 @@ export function enterPrep(piece, act, mode) {
     <div class="prep-go">
       <button id="btn-prep-go" class="btn btn-primary btn-lg"><span class="prep-ring"></span>I'm ready</button>
       <div class="prep-or">${info.anyKey != null ? 'or tap any key to start' : 'or play the first note to start'}</div>
+      ${info.anyKey != null ? '' : `<label class="prep-keep"><input type="checkbox" id="prep-keep"${coach.settings.keepGuide ? ' checked' : ''}><span>Keep hands on the keyboard while I play</span></label>`}
     </div>`;
   clearTimeout(leaveTimer);
   card.classList.remove('hidden', 'leave');
@@ -134,11 +146,17 @@ export function enterPrep(piece, act, mode) {
     sfx('tap');
     startFromPrep('tap');
   });
+  const keep = $('#prep-keep');
+  if (keep)
+    keep.addEventListener('change', () => {
+      coach.setSetting('keepGuide', keep.checked);
+      sfx('toggle', { on: keep.checked });
+    });
   placePrep();
   // Help the listener hear the first notes.
   audio.setExpected(info.starts ? [...info.starts] : [...info.keys.keys()]);
   if (coach.settings.voice !== false) say(info.say, { silent: true });
-  const ms = autoStartMs(act, info);
+  const ms = autoStartMs(act);
   clearTimeout(autoTimer);
   cancelAnimationFrame(autoRaf);
   if (ms) {
@@ -254,6 +272,28 @@ export function prepDrawState() {
   const p = S.prep;
   if (!p) return null;
   return { keys: p.info.keys, anyKey: p.info.anyKey, middleC: p.info.middleC };
+}
+
+// The hand guide kept on the keyboard while playing ("Keep hands on the keyboard while I play"):
+// the starting position's keys and finger numbers, for each hand until it has to move. The keys
+// due next pulse. Null when switched off, or when there is nothing to show.
+let guideFor = null;
+let guideInfo = null;
+export function guideDrawState(piece, act, beat, hints) {
+  if (!coach.settings.keepGuide || !piece || piece.rhythmOnly || piece.anyKey) return null;
+  if (guideFor !== piece) {
+    guideFor = piece;
+    try {
+      guideInfo = prepInfo(piece, act);
+    } catch {
+      guideInfo = null; // (never let the guide break a piece)
+    }
+  }
+  if (!guideInfo) return null;
+  const pulse = coach.settings.showHints !== false;
+  const keys = new Map();
+  for (const [m, pk] of guideInfo.keys) if (pk.until > beat) keys.set(m, { hand: pk.hand, finger: pk.finger, first: pulse && hints.has(m) });
+  return keys.size ? { keys, anyKey: null, middleC: false, guide: true } : null;
 }
 
 function esc(s) {

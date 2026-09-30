@@ -346,7 +346,7 @@ export function finishPiece(result) {
   $('#btn-retry').onclick = () => {
     clearTimers();
     stopConfetti();
-    app.startSession(S.session ? S.session.mode : 'tempo');
+    app.restartPiece(S.session ? S.session.mode : 'tempo');
   };
   $('#btn-retry').classList.toggle('hidden', !!act.placement);
   res.classList.remove('hidden');

@@ -98,6 +98,7 @@ export const DEFAULT_SETTINGS = {
   latencyMs: 0,
   autoLatency: true, // learn the microphone delay from steady playing (see Coach.autoLatency)
   prep: true, // "get ready" step before each exercise (js/ui/prep.js)
+  keepGuide: false, // keep the hand position (keys and finger numbers) on the keyboard while playing
   autoAdvance: true,
   lookaheadSec: 3,
   dailyGoal: 50, // XP (about 10-12 lesson activities)
