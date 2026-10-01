@@ -16,6 +16,7 @@
     "e2e": "node e2e/smoke.mjs",
     "bench": "node tests/bench-listen.js",
     "bench:fetch": "node tests/bench-fetch.js",
-    "fit:look": "node tests/look-fit.js"
+    "fit:look": "node tests/look-fit.js",
+    "bench:hold": "node tests/bench-hold.js"
   }
 }
