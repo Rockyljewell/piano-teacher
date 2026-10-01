@@ -17,6 +17,7 @@
     "bench": "node tests/bench-listen.js",
     "bench:fetch": "node tests/bench-fetch.js",
     "fit:look": "node tests/look-fit.js",
-    "bench:hold": "node tests/bench-hold.js"
+    "bench:hold": "node tests/bench-hold.js",
+    "bench:voiced": "node tests/bench-voiced.js"
   }
 }

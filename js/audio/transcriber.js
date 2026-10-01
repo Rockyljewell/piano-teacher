@@ -55,6 +55,19 @@ export const MIDI_MIN = 21; // A0
 const OVERTONE_STEPS = new Set([12, 19, 24, 28, 31, 34, 36, 38, 40]);
 // A reported note stays on while its raw strength stays above this part of the detection threshold.
 const SUSTAIN_FACTOR = 0.75;
+// Second chance for a soft note (see _rescue). Its strength before any cancelling, as a part of
+// the detection threshold; how many times it stands out of the spectrum around its fundamental;
+// the most notes one frame may take back; the register it applies to (C3 .. C6: below, the
+// partials of the notes played crowd every candidate, above, a voice's or a glass's tone looks like
+// a note); a lower note whose fundamental peaks this high (whitened, 1 = the loudest partial) is
+// plainly there; and the octave below counts as played when it is this strong (x) next to the note.
+const RESCUE_SAL = 0.8;
+const RESCUE_PROM = 4;
+const RESCUE_MAX = 2;
+const RESCUE_LOW = 48;
+const RESCUE_HIGH = 84;
+const RESCUE_LOWER = 0.25;
+const RESCUE_OCT = 0.8;
 export const MIDI_MAX = 108; // C8
 
 const ALPHA = 52;
@@ -891,7 +904,102 @@ export class Transcriber {
         for (let k = Math.max(0, k0 - 4); k <= Math.min(this.maxBin, k0 + 4); k++) R[k] *= keep;
       }
     }
-    return this._prune(found.filter((f) => !f.weak || this.expected.has(f.midi)));
+    const kept = found.filter((f) => !f.weak || this.expected.has(f.midi));
+    if (!this._inLesson()) this._rescue(Y, kept, taken, baseT, refT);
+    return this._prune(kept);
+  }
+
+  // Soft notes of a chord. The search above cancels each note it finds together with the partials
+  // it shares with the others, which takes most of a quiet fifth or third away (the 2nd, 4th and
+  // 6th partials of the fifth above a root are the root's 3rd, 6th and 9th): the note was well
+  // above the threshold in the spectrum as it came in, and is below it when its turn comes. It is
+  // taken back - in free play only, a lesson names the notes it wants - when
+  //   - two notes were found (a chord), it lies above the lowest of them, between C3 and C6;
+  //   - it is neither an overtone nor a sub-octave nor a semitone neighbour of a note found, nor a
+  //     partial of a lower note that is plainly there (that note was lost by the search, which
+  //     then picked its octave: the other partials of the bass note look like notes), nor above
+  //     an octave below that is as strong as it is;
+  //   - its fundamental is a clear peak of its own, and so are two more of its first six partials
+  //     that no note found has: a sub-octave candidate living off the notes' partials has none.
+  // It then goes to the tracker as strong as the weakest note found: the confidence model has only
+  // seen notes found in the cancelled spectrum, and reads a soft chord note as a doubtful one. The
+  // tracker still has to see an attack and the model to agree before it becomes a note.
+  _rescue(Y, found, taken, baseT, refT) {
+    if (found.length < 2) return;
+    let lowest = 127;
+    let weakest = Infinity;
+    for (const f of found) {
+      if (f.midi < lowest) lowest = f.midi;
+      if (f.ratio < weakest) weakest = f.ratio;
+    }
+    const sal = this.lastSalience; // (strengths before any cancelling)
+    const order = [];
+    for (const c of this.cands) if (!taken[c.midi] && c.midi >= RESCUE_LOW && c.midi <= RESCUE_HIGH && c.midi > lowest && sal[c.midi] >= baseT * RESCUE_SAL * 0.75) order.push(c);
+    if (!order.length) return;
+    order.sort((a, b) => sal[b.midi] - sal[a.midi]);
+    // bins the notes found own (their first 16 partials)
+    const owned = this._owned || (this._owned = new Uint8Array(this.maxBin + 8));
+    owned.fill(0);
+    const own = (c) => {
+      for (let i = 0; i < c.partials.length && i < 16; i++) {
+        const k0 = Math.round(c.partials[i].f / this.binHz);
+        for (let k = Math.max(0, k0 - 3); k <= Math.min(this.maxBin, k0 + 3); k++) owned[k] = 1;
+      }
+    };
+    for (const f of found) own(this.cands[f.midi - MIDI_MIN]);
+    // how far a partial stands out of the bins around it: its peak and the peak over their median
+    const near = this._near || (this._near = new Float64Array(64));
+    const prom = (p) => {
+      let pk = 0;
+      for (let k = p.lo; k <= p.hi; k++) if (Y[k] > pk) pk = Y[k];
+      let n = 0;
+      for (let k = Math.max(3, p.lo - 14); k <= Math.min(this.maxBin, p.hi + 14) && n < 64; k++) near[n++] = Y[k];
+      const mid = Array.prototype.slice.call(near, 0, n).sort((a, b) => a - b)[n >> 1];
+      return { pk, x: pk / (mid + 0.02) };
+    };
+    let got = 0;
+    for (const c of order) {
+      if (got >= RESCUE_MAX) break;
+      const m = c.midi;
+      const s = sal[m];
+      if (s < baseT * RESCUE_SAL * (this.active.has(m) ? 0.75 : this.pending.has(m) ? 0.85 : 1)) continue;
+      let ok = true;
+      for (const f of found) {
+        const d = m - f.midi;
+        if (OVERTONE_STEPS.has(d) || OVERTONE_STEPS.has(-d) || Math.abs(d) <= 1) {
+          ok = false;
+          break;
+        }
+      }
+      for (const d of OVERTONE_STEPS) {
+        if (!ok) break;
+        const g = m - d;
+        if (g < MIDI_MIN) continue;
+        // (the octave below needs no more than a sign of life: a bass note's fundamental is often
+        // too weak to be a peak, on a tablet's microphone, and which of the two was played is the
+        // network's question, not a soft note's second chance)
+        if (d === 12 && sal[g] >= s * RESCUE_OCT) ok = false;
+        else {
+          const q = prom(this.cands[g - MIDI_MIN].partials[0]);
+          if (q.pk >= RESCUE_LOWER && q.x >= RESCUE_PROM) ok = false;
+        }
+      }
+      if (!ok) continue;
+      const p1 = prom(c.partials[0]);
+      if (p1.pk < 0.1 || p1.x < RESCUE_PROM) continue;
+      let unshared = 0;
+      for (let i = 1; i < 6 && i < c.partials.length && unshared < 2; i++) {
+        const p = c.partials[i];
+        if (owned[Math.round(p.f / this.binHz)]) continue;
+        const q = prom(p);
+        if (q.pk >= 0.08 && q.x >= RESCUE_PROM * 0.75) unshared++;
+      }
+      if (unshared < 2) continue;
+      taken[m] = 1;
+      found.push({ midi: m, salience: s, ratio: Math.max(s / refT, weakest), rescued: true });
+      own(c);
+      got++;
+    }
   }
 
   // Remove typical ghost detections: semitone neighbours of loud bass notes (whose partials are
@@ -900,7 +1008,7 @@ export class Transcriber {
     return found.filter((f) => {
       if (this.expected.has(f.midi) || this.active.has(f.midi)) return true;
       for (const g of found) {
-        if (g === f) continue;
+        if (g === f || g.rescued) continue; // (a rescued note's strength is from before the cancelling: no yardstick)
         const d = f.midi - g.midi;
         if (f.midi < 50 && Math.abs(d) <= 2 && f.salience < g.salience * 0.9) return false;
         if (d === 12 && f.salience < g.salience * 0.5) return false;
@@ -1282,7 +1390,7 @@ export class Transcriber {
     return { emit, fast };
   }
 
-  _emit(midi, t, conf, sal, level, restrike = false) {
+  _emit(midi, t, conf, sal, level, restrike = false, rescued = false) {
     this.lingering.delete(midi);
     if (conf >= 0.8) {
       const now = this.pos / this.sr;
@@ -1310,7 +1418,7 @@ export class Transcriber {
       this.pianoLevelT = this.pos / this.sr;
     }
     // path: which analysis decided (the hybrid listener weighs them differently)
-    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike, path: this.emitPath || 'long' });
+    this.onNoteOn(midi, t, Math.min(1, sal / 3), { confidence: conf, restrike, path: this.emitPath || 'long', rescued });
   }
 
   _track(detected, t, mag) {
@@ -1348,6 +1456,7 @@ export class Transcriber {
         this.pending.set(d.midi, p);
       }
       p.miss = 0;
+      p.rescued = p.rescued === undefined ? !!d.rescued : p.rescued && !!d.rescued; // (only ever found by the second chance)
       // Frames whose window ends right after an attack see a smeared spectrum.
       if (t - attack.t < 0.045 || (t - this.lastOnsetTime < 0.035 && this.lastOnsetTime > attack.t)) continue;
       const c = this.cands[d.midi - MIDI_MIN];
@@ -1451,7 +1560,7 @@ export class Transcriber {
         a.reported = true;
         this.onOnset(a.t, a.strength);
       }
-      this._emit(p.midi, a.t, conf, p.sal, p.level);
+      this._emit(p.midi, a.t, conf, p.sal, p.level, false, !!p.rescued);
     }
     else {
       this.rejected.set(p.midi, p.attack.t);

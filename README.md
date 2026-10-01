@@ -106,6 +106,8 @@ It can restart the microphone, run a note test, and save a 15-second recording p
 
 **Held chords.** A struck chord stays on while its keys are down: the classic engine lets a note go only once it has also faded from the raw spectrum, so the fifth or third above a root (whose overtones the note finder cancels) is no longer dropped a second after the attack. See [docs/listening-hold.md](docs/listening-hold.md) and `npm run bench:hold`.
 
+**Soft chord notes.** In free play a chord's weak finger (8-20 dB below the others) used to be missed at the attack: the note finder cancels each note it finds together with the partials it shares with the others, which took most of a quiet fifth or third away before it was judged. A second chance in the classic engine takes such a note back when it is a clear peak of its own and is no overtone of anything found (free play only; a lesson names its notes). See [docs/listening-soft-notes.md](docs/listening-soft-notes.md) and `npm run bench:voiced`.
+
 Known limits: pop music with singing on a TV, and ringing glasses in the top two octaves, can still register now and then. Free play (no lesson hints) is less precise than lessons (about one false note in six), weaker on chords in both hands, and the bottom octave (below C2) is often missed on upright pianos.
 
 ## Development
@@ -119,6 +121,7 @@ npm run eval           # transcription accuracy report on synthesized piano
 npm run corpus         # download real piano / speech / radio recordings (~8 MB) into tests/.cache/
 npm run eval:noise     # false notes per minute and accuracy in noise
 npm run bench:hold     # held notes: kept while the keys are down, let go soon after (needs the benchmark pianos)
+npm run bench:voiced   # free-play chords with a soft top note: heard whole? (needs the benchmark pianos)
 npm run fit            # refit the listener's confidence model
 node e2e/smoke.mjs out/     # full run in headless Chromium: fake mic, adaptive placement, every screen
 node e2e/gallery.mjs out/   # screenshots of exercises from across the curriculum
