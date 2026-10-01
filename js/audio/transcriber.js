@@ -61,7 +61,7 @@ const SUSTAIN_FACTOR = 0.75;
 // partials of the notes played crowd every candidate, above, a voice's or a glass's tone looks like
 // a note); a lower note whose fundamental peaks this high (whitened, 1 = the loudest partial) is
 // plainly there; and the octave below counts as played when it is this strong (x) next to the note.
-const RESCUE_SAL = 0.8;
+const RESCUE_SAL = 0.5;
 const RESCUE_PROM = 4;
 const RESCUE_MAX = 2;
 const RESCUE_LOW = 48;

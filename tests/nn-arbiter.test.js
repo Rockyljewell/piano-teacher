@@ -78,3 +78,21 @@ test('a DSP note the network does not hear, a twelfth above a struck note, is dr
   assert.ok(out.some((x) => x.midi === 48), JSON.stringify(out));
   assert.ok(!out.some((x) => x.midi === 67), JSON.stringify(out));
 });
+
+test('a soft chord note the DSP took back is reported unless the network says no', () => {
+  const run = (nnP, info) => {
+    const out = [];
+    const arb = new FreeArbiter((midi, t, vel, inf, src) => out.push({ midi, src }), ARBITER_MODEL);
+    const t = played(arb);
+    scene(arb, t, t + 0.3, [{ midi: 67, t, p: nnP, pf: 0.3 }]);
+    arb.dsp(67, t, 0.5, info, t + 0.3);
+    return out.filter((e) => e.midi === 67);
+  };
+  // the network hardly sees it (0.04) but the DSP is sure: reported
+  assert.equal(run(0.04, { confidence: 0.9, path: 'long', rescued: true }).length, 1);
+  // the same note not taken back by the DSP is the fitted model's to judge
+  assert.equal(run(0.04, { confidence: 0.9, path: 'long' }).length, 0);
+  // a doubtful one, or one the network is sure was not struck, is not
+  assert.equal(run(0.04, { confidence: 0.6, path: 'long', rescued: true }).length, 0);
+  assert.equal(run(0.001, { confidence: 0.9, path: 'long', rescued: true }).length, 0);
+});

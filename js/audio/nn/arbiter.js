@@ -26,6 +26,14 @@ const L = (p) => {
 const IP = 9; // index of 'partner' in FEATS.nn
 const RING = 64; // frames of network output kept (0.64 s)
 const TOL = 0.08; // same attack: same key within 80 ms (the benchmark's tolerance)
+// A note the DSP took back as the soft note of a chord (transcriber.js _rescue, info.rescued) is
+// one the network is weakest on (it gives a quiet fifth or third 0.04-0.2), so the fitted model,
+// which leans on the network's probability, drops about a third of them. They are reported when the
+// DSP is sure (confidence) and the network does not say no (its onset probability at the attack
+// at least this). Set by hand on the benchmark's free-play material, not fitted: of 120 such notes
+// 19 more are reported, 2 of them not played, and none of the noise clips adds a note.
+const RESCUED_CONF = 0.8;
+const RESCUED_NNP = 0.02;
 
 // Feature names, in the order the models' weights are stored. The model evaluates
 // sum(w[i] * (x[i] - mu[i]) / sd[i]) + b.
@@ -93,9 +101,13 @@ export class FreeArbiter {
     const M = this.model && this.model.dsp;
     const p = M ? this._eval(M, x) : 1;
     if (this.collect) this.collect('dsp', x, { midi, t, restrike: !!info.restrike, p }, now);
-    if (p >= this._thr('dsp', midi)) this._report(midi, t, vel, info, 'dsp', now);
+    if (p >= this._thr('dsp', midi) || this._rescuedOk(midi, t, info, now)) this._report(midi, t, vel, info, 'dsp', now);
     else this.dropped.push({ midi, t });
     this._check(now);
+  }
+
+  _rescuedOk(midi, t, info, now) {
+    return !!(this.model && info.rescued && !info.restrike && (info.confidence ?? 0) >= RESCUED_CONF && this._pmax(midi - 21, t - 0.03, Math.min(now, t + 0.15)) >= RESCUED_NNP);
   }
 
   nn(midi, t, vel, info, now) {
