@@ -51,6 +51,10 @@ import { FFT, hann } from './fft.js';
 export const ENGINE = { name: 'maestro-dsp', version: '3.1' };
 
 export const MIDI_MIN = 21; // A0
+// Semitone distances at which a note is one of another note's overtones (2nd ... 10th partial).
+const OVERTONE_STEPS = new Set([12, 19, 24, 28, 31, 34, 36, 38, 40]);
+// A reported note stays on while its raw strength stays above this part of the detection threshold.
+const SUSTAIN_FACTOR = 0.75;
 export const MIDI_MAX = 108; // C8
 
 const ALPHA = 52;
@@ -222,6 +226,7 @@ export class Transcriber {
     this._buildCandidates();
 
     this.active = new Map(); // midi -> {on, missing, sal, lastStrike, conf}
+    this.lingering = new Map(); // midi -> {missing}: lost by the detection, note-off held back (_track)
     this.energyHist = []; // [{t, e: Float64Array(128), o: Float64Array(128)}]
     this.pendingRestrike = [];
     this.pending = new Map(); // midi -> note hypothesis
@@ -791,7 +796,11 @@ export class Transcriber {
     this.energyHist.push({ t, e: se.e, o: se.o, pp: se.pp });
     if (this.energyHist.length > 48) this.energyHist.shift();
 
-    const detected = silent || this.calibrating ? [] : this._iterativeDetect(Y);
+    let detected;
+    if (silent || this.calibrating) {
+      detected = [];
+      this.lastSalience.fill(0); // (no stale strengths for _sustained)
+    } else detected = this._iterativeDetect(Y);
     this.lastDetected = detected;
     this._track(detected, t, mag);
   }
@@ -1274,6 +1283,7 @@ export class Transcriber {
   }
 
   _emit(midi, t, conf, sal, level, restrike = false) {
+    this.lingering.delete(midi);
     if (conf >= 0.8) {
       const now = this.pos / this.sr;
       if (conf >= 0.85 && (this.emitPath !== 'fast' || this.expected.has(midi))) this.pianoSeen.push(now);
@@ -1363,9 +1373,36 @@ export class Transcriber {
       st.missing++;
       if (st.missing >= 3) {
         this.active.delete(midi);
+        // The note finder lost it, which is not the same as the key coming up: a held chord's
+        // upper note (the fifth or third above a root shares overtones with it) often drops out
+        // of the iterative detection while it still rings. If it is still plainly in the raw
+        // spectrum its note-off waits (the detector's own state is unchanged).
+        if (this._sustained(midi)) this.lingering.set(midi, { missing: 0 });
+        else this.onNoteOff(midi, t - halfWin);
+      }
+    }
+    for (const [midi, l] of [...this.lingering]) {
+      if (this.active.has(midi)) {
+        this.lingering.delete(midi); // struck again: the new note replaces it
+        continue;
+      }
+      if (this._sustained(midi)) l.missing = 0;
+      else if (++l.missing >= 3) {
+        this.lingering.delete(midi);
         this.onNoteOff(midi, t - halfWin);
       }
     }
+  }
+
+  // Is a note that was reported and has not been ended still clearly in the raw spectrum (before
+  // any cancellation)? Its strength collapses within about 150 ms of the key coming up (the
+  // dampers), while a held note keeps it. Not for a note an octave, twelfth, ... above another
+  // sounding note: its partials are that note's own, the raw spectrum cannot tell them apart.
+  _sustained(midi) {
+    if (this.lastSalience[midi] < (0.44 / this.sensitivity) * SUSTAIN_FACTOR) return false;
+    for (const a of this.active.keys()) if (a < midi && OVERTONE_STEPS.has(midi - a)) return false;
+    for (const a of this.lingering.keys()) if (a < midi && OVERTONE_STEPS.has(midi - a)) return false;
+    return true;
   }
 
   // Decide about a note hypothesis: emit now, keep watching, or reject.
@@ -2307,7 +2344,9 @@ export class Transcriber {
 
   reset() {
     for (const [midi] of this.active) this.onNoteOff(midi, this.pos / this.sr);
+    for (const [midi] of this.lingering) this.onNoteOff(midi, this.pos / this.sr);
     this.active.clear();
+    this.lingering.clear();
     this.pending.clear();
     this.rejected.clear();
     this.emittedAt.clear();
